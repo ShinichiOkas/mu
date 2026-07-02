@@ -1,0 +1,8 @@
+{
+  "sprint_id": "001-concept-l0",
+  "status": "completed",
+  "goal": "mu（ミニマル汎用エージェント）のコンセプト仕様を言語化し、内側の層(L0)から一つずつ完成させる",
+  "created_at": "2026-07-02T00:57:32+09:00",
+  "completed_at": "2026-07-03T00:17:34+09:00",
+  "agreement_path": ".pair-agent/agreements/001-mu-concept-and-l0.md"
+}
