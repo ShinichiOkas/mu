@@ -120,12 +120,19 @@ mu の中にあるが、**エージェントのループ・自律性の層（L0�
 
 `l0_chat.py` は L0 だけを使う（既定モデル `gemma3:1b`）。ツールも PDCA も無い「理想化された chat」だけ。会話履歴は CLI 側が保持し、L0 は無状態のまま。L0 の 4 型エラーはそのまま表示される。
 
+```
+.\.venv\Scripts\python.exe l1_chat.py [model]
+```
+
+`l1_chat.py` は L1（ツールコールのループ）を使う（既定 `qwen3.5:4b`、tool 対応モデルが必要）。検証用ツール `read_file` / `write_file` / `edit_file` / `list_dir` / `execute_command`（PowerShell 実行）を登録済み。起動時に OS・作業ディレクトリ・シェルの環境情報を渡すので、「このフォルダのファイルを見て README を要約して」のような実タスクが回る。ツール実行は `[tool] ...` と表示。
+
 ---
 
 ## 決定事項と未決事項
 
 - **決定**: 基本 LLM = Ollama ／ L0 のスコープ（上記）／ **L0 のエラー方針（接続を理想化・4型・リトライ）** ／ L1 = ツールコールのループ ／ 設定系の位置づけ
 - **L0 は実装・テスト済み** — `mu/l0.py`（言語 Python／依存 公式 `ollama` クライアント）。テスト 16 green（ユニット14＋実接続2）
+- **L1 は実装・テスト済み** — `mu/l1.py`（無状態 `step()`／`(func, usage_text)` ペア／system注入＋構造化tools）。system prompt 強化でツール呼び出しを**確実化**。検証用ツール `tools.py`（read_file / write_file / edit_file / list_dir / execute_command＝PowerShell）。環境グラウンディング（呼び出し側が OS/cwd/shell を注入）で実タスクが回ることを確認。テスト全体 **34 green**
 - **未決**: L2 以降の具体、PDCA が明示的に乗る正確な層 — 内側から順に、対話で決める
 
 *Ollama API の全エンドポイント一覧は公式 docs（docs.ollama.com/api）参照。上記は mu が扱う範囲のみ。*

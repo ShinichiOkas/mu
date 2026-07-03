@@ -11,6 +11,7 @@ from .l0 import (
     ResourceExhausted,
     BadRequest,
 )
+from .l1 import ToolLoop
 
 __all__ = [
     "OllamaInterface",
@@ -19,4 +20,5 @@ __all__ = [
     "ModelUnavailable",
     "ResourceExhausted",
     "BadRequest",
+    "ToolLoop",
 ]

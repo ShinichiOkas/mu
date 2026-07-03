@@ -1,8 +1,8 @@
 {
-  "sprint_id": "001-concept-l0",
+  "sprint_id": "002-l1-tool-loop",
   "status": "completed",
-  "goal": "mu（ミニマル汎用エージェント）のコンセプト仕様を言語化し、内側の層(L0)から一つずつ完成させる",
-  "created_at": "2026-07-02T00:57:32+09:00",
-  "completed_at": "2026-07-03T00:17:34+09:00",
-  "agreement_path": ".pair-agent/agreements/001-mu-concept-and-l0.md"
+  "goal": "L1（ツールコールのループ）を可能な限りシンプルに実装する。無状態step()、(func,usage_text)ペアでツール登録",
+  "created_at": "2026-07-03T01:04:41+09:00",
+  "completed_at": "2026-07-03T23:13:47+09:00",
+  "agreement_path": ".pair-agent/agreements/002-l1-tool-loop.md"
 }

@@ -18,7 +18,8 @@
 - **レイヤを一つずつ完成させる。** 複数の層を同時に半端に作らない。内側の層を完成させてから次の層へ。
 - 作る向きは **内側 → 外側**。一番内側の非自律な核を固め、自律性を一枚ずつ外へ重ねる。
 - **1 層 = 1 ファイル**（`mu/l0.py`, `mu/l1.py`, …）。層番号がファイル名。1 ファイルに収まらなくなったら層が厚すぎのシグナル。（2026-07-02 確定）
-- → プロジェクトSkill: `.pair-agent/skills/layer-by-layer-completion.md` ／ `.pair-agent/skills/one-file-per-layer.md`
+- **各層に `l{N}_chat.py`** を用意する。その層だけを叩く最小 CLI で、師匠が実際に触れる窓口。（2026-07-03 確定）
+- → プロジェクトSkill: `layer-by-layer-completion.md` ／ `one-file-per-layer.md` ／ `per-layer-chat-cli.md`
 
 ## 決定事項
 
