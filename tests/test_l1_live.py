@@ -12,7 +12,7 @@ from mu.l1 import ToolLoop
 
 pytestmark = pytest.mark.live
 
-TOOL_MODELS = ["qwen3.5:4b", "qwen3.5:2b", "qwen2.5-coder:7b", "qwen3:14b"]
+TOOL_MODELS = ["qwen3.5:9b", "gemma4:12b", "qwen3.5:4b", "qwen2.5-coder:7b"]
 
 
 def multiply(a: float, b: float) -> float:

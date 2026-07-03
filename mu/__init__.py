@@ -12,6 +12,7 @@ from .l0 import (
     BadRequest,
 )
 from .l1 import ToolLoop
+from .l2 import Agent
 
 __all__ = [
     "OllamaInterface",
@@ -21,4 +22,5 @@ __all__ = [
     "ResourceExhausted",
     "BadRequest",
     "ToolLoop",
+    "Agent",
 ]

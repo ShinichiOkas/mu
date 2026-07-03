@@ -30,7 +30,7 @@ for _stream in (sys.stdout, sys.stdin):
     except (AttributeError, ValueError):
         pass
 
-DEFAULT_MODEL = "qwen3.5:4b"
+DEFAULT_MODEL = "qwen3.5:9b"  # 参照モデル（他は gemma4:12b）
 
 
 def _env_preamble() -> str:
