@@ -57,5 +57,14 @@ L2 = **PDCA を明示的に乗せる層**。D は L1。L2 が足すのは **Refl
   - **F3 採用**: 弱いモデルへの対症療法を続けず、参照モデルを **qwen3.5:9b / gemma4:12b**（ともに tools 対応・特定モデルへの過剰最適化回避で2つ）に。4b のパス幻覚は 9b で解消。
   - **Reflect 修正**: ① フィードバックを **system ロール**で戻す（`_transcript` から除外＝**汚染防止**）② **think=False** ＋ JSON 頑健抽出で構造化出力を安定化（"unparseable" 解消）。
   - **最大の学び**: 「3行」が曖昧で収束せず → **ゴールの成功条件は checkable にする**（skill 化: `goal-success-criteria-must-be-checkable`）。Reflect ではなくゴール定義が原因だった。
-- **残タスク（次回）**: T2 を checkable に再定義して再走 → T1/T3/T4 ／ Reflect プロンプト微調整 ／ README 反映 ／ `l2_chat` の最終応答表示（tool 終端で空になる件）。
+## 検証完了（2026-07-04）
+
+T2〜T4 と T1 を実機で通した。**checkable なゴール＋公正な Reflect** が鍵:
+
+- **T2**（制約＋修正）qwen3.5:9b ✓ ／ **T4**（正確性）qwen ✗（モデル固有のパス破損）→ **gemma4:12b ✓** ／ **T1**（網羅性）gemma4:12b ✓ ／ **T3**（pytest 実行照合）gemma4:12b ✓。
+- **Reflect 追加修正**: ① フィードバックを **user ロール＋目印**で戻す（steering 復活＋汚染防止を両立）② **「厳格だが公正」**（ゴールに明記の制約だけを判定し、大小文字・末尾空白等を勝手に足さない）③ `think=False`＋JSON 頑健抽出、unparseable 時の next を中立化。
+- **学び**: **ゴールの成功条件は checkable に**（skill 化: `goal-success-criteria-must-be-checkable`）／ 参照2モデルにした狙いが的中（T4 の qwen 失敗を「mu のバグ」と誤診せずに済んだ）。
+- 残（軽微・任意）: `l2_chat` の最終応答表示が tool 終端で空になる件。L3／明示 Plan は次段。
+
+> **L2 完成**（概念＋実装＋テスト＋実タスク検証, 2026-07-04）。テスト全体 **42 green**。
 

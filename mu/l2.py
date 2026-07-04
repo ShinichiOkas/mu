@@ -34,12 +34,21 @@ _VERDICT_SCHEMA = {
 }
 
 _REFLECT_SYSTEM = (
-    "You are a strict verifier. Given a GOAL and the TRANSCRIPT of an agent's attempt, "
-    "decide whether the goal is FULLY and CORRECTLY achieved. Be strict: if the transcript "
-    "does not clearly show the goal achieved (including any constraints), it is NOT passed. "
-    "Reply as JSON: passed (bool), reason (short), next (what remains to do if not passed; "
-    "empty string if passed)."
+    "You are a strict but FAIR verifier. Given a GOAL and the TRANSCRIPT of an agent's "
+    "attempt, decide whether the goal is achieved. Judge ONLY against the constraints "
+    "explicitly stated in the GOAL. Do NOT invent extra requirements the goal does not "
+    "mention (e.g. trailing whitespace, or the letter-case of a filename on a "
+    "case-insensitive OS). If the transcript clearly shows the stated constraints are met, "
+    "PASS. If the result cannot be verified from the transcript (e.g. a file was written "
+    "but its content is not shown), do not pass; set next to instruct the agent to reveal "
+    "the concrete evidence (e.g. read the file back and show its full content). "
+    "Reply as JSON: passed (bool), reason (short), next (a concrete next action if not "
+    "passed; empty string if passed)."
 )
+
+# L2 が再投入する制御フィードバックの目印。L1 には見せる（user ロールで steering）が、
+# 次の Reflect の transcript からは除外する（「未達」表明を失敗の証拠と誤読させないため）。
+_FEEDBACK_PREFIX = "[L2] "
 
 
 class Agent:
@@ -86,10 +95,10 @@ class Agent:
         messages = self._l1.run(model, messages, tools, max_rounds=l1_max)  # D
         v = self._reflect(model, goal, messages)                            # C ＋ A
         if not v["passed"]:
-            # フィードバックは system ロールで戻す。_transcript は system を除外するので、
-            # 次の Reflect が「未達」の制御メッセージを"失敗の証拠"と誤読しない（汚染防止）。
+            # user ロールで戻す（L1 が確実に読む＝steering）。目印を付け、次の Reflect の
+            # transcript からは除外する（未達表明を失敗の証拠と誤読させない＝汚染防止）。
             messages.append(
-                {"role": "system", "content": f"まだゴールは達成できていません。次にやること: {v['next']}"}
+                {"role": "user", "content": _FEEDBACK_PREFIX + f"まだゴールは達成できていません。次にやること: {v['next']}"}
             )
         return messages, v
 
@@ -108,18 +117,21 @@ def _transcript(messages: list, limit: int = 6000) -> str:
     parts = []
     for m in messages:
         role = m.get("role")
+        content = m.get("content", "")
         if role == "system":
             continue
         if role == "tool":
-            parts.append(f"[tool {m.get('tool_name')}] {m.get('content', '')}")
+            parts.append(f"[tool {m.get('tool_name')}] {content}")
         elif role == "assistant":
             if m.get("tool_calls"):
                 names = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])
                 parts.append(f"assistant: (calls {names})")
-            if m.get("content"):
-                parts.append(f"assistant: {m['content']}")
+            if content:
+                parts.append(f"assistant: {content}")
         elif role == "user":
-            parts.append(f"user: {m.get('content', '')}")
+            if content.startswith(_FEEDBACK_PREFIX):
+                continue  # L2 の制御フィードバックは検証者に見せない
+            parts.append(f"user: {content}")
     text = "\n".join(parts)
     return text[-limit:]
 
@@ -142,5 +154,9 @@ def _parse_verdict(content: str) -> dict:
                 "reason": str(data.get("reason", "")),
                 "next": str(data.get("next", "")),
             }
-    # 壊れていたら未達扱い（安全側）。生の中身を next に残す。
-    return {"passed": False, "reason": "unparseable verdict", "next": text}
+    # 壊れていたら未達扱い（安全側）。next は L1 を証拠提示へ導く中立指示にする。
+    return {
+        "passed": False,
+        "reason": "unparseable verdict",
+        "next": "ゴールが満たされている具体的な証拠を示すこと（例: 対象ファイルを読み返して内容を表示する）。",
+    }

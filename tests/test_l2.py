@@ -62,12 +62,12 @@ def test_loops_until_pass():
     assert agent._l1.calls == 2  # D は2周
 
 
-def test_reflect_next_is_reinjected_as_system_feedback():
-    # 汚染防止のためフィードバックは system ロールで戻る（_transcript が除外する）。
+def test_reflect_next_is_reinjected_as_user_feedback():
+    # フィードバックは user ロールで戻る（L1 が読む）。目印付きで transcript からは除外される。
     agent = make(["a", "b"], [verdict(False, "missing", "write the file"), verdict(True)])
     messages, _ = agent.run("m", "goal", [])
     assert any(
-        m.get("role") == "system" and "write the file" in m.get("content", "")
+        m.get("role") == "user" and "write the file" in m.get("content", "")
         for m in messages
     )
 
