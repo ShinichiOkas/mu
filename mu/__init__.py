@@ -13,6 +13,7 @@ from .l0 import (
 )
 from .l1 import ToolLoop
 from .l2 import Agent
+from .l3 import Orchestrator
 
 __all__ = [
     "OllamaInterface",
@@ -23,4 +24,5 @@ __all__ = [
     "BadRequest",
     "ToolLoop",
     "Agent",
+    "Orchestrator",
 ]
