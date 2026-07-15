@@ -71,6 +71,9 @@ _REPLAN_SYSTEM = (
     "(with done-status) and a FAILURE ANALYSIS, produce a revised full plan: change the "
     "conditions, approach, or split/redefine the FAILED unit as needed. "
     "Keep the SAME file paths for units that are already done — never rename or move them. "
+    "Each unit's 'file' must be a non-empty, specific path; a unit whose file would be empty is invalid. "
+    "Do NOT create a unit whose only job is to run, execute, verify, or confirm something — "
+    "running and verification are already part of each unit's criterion, never a unit of their own. "
     "Do NOT add units the goal does not require (no CI, packaging, restructuring). "
     "Reply as JSON {units:[{task,file,criterion}]}."
 )
@@ -80,9 +83,15 @@ _ANALYZE_SYSTEM = (
     "approach, or a missing dependency) and what to change. Reply as JSON {reason,suggestion}."
 )
 _OVERALL_SYSTEM = (
-    "You are a strict but fair verifier. Given the overall complex GOAL and the list of "
-    "produced deliverables (files, criteria, done-status), decide whether the OVERALL goal "
-    "is achieved. Judge only against the stated goal. Reply as JSON {passed,reason}."
+    "You are a strict but fair verifier deciding whether an overall GOAL is complete. "
+    "You are given the GOAL and the list of DELIVERABLES with their done-status. "
+    "A unit marked [x] is DONE: it has already produced its file and passed its own "
+    "checkable criterion, verified by execution. Trust this — do NOT ask for file contents "
+    "and do NOT try to re-run or re-verify individual files. "
+    "Judge ONLY whether the set of DONE deliverables covers everything the GOAL requires "
+    "(scope completeness). If every output the goal requires is present and done, answer "
+    "passed=true. Answer passed=false only if the goal clearly needs an output that is "
+    "missing or not yet done. Reply as JSON {passed,reason}."
 )
 
 
