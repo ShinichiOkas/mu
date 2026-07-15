@@ -55,11 +55,15 @@ _OVERALL_SCHEMA = {
 
 _PLAN_SYSTEM = (
     "You are a planner. Decompose the GOAL into a short ordered list of small units "
-    "(usually 2-4). Each unit MUST produce a file deliverable with a checkable criterion. "
-    "For code, the criterion should be that its tests pass, and the tests must be an earlier "
-    "separate unit. Order units so that dependencies (via files) come first. "
-    "Do NOT add units the goal does not require (no CI, linting, packaging, or extra "
-    "restructuring). Use simple, concrete file paths (e.g. calc.py, not src/calc.py). "
+    "(usually 2-3). Each unit MUST produce ONE concrete file deliverable: its 'file' must be "
+    "a non-empty, specific path (e.g. calc.py). A unit whose file would be empty is invalid. "
+    "The criterion is how that file is checked; for code it is that its tests pass, and the "
+    "tests must be an earlier separate unit. "
+    "Do NOT create a unit whose only job is to run, execute, verify, or confirm something — "
+    "running and verification are already part of each unit's criterion, never a unit of their own. "
+    "Order units so that dependencies (via files) come first. "
+    "Do NOT add units the goal does not require (no CI, linting, packaging, or restructuring). "
+    "Use simple, concrete file paths (e.g. calc.py, not src/calc.py). "
     "Reply as JSON {units:[{task,file,criterion}]} with at least one unit."
 )
 _REPLAN_SYSTEM = (
