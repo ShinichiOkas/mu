@@ -13,16 +13,27 @@ L3 = L2 を"単位"として組み合わせ、複雑ゴールを完遂する層�
 （file grounding）。ワーキングディレクトリ破壊を避けるため、使い捨ての
 ディレクトリで実行すること。
 
+実行中は各層の動きをその場で実況する（層はインデントで入れ子表示）:
+    [L3] Plan/失敗分析/全体判定  [L2] Reflect 判定  [L1] 思考  [tool] ツール実行
+LLM 呼び出しは開始時に行を出し、完了時に所要秒数を追記する。表示のない沈黙は
+ない（沈黙して見える間＝行末が開いている間はローカル LLM が推論中）。
+表示は CLI の責務であり、mu の各層は無変更・無関知（プロキシとラッパーで包むだけ）。
+
 使い方:
     .\.venv\Scripts\python.exe l3_chat.py [model]
 既定モデルは qwen3.5:9b（参照モデル。もう一つは gemma4:12b）。
 """
 
+import functools
+import json
 import os
 import platform
 import sys
+import time
 
 from mu.l0 import OllamaInterface, L0Error
+from mu.l1 import ToolLoop
+from mu.l2 import Agent
 from mu.l3 import Orchestrator
 from tools import TOOLS
 
@@ -46,6 +57,115 @@ class _Abort(Exception):
 def _short(text: object, n: int = 120) -> str:
     s = str(text or "").replace("\n", " ")
     return s if len(s) <= n else s[:n] + "…"
+
+
+# --- 実況（表示は CLI の責務。mu の層は無変更・無関知） ------------------------
+#
+# 沈黙の正体は「L0 の chat（＝ローカル LLM の推論）」と「ツール実行」の2つ。
+# 前者は層ごとにラベルを変えた _VerboseL0 を合成点（ToolLoop(l0) / Agent(l0, l1) /
+# Orchestrator(l0, l2)）へ差し込んで実況し、後者は _verbose_tools で包んで実況する。
+
+_L3 = "  [L3]"
+_L2 = "    [L2]"
+_L1 = "      [L1]"
+_TOOL = "        [tool]"
+
+# format スキーマの property 集合 → その呼び出しの意味（表示専用。未知形は総称へ）。
+_STAGES = {
+    frozenset({"units"}): "Plan/再計画を作成中",
+    frozenset({"reason", "suggestion"}): "失敗を分析中",
+    frozenset({"passed", "reason"}): "全体達成を判定中",
+    frozenset({"passed", "reason", "next"}): "Reflect（合否）判定中",
+}
+
+
+def _stage(kwargs: dict) -> str:
+    if kwargs.get("tools"):
+        return "思考中（次の行動を決定）"
+    fmt = kwargs.get("format")
+    if isinstance(fmt, dict):
+        return _STAGES.get(frozenset(fmt.get("properties", {})), "構造化出力を生成中")
+    return "応答を生成中"
+
+
+def _try_json(text: str) -> dict | None:
+    """表示専用のゆるい JSON 取り出し（壊れていたら None。判定は各層が行う）。"""
+    start, end = (text or "").find("{"), (text or "").rfind("}")
+    if 0 <= start < end:
+        try:
+            data = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+class _VerboseL0:
+    """L0 を包み、chat 呼び出しを層ラベル付きで実況するプロキシ。
+
+    開始時に行を開き（沈黙中も何をしているか見える）、完了時に所要秒数を追記する。
+    """
+
+    def __init__(self, l0: object, prefix: str) -> None:
+        self._l0 = l0
+        self._prefix = prefix
+
+    def chat(self, model: str, messages: list, **kwargs: object) -> object:
+        print(f"{self._prefix} {_stage(kwargs)}…", end="", flush=True)
+        t0 = time.monotonic()
+        try:
+            resp = self._l0.chat(model, messages, **kwargs)  # type: ignore[attr-defined]
+        except BaseException:
+            print()  # 失敗しても開いた行を閉じる
+            raise
+        tokens = getattr(resp, "eval_count", None)
+        print(f" ({time.monotonic() - t0:.1f}s{f', {tokens} tok' if tokens else ''})")
+        self._show_verdict(resp, kwargs)
+        return resp
+
+    def _show_verdict(self, resp: object, kwargs: dict) -> None:
+        # L2 Reflect の合否はほかに表示場所がないのでここで出す
+        # （Plan は承認画面が、失敗分析・全体判定は L3 の log が表示する）。
+        fmt = kwargs.get("format")
+        if not (isinstance(fmt, dict) and set(fmt.get("properties", {})) == {"passed", "reason", "next"}):
+            return
+        data = _try_json(getattr(getattr(resp, "message", None), "content", "") or "") or {}
+        if "passed" in data:
+            print(f"{self._prefix}   -> passed={data.get('passed')} :: {_short(data.get('reason'))}")
+            if not data.get("passed") and data.get("next"):
+                print(f"{self._prefix}   next: {_short(data.get('next'))}")
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._l0, name)
+
+
+def _verbose_tool(func):
+    """ツール関数を「実行開始と結果をその場で表示する」ラッパーで包む。
+
+    functools.wraps が __name__・docstring・署名を保つので、L1 の dispatch と
+    ollama の関数→スキーマ変換はラップ前と同じに働く。
+    """
+
+    @functools.wraps(func)
+    def run(*args, **kw):
+        shown = ", ".join(
+            [_short(a, 60) for a in args] + [f"{k}={_short(v, 60)}" for k, v in kw.items()]
+        )
+        print(f"{_TOOL} {func.__name__}({shown})", flush=True)
+        try:
+            result = func(*args, **kw)
+        except Exception as e:
+            print(f"{_TOOL}   -> error: {e}")
+            raise  # L1 が捕まえて結果として model へ返す
+        print(f"{_TOOL}   -> {_short(result)}")
+        return result
+
+    return run
+
+
+def _verbose_tools(tools: list) -> list:
+    return [(_verbose_tool(func), usage) for func, usage in tools]
 
 
 def _show_units(units: list) -> None:
@@ -101,7 +221,14 @@ def _log(event: tuple) -> None:
 
 def main() -> None:
     model = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MODEL
-    orch = Orchestrator(OllamaInterface())
+    l0 = OllamaInterface()
+    # 層ごとにラベルの違う実況プロキシを合成点へ差し込む（層自体は無変更）。
+    # Agent の l0 は Reflect 専用、Orchestrator の l0 は Plan/分析/全体判定専用
+    # なので、ラベル＝呼び出し元の層が正確に対応する。
+    l1 = ToolLoop(_VerboseL0(l0, _L1))
+    l2 = Agent(_VerboseL0(l0, _L2), l1)
+    orch = Orchestrator(_VerboseL0(l0, _L3), l2)
+    tools = _verbose_tools(TOOLS)
 
     print(f"L3 chat / model={model}  max_rounds={MAX_ROUNDS}  (複雑ゴールを入力 / /exit で終了)")
     print(f"  cwd={os.getcwd()}  <- 成果物ファイルはここに作られます")
@@ -119,7 +246,7 @@ def main() -> None:
 
         try:
             result = orch.run(
-                model, goal, TOOLS,
+                model, goal, tools,
                 approve=_approve, log=_log,
                 max_rounds=MAX_ROUNDS, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
             )
