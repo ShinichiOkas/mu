@@ -118,6 +118,7 @@ class Orchestrator:
         *,
         approve: Callable[[list], list] = _identity_approve,
         log: Callable[[Any], None] = _noop,
+        system: str | None = None,
         max_rounds: int = 8,
         l2_max: int = 6,
         l2_l1_max: int = 10,
@@ -130,7 +131,8 @@ class Orchestrator:
             if pending:
                 unit = pending[0]
                 msgs, passed = self._l2.run(              # D
-                    model, self._unit_goal(unit), tools, max_rounds=l2_max, l1_max=l2_l1_max
+                    model, self._unit_goal(unit), tools,
+                    system=system, max_rounds=l2_max, l1_max=l2_l1_max,
                 )
                 if passed:                                # C: 成功
                     unit["done"] = True

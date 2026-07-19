@@ -34,9 +34,11 @@ class FakeL2:
     def __init__(self, results):
         self._results = list(results)
         self.calls = []
+        self.systems = []
 
-    def run(self, model, goal, tools, max_rounds=6, l1_max=10):
+    def run(self, model, goal, tools, max_rounds=6, l1_max=10, system=None):
         self.calls.append(goal)
+        self.systems.append(system)
         passed = self._results.pop(0) if self._results else True
         return ([{"role": "user", "content": goal}], passed)
 
@@ -80,6 +82,14 @@ def test_unit_goal_includes_file_and_criterion():
     goal_sent = agent._l2.calls[0]
     assert "calc.py" in goal_sent
     assert "tests pass" in goal_sent
+
+
+def test_run_forwards_system_preamble_to_l2():
+    # 環境グラウンディングは呼び出し側の責務。L3 は system をそのまま L2 へ通す
+    # （L3 自身は環境を知らない・opaque に転送するだけ）。
+    agent = make([PLAN1, OVERALL_OK], [True])
+    agent.run("m", "build calc", [], system="ENV-PREAMBLE-XYZ")
+    assert agent._l2.systems[0] == "ENV-PREAMBLE-XYZ"
 
 
 def test_approve_called_for_plan_and_replan():

@@ -59,6 +59,22 @@ def _short(text: object, n: int = 120) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
+def _env_preamble() -> str:
+    """各単位の L2 実行へ渡す環境グラウンディング（環境の文脈は呼び出し側の責務）。
+
+    L3 は環境を知らず、この文字列を opaque に L2 へ通すだけ。l2_chat と同じ内容を
+    そろえる（弱いモデルが Unix コマンド仮定・パス幻覚に落ちる穴をふさぐ）。
+    """
+    return (
+        "Environment:\n"
+        f"- OS: {platform.system()} {platform.release()}\n"
+        f"- Working directory: {os.getcwd()}\n"
+        "- execute_command runs in PowerShell — use PowerShell/Windows syntax "
+        "(e.g. Get-ChildItem, Get-Content), not Unix commands like ls/cat.\n"
+        "- Use list_dir to discover files instead of guessing paths."
+    )
+
+
 # --- 実況（表示は CLI の責務。mu の層は無変更・無関知） ------------------------
 #
 # 沈黙の正体は「L0 の chat（＝ローカル LLM の推論）」と「ツール実行」の2つ。
@@ -247,7 +263,7 @@ def main() -> None:
         try:
             result = orch.run(
                 model, goal, tools,
-                approve=_approve, log=_log,
+                approve=_approve, log=_log, system=_env_preamble(),
                 max_rounds=MAX_ROUNDS, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
             )
         except _Abort:
