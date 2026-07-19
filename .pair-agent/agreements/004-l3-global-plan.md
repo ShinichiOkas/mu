@@ -1,7 +1,7 @@
 # 合意ドキュメント 004 — L3（大域的 Plan / 複雑タスクの完遂）
 
 - **sprint**: 004-l3-global-plan
-- **status**: active（コンセプト確定・実装はこれから）
+- **status**: completed（2026-07-19・北極星到達）／申し送りは `.pair-agent/sprints/004-l3-global-plan.md`
 - **開始**: 2026-07-04
 - **前提**: L0（理想化）・L1（Do）・L2（単一 checkable タスクの完遂）完成
 
