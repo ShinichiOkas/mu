@@ -120,6 +120,34 @@ def test_empty_tools_is_plain_chat():
     assert all(m["role"] != "system" for m in l0.calls[0]["messages"])
 
 
+def test_unknown_kwarg_is_dropped_and_call_succeeds():
+    # モデルがスキーマにない引数（content_type 等）を幻覚しても、シグネチャに
+    # 束縛して正しい引数で実行する。厳格な func(**args) は余計な1引数で正しい
+    # 呼び出しごと落とし、弱いモデルを無限ループさせていた（実ログで観測）。
+    l0 = FakeL0([resp_tool("add", a=2, b=3, content_type="text/plain"), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(add, "add")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["tool_name"] == "add"
+    assert "5" in tool_msgs[0]["content"]             # 正しい引数で実行された
+    assert "content_type" in tool_msgs[0]["content"]  # 落とした未知引数は注記される
+
+
+def test_missing_required_arg_still_errors():
+    # 未知引数を落とした結果、本当に必須引数が欠けていれば従来どおりエラー。
+    l0 = FakeL0([resp_tool("add", a=2, content_type="x"), resp_text("hmm")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(add, "add")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"].startswith("error:")
+
+
+def test_known_args_only_leaves_result_unannotated():
+    # 未知引数が無ければ結果に注記を付けない（既存の tool 結果契約を汚さない）。
+    l0 = FakeL0([resp_tool("add", a=2, b=3), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(add, "add")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "5"  # 素の結果のまま（[note] を付けない）
+
+
 def test_stateless_resume_with_saved_messages():
     # 1周目: ツールを実行して中断（done=False）
     l0a = FakeL0([resp_tool("add", a=4, b=4)])

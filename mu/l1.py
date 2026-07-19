@@ -19,6 +19,7 @@ L0 の上に「行動する層（Do）」を1枚重ねる。本質はこれだ�
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Sequence
 
 # ツール = (呼び出せる関数, 使い方テキスト)
@@ -95,7 +96,26 @@ def _invoke(dispatch: dict, name: str, args: dict) -> Any:
     func = dispatch.get(name)
     if func is None:
         return f"error: unknown tool '{name}'"
+    kept, dropped = _bind_to_signature(func, args)
     try:
-        return func(**args)
+        result = func(**kept)
     except Exception as e:  # ツールの失敗は結果として model に返す（回復可能に）
         return f"error: {e}"
+    if dropped:
+        # モデルがスキーマにない引数を幻覚しても、正しい引数で実行し、落としたことだけ
+        # 注記する。厳格な func(**args) は余計な1引数で正しい呼び出しごと落とし、弱い
+        # モデルを無限ループさせていた（実ログで観測）。落とすのは判断でなく実行の頑健化。
+        return f"{result}\n[note] ignored unknown arguments: {sorted(dropped)}"
+    return result
+
+
+def _bind_to_signature(func: Callable, args: dict) -> tuple[dict, set]:
+    """モデルが渡した引数を関数シグネチャに束縛する。未知の kwarg は落とす。
+
+    **kwargs を受ける関数はそのまま通す（何も落とさない）。
+    """
+    params = inspect.signature(func).parameters
+    if any(p.kind is p.VAR_KEYWORD for p in params.values()):
+        return dict(args), set()
+    kept = {k: v for k, v in args.items() if k in params}
+    return kept, set(args) - set(kept)
