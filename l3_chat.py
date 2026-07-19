@@ -21,7 +21,7 @@ LLM 呼び出しは開始時に行を出し、完了時に所要秒数を追記�
 
 使い方:
     .\.venv\Scripts\python.exe l3_chat.py [model]
-既定モデルは qwen3.5:9b（参照モデル。もう一つは gemma4:12b）。
+既定モデルは gemma4:12b（参照モデル。もう一つは qwen3.5:9b）。
 """
 
 import functools
@@ -44,7 +44,7 @@ for _stream in (sys.stdout, sys.stdin):
     except (AttributeError, ValueError):
         pass
 
-DEFAULT_MODEL = "qwen3.5:9b"  # 参照モデル（他は gemma4:12b）
+DEFAULT_MODEL = "gemma4:12b"  # 参照モデル（他は qwen3.5:9b）
 MAX_ROUNDS = 8   # L3 の上限（呼び出し側が規定）
 L2_MAX = 6       # 1 単位で L2 を回す上限
 L2_L1_MAX = 10   # L2 の 1 周で L1 を回す上限
