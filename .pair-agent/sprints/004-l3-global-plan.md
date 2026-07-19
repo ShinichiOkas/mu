@@ -17,9 +17,8 @@
 ## 振り返り（2026-07-15 / 2026-07-19）
 
 - vision: `~/.claude/pair-agent/vision/mu-004-l3-global-plan.md`（2回分）
-- 新規 Skill: `failure-needs-analysis-not-blind-retry` ／ `ask-existing-structure-before-adding-mechanism`（ペア固有）、`observability-at-composition-seams`（プロジェクト）
-- 主な学び: 失敗は分析駆動（機構を反射で足さない）／観測は層でなく CLI 合成点で注入／**師匠の疑問はバグ信号**／bounded probe より実機ログが接地。
-- 保留の Skill 候補: 「ツール dispatch はモデル引数をシグネチャに束縛せよ（厳格な `func(**args)` は弱いモデルの幻覚を無限ループに増幅）」＝ 承認待ち。
+- 新規 Skill: `failure-needs-analysis-not-blind-retry` ／ `ask-existing-structure-before-adding-mechanism`（ペア固有）、`observability-at-composition-seams` ／ `tool-dispatch-bind-args-to-signature`（プロジェクト）
+- 主な学び: 失敗は分析駆動（機構を反射で足さない）／観測は層でなく CLI 合成点で注入／**師匠の疑問はバグ信号**／bounded probe より実機ログが接地／厳格な境界は弱モデルの幻覚を致命化する。
 
 ## 005 への申し送り
 
