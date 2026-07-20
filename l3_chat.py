@@ -273,7 +273,8 @@ def main() -> None:
             print(f"[L0:{type(e).__name__}] {e}")
             continue
 
-        print(f"=== {'完遂 ✓' if result['done'] else '未達 ✗（上限到達）'} ===")
+        status = "完遂 ✓" if result["done"] else f"未達 ✗（{result.get('rounds')}周で上限到達）"
+        print(f"=== {status} ===")
         for u in result["units"]:
             print(f"  {'[x]' if u.get('done') else '[ ]'} {u.get('file')}")
 

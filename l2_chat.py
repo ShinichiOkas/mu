@@ -9,7 +9,7 @@ L2 = L1（D）を Reflect（C＋A）で包み、与えたゴールに向かっ�
 
 使い方:
     .\.venv\Scripts\python.exe l2_chat.py [model]
-既定モデルは qwen3.5:4b（tool 対応）。
+既定モデルは qwen3.5:9b（tool 対応）。
 """
 
 import os

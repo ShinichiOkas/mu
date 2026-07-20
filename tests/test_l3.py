@@ -130,3 +130,48 @@ def test_max_rounds_returns_not_done():
     agent = make([PLAN1, ANALYZE, PLAN1], [False, False, False])
     result = agent.run("m", "build calc", [], max_rounds=3)
     assert result["done"] is False
+
+
+def test_final_overall_runs_after_max_rounds_when_all_done():
+    # max_rounds を単位実行で使い切っても、全単位 done なら最終の全体判定を必ず1回行う。
+    agent = make([PLAN1, OVERALL_OK], [True])
+    result = agent.run("m", "build calc", [], max_rounds=1)
+    assert result["done"] is True
+    assert len(agent._l0.calls) == 2  # plan + 最終 overall
+
+
+def test_final_overall_failure_after_max_rounds_returns_not_done():
+    agent = make([PLAN1, {"passed": False, "reason": "goal needs more"}], [True])
+    result = agent.run("m", "build calc", [], max_rounds=1)
+    assert result["done"] is False
+
+
+def test_overall_failure_triggers_replan_and_continues():
+    # 全単位 done → overall 不合格 → 再計画（不足単位を追加）→ 完遂、の else 分岐。
+    agent = make(
+        [PLAN1, {"passed": False, "reason": "tests missing"}, PLAN2, OVERALL_OK],
+        [True, True],
+    )
+    result = agent.run("m", "build calc", [])
+    assert result["done"] is True
+    # calc.py は done を引き継ぎ再実行されない。追加された test_calc.py だけ実行される。
+    assert len(agent._l2.calls) == 2
+    assert any("test_calc.py" in g for g in agent._l2.calls)
+
+
+def test_empty_plan_does_not_crash_and_executes_nothing():
+    # Plan が空（units:[] や壊れた {}）でも落ちず、L2 を一度も呼ばずに未達で返る。
+    agent = make(
+        [{"units": []}, {"passed": False, "reason": "no deliverables"}, {"units": []}],
+        [],
+    )
+    result = agent.run("m", "build calc", [], max_rounds=2)
+    assert result["done"] is False
+    assert agent._l2.calls == []
+
+
+def test_result_includes_rounds_consumed():
+    # 1周=1単位実行 or 1全体判定。上限到達の判別（done=False かつ rounds==max_rounds）用。
+    agent = make([PLAN2, OVERALL_OK], [True, True])
+    result = agent.run("m", "build calc", [])
+    assert result["rounds"] == 3  # 2単位 + 全体判定1回

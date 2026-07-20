@@ -21,7 +21,7 @@ import json
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l2 import Agent, _transcript
+from .l2 import Agent, transcript
 
 # 単位（unit）: task / 出力ファイル / checkable な成功条件。
 _PLAN_SCHEMA = {
@@ -126,7 +126,12 @@ class Orchestrator:
         units = approve(self._plan(model, goal))          # P（HITL 承認）
         log(("plan", units))
 
+        # rounds は消費した周回数。1 周 = 1 単位実行 or 1 回の全体判定なので、
+        # max_rounds は暗黙に「単位数＋再計画数＋全体判定」の予算になる。
+        # 上限到達の判別（done=False かつ rounds==max_rounds）のため返り値に含める。
+        rounds = 0
         for _ in range(max_rounds):
+            rounds += 1
             pending = [u for u in units if not u.get("done")]
             if pending:
                 unit = pending[0]
@@ -146,7 +151,7 @@ class Orchestrator:
                 verdict = self._overall(model, goal, units)    # 全体判定
                 log(("overall", verdict))
                 if verdict.get("passed"):
-                    return {"units": units, "done": True}
+                    return {"units": units, "done": True, "rounds": rounds}
                 analysis = {"reason": verdict.get("reason", ""), "suggestion": ""}
                 units = approve(self._replan(model, goal, units, analysis))  # A（HITL）
                 log(("replan", units))
@@ -156,8 +161,8 @@ class Orchestrator:
         if not [u for u in units if not u.get("done")]:
             verdict = self._overall(model, goal, units)
             log(("overall", verdict))
-            return {"units": units, "done": bool(verdict.get("passed"))}
-        return {"units": units, "done": False}
+            return {"units": units, "done": bool(verdict.get("passed")), "rounds": rounds}
+        return {"units": units, "done": False, "rounds": rounds}
 
     # --- 単位ゴールの組み立て（ファイル・グラウンディング） ---
     @staticmethod
@@ -183,7 +188,7 @@ class Orchestrator:
         return _carry_done(units, new_units) or units  # 空応答なら現状維持
 
     def _analyze(self, model: str, unit: dict, msgs: list) -> dict:
-        user = f"UNIT:\n{json.dumps(unit, ensure_ascii=False)}\n\nTRANSCRIPT:\n{_transcript(msgs)}"
+        user = f"UNIT:\n{json.dumps(unit, ensure_ascii=False)}\n\nTRANSCRIPT:\n{transcript(msgs)}"
         return self._structured(model, _ANALYZE_SYSTEM, user, _ANALYZE_SCHEMA)
 
     def _overall(self, model: str, goal: str, units: list) -> dict:

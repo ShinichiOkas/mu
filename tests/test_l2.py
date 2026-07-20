@@ -103,3 +103,22 @@ def test_reflect_uses_structured_output_format():
     agent = make(["x"], [verdict(True)])
     agent.run("m", "goal", [])
     assert agent._l0.calls[0]["format"] is not None  # format(スキーマ) を渡している
+
+
+def test_feedback_is_excluded_from_next_reflect_transcript():
+    # [L2] フィードバックは L1 には見せるが、次の Reflect の transcript からは除外する
+    # （「未達」表明を失敗の証拠と誤読させない＝汚染防止）。
+    agent = make(["a", "b"], [verdict(False, "not yet", "MARKER-do-X"), verdict(True)])
+    agent.run("m", "goal", [])
+    second_reflect_user = agent._l0.calls[1]["messages"][1]["content"]
+    assert "[L2]" not in second_reflect_user
+    assert "MARKER-do-X" not in second_reflect_user
+
+
+def test_empty_next_falls_back_to_neutral_instruction():
+    # verdict が passed=False なのに next が空のとき、空の指示ではなく中立指示で steering する。
+    agent = make(["a"], [verdict(False, "not yet", "")])
+    messages, passed = agent.run("m", "goal", [], max_rounds=1)
+    assert passed is False
+    feedback = [m for m in messages if m.get("role") == "user" and m["content"].startswith("[L2] ")]
+    assert feedback and "証拠" in feedback[-1]["content"]  # 中立指示（証拠提示へ誘導）

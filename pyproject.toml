@@ -3,7 +3,10 @@ name = "mu"
 version = "0.0.1"
 description = "きわめてミニマルな汎用エージェント"
 requires-python = ">=3.11"
-dependencies = ["ollama>=0.6"]
+dependencies = [
+  "ollama>=0.6",
+  "httpx>=0.27",  # l0.py が例外型・Timeout を直接使う（ollama の基盤でもある）
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

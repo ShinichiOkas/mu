@@ -1,18 +1,19 @@
 r"""l1_chat.py — L1（ツールコールのループ）を触る最小 CLI チャット。
 
-L1 = L0 の上でツールコールを回す層。ツールは tools.py の検証用4種
-（read_file / write_file / edit_file / execute_command）を登録してある。
+L1 = L0 の上でツールコールを回す層。ツールは tools.py の検証用5種
+（read_file / write_file / edit_file / list_dir / execute_command）を登録してある。
 「mu_demo.txt に hello と書いて」「execute_command で dir を実行して」等を頼むと、
 モデルがツールを呼び、mu が実行して結果を戻し、モデルが答える。
 
-ループは step() を done まで回す形で駆動し、実行されたツールをその場で表示する。
-会話履歴は CLI 側が持つ（L1 は無状態）。中断は Ctrl-C。
+ループは step() を上限（MAX_ROUNDS。上限は呼び出し側＝この CLI が規定）まで回す形で
+駆動し、実行されたツールをその場で表示する。会話履歴は CLI 側が持つ（L1 は無状態）。
+中断は Ctrl-C。
 
 注意: execute_command / write_file / edit_file は実ファイル・実シェルに触れる。
 
 使い方:
     .\.venv\Scripts\python.exe l1_chat.py [model]
-既定モデルは qwen3.5:4b（tool 対応）。gemma3 系は tools 非対応なので不可。
+既定モデルは qwen3.5:9b（tool 対応）。gemma3 系は tools 非対応なので不可。
 """
 
 import os
@@ -31,6 +32,7 @@ for _stream in (sys.stdout, sys.stdin):
         pass
 
 DEFAULT_MODEL = "qwen3.5:9b"  # 参照モデル（他は gemma4:12b）
+MAX_ROUNDS = 32  # ループ上限（呼び出し側が規定）。無限ツールコールの暴走を打ち切る
 
 
 def _env_preamble() -> str:
@@ -66,12 +68,16 @@ def main() -> None:
         messages.append({"role": "user", "content": user})
         try:
             done = False
-            while not done:
+            for _ in range(MAX_ROUNDS):
                 mark = len(messages)
                 messages, done = l1.step(model, messages, TOOLS)
                 for m in messages[mark:]:  # この周で実行されたツールを表示
                     if m.get("role") == "tool":
                         print(f"  [tool] {m['tool_name']} -> {m['content']}")
+                if done:
+                    break
+            if not done:
+                print(f"  [!] {MAX_ROUNDS} 周の上限に達したため打ち切りました")
         except L0Error as e:
             print(f"[L0:{type(e).__name__}] {e}")
             continue

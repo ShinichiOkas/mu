@@ -148,6 +148,32 @@ def test_known_args_only_leaves_result_unannotated():
     assert tool_msgs[0]["content"] == "5"  # 素の結果のまま（[note] を付けない）
 
 
+def test_multiple_tool_calls_in_one_response_all_execute_in_order():
+    # 1応答に複数の tool_calls が来たら、全部を順に実行して1周で戻す。
+    resp = FakeResp(FakeMsg(content="", tool_calls=[
+        FakeToolCall("add", {"a": 1, "b": 2}),
+        FakeToolCall("add", {"a": 3, "b": 4}),
+    ]))
+    l0 = FakeL0([resp, resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(add, "add")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert [m["content"] for m in tool_msgs] == ["3", "7"]
+    assert len(l0.calls) == 2  # 2件のツールをまとめて実行し、chat は2回で済む
+
+
+def test_caller_system_is_merged_into_single_system():
+    # 呼び出し側が env preamble を system で持つ場合、ツール system と1枚に併合して送る
+    # （テンプレートが先頭1枚の system を想定するモデルへの安全策）。永続 messages は不変。
+    l0 = FakeL0([resp_text("ok")])
+    messages = [{"role": "system", "content": "ENV-ABC"}, {"role": "user", "content": "hi"}]
+    out, _done = ToolLoop(l0).step("m", messages, [(add, "USAGE-XYZ")])
+    sent = l0.calls[0]["messages"]
+    systems = [m for m in sent if m["role"] == "system"]
+    assert len(systems) == 1
+    assert "USAGE-XYZ" in systems[0]["content"] and "ENV-ABC" in systems[0]["content"]
+    assert out[0] == {"role": "system", "content": "ENV-ABC"}  # 永続側は併合しない
+
+
 def test_stateless_resume_with_saved_messages():
     # 1周目: ツールを実行して中断（done=False）
     l0a = FakeL0([resp_tool("add", a=4, b=4)])

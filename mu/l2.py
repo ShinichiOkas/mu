@@ -50,6 +50,9 @@ _REFLECT_SYSTEM = (
 # 次の Reflect の transcript からは除外する（「未達」表明を失敗の証拠と誤読させないため）。
 _FEEDBACK_PREFIX = "[L2] "
 
+# verdict の next が空・壊れているときの中立指示（L1 を証拠提示へ導く）。
+_NEUTRAL_NEXT = "ゴールが満たされている具体的な証拠を示すこと（例: 対象ファイルを読み返して内容を表示する）。"
+
 
 class Agent:
     """L2。L1（D）を Reflect（C＋A）で包み、ゴール達成まで回す。"""
@@ -97,23 +100,27 @@ class Agent:
         if not v["passed"]:
             # user ロールで戻す（L1 が確実に読む＝steering）。目印を付け、次の Reflect の
             # transcript からは除外する（未達表明を失敗の証拠と誤読させない＝汚染防止）。
+            nxt = v["next"] or _NEUTRAL_NEXT  # 空の next では steering にならない
             messages.append(
-                {"role": "user", "content": _FEEDBACK_PREFIX + f"まだゴールは達成できていません。次にやること: {v['next']}"}
+                {"role": "user", "content": _FEEDBACK_PREFIX + f"まだゴールは達成できていません。次にやること: {nxt}"}
             )
         return messages, v
 
     def _reflect(self, model: str, goal: str, messages: list) -> dict:
         reflect_messages = [
             {"role": "system", "content": _REFLECT_SYSTEM},
-            {"role": "user", "content": f"GOAL:\n{goal}\n\nTRANSCRIPT:\n{_transcript(messages)}"},
+            {"role": "user", "content": f"GOAL:\n{goal}\n\nTRANSCRIPT:\n{transcript(messages)}"},
         ]
         # think=False: 思考の混入で JSON が壊れるのを防ぐ（構造化出力を安定させる）。
         resp = self._l0.chat(model, reflect_messages, format=_VERDICT_SCHEMA, think=False)
         return _parse_verdict(resp.message.content)
 
 
-def _transcript(messages: list, limit: int = 6000) -> str:
-    """messages を検証者向けの読みやすいテキストに畳む（末尾優先で上限）。"""
+def transcript(messages: list, limit: int = 6000) -> str:
+    """messages を検証者向けの読みやすいテキストに畳む（末尾優先で上限）。
+
+    L2 の Reflect と L3 の失敗分析が共用する公開ヘルパ（層をまたいで使う）。
+    """
     parts = []
     for m in messages:
         role = m.get("role")
@@ -155,8 +162,4 @@ def _parse_verdict(content: str) -> dict:
                 "next": str(data.get("next", "")),
             }
     # 壊れていたら未達扱い（安全側）。next は L1 を証拠提示へ導く中立指示にする。
-    return {
-        "passed": False,
-        "reason": "unparseable verdict",
-        "next": "ゴールが満たされている具体的な証拠を示すこと（例: 対象ファイルを読み返して内容を表示する）。",
-    }
+    return {"passed": False, "reason": "unparseable verdict", "next": _NEUTRAL_NEXT}

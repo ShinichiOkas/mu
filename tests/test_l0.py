@@ -35,11 +35,15 @@ class FakeClient:
     効果が Exception なら raise、そうでなければ return する。
     """
 
-    def __init__(self, chat=None, pull=None):
+    def __init__(self, chat=None, pull=None, show=None, list_=None):
         self._chat = list(chat or [])
         self._pull = list(pull or [])
+        self._show = list(show or [])
+        self._list = list(list_ or [])
         self.chat_calls = 0
         self.pull_calls = 0
+        self.show_calls = 0
+        self.list_calls = 0
 
     def chat(self, **kwargs):
         self.chat_calls += 1
@@ -48,6 +52,14 @@ class FakeClient:
     def pull(self, model, **kwargs):
         self.pull_calls += 1
         return self._consume(self._pull)
+
+    def show(self, model, **kwargs):
+        self.show_calls += 1
+        return self._consume(self._show)
+
+    def list(self):
+        self.list_calls += 1
+        return self._consume(self._list)
 
     @staticmethod
     def _consume(effects):
@@ -139,6 +151,27 @@ def test_pull_failure_becomes_model_unavailable():
     assert c.pull_calls == 1
 
 
+def test_pull_connection_blip_is_retried():
+    # 数 GB のダウンロード中の一時的な接続断は pull 側でも吸収する。
+    reply = {"ok": 1}
+    c = FakeClient(
+        chat=[ollama.ResponseError("model 'm' not found", 404), reply],
+        pull=[ConnectionError("blip"), {"status": "success"}],
+    )
+    assert make(c).chat("m", []) is reply
+    assert c.pull_calls == 2  # 1回目は接続断 → リトライで成功
+
+
+def test_pull_connection_exhausted_becomes_unreachable():
+    c = FakeClient(
+        chat=[ollama.ResponseError("model 'm' not found", 404)],
+        pull=[ConnectionError("down")] * 10,
+    )
+    with pytest.raises(Unreachable):
+        make(c, max_retries=2).chat("m", [])
+    assert c.pull_calls == 3  # 初回 + リトライ 2
+
+
 # --- 不正リクエスト（4xx / RequestError） → リトライしない ---
 
 def test_bad_request_is_not_retried():
@@ -155,6 +188,22 @@ def test_request_error_is_bad_request():
     with pytest.raises(BadRequest):
         make(c).chat("m", [])
     assert c.chat_calls == 1
+
+
+# --- リトライ可能な 4xx（408 / 429）は BadRequest にしない ---
+
+def test_request_timeout_408_is_retried():
+    reply = {"ok": 1}
+    c = FakeClient(chat=[ollama.ResponseError("request timeout", 408), reply])
+    assert make(c).chat("m", []) is reply
+    assert c.chat_calls == 2
+
+
+def test_rate_limit_429_exhausted_becomes_resource_exhausted():
+    c = FakeClient(chat=[ollama.ResponseError("too many requests", 429)] * 10)
+    with pytest.raises(ResourceExhausted):
+        make(c, max_retries=1).chat("m", [])
+    assert c.chat_calls == 2
 
 
 # --- サーバエラー（5xx） → リトライ → Unreachable ---
@@ -175,6 +224,39 @@ def test_out_of_memory_becomes_resource_exhausted():
     with pytest.raises(ResourceExhausted):
         make(c, max_retries=1).chat("m", [])
     assert c.chat_calls == 2
+
+
+# --- 可用性・能力の確認（show / list。allow_pull=False 経路） ---
+
+def test_show_success_is_passed_through():
+    info = {"details": {"family": "gemma"}}
+    c = FakeClient(show=[info])
+    assert make(c).show("m") is info
+    assert c.show_calls == 1
+
+
+def test_show_404_is_model_unavailable_without_pull():
+    # show は存在確認であって理想化（自動 pull）の対象ではない。
+    c = FakeClient(show=[ollama.ResponseError("model 'm' not found", 404)])
+    with pytest.raises(ModelUnavailable):
+        make(c).show("m")
+    assert c.pull_calls == 0
+
+
+def test_list_connection_exhausted_becomes_unreachable():
+    c = FakeClient(list_=[ConnectionError("down")] * 10)
+    with pytest.raises(Unreachable):
+        make(c, max_retries=1).list()
+    assert c.list_calls == 2
+
+
+# --- 既定クライアントの接続タイムアウト（ハングした接続確立を理想化の内に入れる） ---
+
+def test_default_client_has_connect_timeout_but_unbounded_read():
+    l0 = OllamaInterface()
+    timeout = l0._client._client.timeout  # ollama.Client が包む httpx.Client の設定
+    assert timeout.connect == 5.0
+    assert timeout.read is None  # ローカル LLM の長い生成を切らない
 
 
 # --- ストリーミングは v1 未対応: 明示エラーで fail-fast（拡張点は将来の _idealize_stream） ---

@@ -90,12 +90,19 @@ class OllamaInterface:
         host: str | None = None,
         *,
         client: Any | None = None,
+        connect_timeout: float | None = 5.0,
         max_retries: int = 3,
         base_delay: float = 0.5,
         max_delay: float = 8.0,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        self._client = client if client is not None else ollama.Client(host=host)
+        if client is None:
+            # connect のみタイムアウトを課す（ハングした接続確立を理想化の内に入れる）。
+            # read/write は無制限のまま — ローカル LLM の生成は長く、切ると生成自体を壊す。
+            client = ollama.Client(
+                host=host, timeout=httpx.Timeout(None, connect=connect_timeout)
+            )
+        self._client = client
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
@@ -154,6 +161,12 @@ class OllamaInterface:
                         pulled = True
                         continue
                     raise ModelUnavailable(e.error) from None
+                if code == 408:  # Request Timeout: 一時的とみなしリトライ
+                    attempt = self._retry_or_raise(attempt, Unreachable, e.error)
+                    continue
+                if code == 429:  # Too Many Requests: サーバ側の資源逼迫としてリトライ
+                    attempt = self._retry_or_raise(attempt, ResourceExhausted, e.error)
+                    continue
                 if 400 <= code < 500:
                     raise BadRequest(e.error) from None
                 # 5xx / 不明(-1) は一時的とみなす。ただし OOM 風は資源不足へ。
@@ -167,14 +180,19 @@ class OllamaInterface:
                 raise BadRequest(e.error) from None
 
     def _pull(self, model: str) -> None:
-        try:
-            self._client.pull(model)
-        except ConnectionError as e:
-            raise Unreachable(str(e)) from None
-        except httpx.TransportError as e:
-            raise Unreachable(repr(e)) from None
-        except (ollama.ResponseError, ollama.RequestError) as e:
-            raise ModelUnavailable(getattr(e, "error", str(e))) from None
+        # 数 GB のダウンロード中の接続断は現実的に起きる。chat と同じく接続系は
+        # リトライで吸収する（レジストリ側の失敗＝ResponseError はリトライしない）。
+        attempt = 0
+        while True:
+            try:
+                self._client.pull(model)
+                return
+            except ConnectionError as e:
+                attempt = self._retry_or_raise(attempt, Unreachable, str(e))
+            except httpx.TransportError as e:
+                attempt = self._retry_or_raise(attempt, Unreachable, repr(e))
+            except (ollama.ResponseError, ollama.RequestError) as e:
+                raise ModelUnavailable(getattr(e, "error", str(e))) from None
 
     def _retry_or_raise(self, attempt: int, exc_type: type[L0Error], message: str) -> int:
         if attempt >= self.max_retries:

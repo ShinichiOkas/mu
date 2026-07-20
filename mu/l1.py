@@ -87,9 +87,15 @@ class ToolLoop:
     @staticmethod
     def _with_system(messages: list, tools: Sequence[Tool]) -> list:
         # system 注入は毎周その場で組み立て、永続 messages には残さない（無状態）。
+        # 呼び出し側が先頭に system（環境プリアンブル等）を持つ場合は 1 枚に併合する
+        # （多くのモデルテンプレートは先頭 1 枚の system を想定するため）。
         if not tools:
             return list(messages)
-        return [{"role": "system", "content": _system_content(tools)}, *messages]
+        content = _system_content(tools)
+        if messages and messages[0].get("role") == "system":
+            merged = {"role": "system", "content": f"{content}\n\n{messages[0]['content']}"}
+            return [merged, *messages[1:]]
+        return [{"role": "system", "content": content}, *messages]
 
 
 def _invoke(dispatch: dict, name: str, args: dict) -> Any:
