@@ -28,6 +28,16 @@
   - [x] L0: `show()` / `list()`（allow_pull=False 経路）＋connect タイムアウト既定値
 - [ ] **`_ANALYZE_SYSTEM`（失敗分析プロンプト）を genuine failure で詰める** — 合意004の積み残し（[E-6](docs/review-2026-07-20.md#e-改善提案優先順)）
   - ※実機で本物の失敗を観測しながら詰める作業のため未処理。l3_chat での実走（師匠同席の HITL）が必要
+  - 準備済み: 失敗する題材セット＋評価シート → [docs/analyze-probe-set.md](docs/analyze-probe-set.md)（2026-07-20）
+
+## F1-g 実走（2026-07-20）で確定した修正候補
+
+出典: [docs/analyze-probe-set.md](docs/analyze-probe-set.md) の「実施記録 F1-g」。
+
+- [x] **[重大] `_carry_done` の同一ファイル穴（偽・完遂）** — 2026-07-20 修正済み。Plan/Replan プロンプトに「file はプラン内で一意」ガードを追加し、`_carry_done` は重複 file の done を引き継がない防御に（TDD・3件追加・全73 green）
+- [x] **pytest が temp/ の生成物テストを収集する問題** — 2026-07-20 修正済み。`testpaths=["tests"]` で収集範囲を限定（従来の green 数には temp/ の残骸が混入していた）
+- [ ] **証拠デッドロック** — `read_file` の4000字截断×transcript の6000字上限で、大きいファイルの「全文提示」が原理的に不可能。Reflect を実行ベースの証拠へ誘導する／Plan に「機械可読な合格出力（例: `12/12 passed` を印字）」を criterion として要求させる
+- [ ] **必須引数欠けエラーの steering** — `_invoke` の TypeError 時に usage_text を添えて返す（F1-g で `write_file` の path 欠けが6連発・自己修正できなかった）
 
 ## 優先度: 低（設計論点・小さな穴）
 

@@ -8,7 +8,7 @@ Plan/分析/再計画/全体判定（L0 の構造化出力）と、各単位の�
 import json
 import types
 
-from mu.l3 import Orchestrator
+from mu.l3 import Orchestrator, _carry_done
 
 
 class FakeL0:
@@ -175,3 +175,51 @@ def test_result_includes_rounds_consumed():
     agent = make([PLAN2, OVERALL_OK], [True, True])
     result = agent.run("m", "build calc", [])
     assert result["rounds"] == 3  # 2単位 + 全体判定1回
+
+
+# --- _carry_done の同一ファイル穴（F1-g で偽・完遂として実発火）---
+
+PLAN_SAME3 = plan(
+    ("core logic", "todo.py", "core functions exist"),
+    ("persistence and undo", "todo.py", "json save/load works"),
+    ("cli and selftest", "todo.py", "selftest passes 12+"),
+)
+
+
+def test_replan_with_duplicate_files_does_not_fake_done():
+    # 同一ファイル3単位のうち1つが失敗し、再計画が同じ3単位を返しても、
+    # 失敗した単位が done に化けて overall へ直行（偽・完遂）してはならない。
+    agent = make(
+        [PLAN_SAME3, ANALYZE, PLAN_SAME3, OVERALL_OK],
+        [True, True, False],  # 3単位目だけ失敗。以降（再実行）はデフォルト True
+    )
+    result = agent.run("m", "build todo app", [])
+    # 安全側: 重複 file の done は引き継がず再実行される（L2 呼び出しが3回を超える）。
+    assert len(agent._l2.calls) > 3
+    assert result["done"] is True  # 再実行の末の本物の完遂
+
+
+def test_carry_done_skips_files_duplicated_in_old_plan():
+    # 旧計画内で file が重複していたら、単位の同一性が壊れているので引き継がない。
+    old = [
+        {"task": "a", "file": "app.py", "done": True},
+        {"task": "b", "file": "app.py", "done": True},
+        {"task": "c", "file": "app.py"},  # 失敗した単位（未 done）
+        {"task": "t", "file": "test.py", "done": True},
+    ]
+    new = [
+        {"task": "a2", "file": "app.py"},
+        {"task": "b2", "file": "app.py"},
+        {"task": "c2", "file": "app.py"},
+        {"task": "t2", "file": "test.py"},
+    ]
+    out = _carry_done(old, new)
+    assert [bool(u.get("done")) for u in out] == [False, False, False, True]
+
+
+def test_carry_done_skips_files_duplicated_in_new_plan():
+    # 新計画側で file が重複していても、まとめて done 化させない（過剰マーク防止）。
+    old = [{"task": "a", "file": "app.py", "done": True}]
+    new = [{"task": "a1", "file": "app.py"}, {"task": "a2", "file": "app.py"}]
+    out = _carry_done(old, new)
+    assert all(not u.get("done") for u in out)

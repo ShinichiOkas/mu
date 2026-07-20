@@ -185,7 +185,7 @@ mu の中にあるが、**エージェントのループ・自律性の層（L0�
 - **L1 は実装・テスト済み** — `mu/l1.py`（無状態 `step()`／`(func, usage_text)` ペア／system注入＋構造化tools／dispatch はシグネチャ束縛＝幻覚 kwarg を落として注記）。検証用ツール `tools.py`（read_file / write_file / edit_file / list_dir / execute_command＝PowerShell）＋環境グラウンディング（呼び出し側が OS/cwd/shell を注入）
 - **L2 は実装・検証済み** — `mu/l2.py`（`Agent`, `step`/`run`）。D=L1 を Reflect(C+A) で包む再帰同一構造。実タスク T1〜T4（網羅性・制約＋修正・正確性・実行照合）を**参照モデル qwen3.5:9b / gemma4:12b で検証**
 - **L3 は実装・検証済み** — `mu/l3.py`（`Orchestrator`）。Plan／失敗分析／再計画／全体判定の生命線プロンプトを実タスクで調整。**北極星「GUI を持つアプリの自走完遂」到達**（2026-07-19）。既定モデルは gemma4:12b（qwen3.5:9b は参照として残し、構造限界とモデル限界を切り分ける）
-- テスト全体 **71 green**（ユニット＋実接続 live）
+- テスト全体 **73 green**（ユニット＋実接続 live）
 - **未決**: L4（L3 の承認スロットに立つ外層）／ HITL 承認の粒度 ／ 収束しない場合の運用 — 内側から順に、対話で決める
 
 *Ollama API の全エンドポイント一覧は公式 docs（docs.ollama.com/api）参照。上記は mu が扱う範囲のみ。*

@@ -18,6 +18,7 @@ PDCA が完全体で現れる:
 from __future__ import annotations
 
 import json
+from collections import Counter
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
@@ -57,6 +58,8 @@ _PLAN_SYSTEM = (
     "You are a planner. Decompose the GOAL into a short ordered list of small units "
     "(usually 2-3). Each unit MUST produce ONE concrete file deliverable: its 'file' must be "
     "a non-empty, specific path (e.g. calc.py). A unit whose file would be empty is invalid. "
+    "File paths must be UNIQUE across units — never plan two units that write the same file; "
+    "merge such work into ONE unit instead. "
     "The criterion is how that file is checked; for code it is that its tests pass, and the "
     "tests must be an earlier separate unit. "
     "Do NOT create a unit whose only job is to run, execute, verify, or confirm something — "
@@ -72,6 +75,8 @@ _REPLAN_SYSTEM = (
     "conditions, approach, or split/redefine the FAILED unit as needed. "
     "Keep the SAME file paths for units that are already done — never rename or move them. "
     "Each unit's 'file' must be a non-empty, specific path; a unit whose file would be empty is invalid. "
+    "File paths must be UNIQUE across units — never two units with the same file; "
+    "merge such work into ONE unit instead. "
     "Do NOT create a unit whose only job is to run, execute, verify, or confirm something — "
     "running and verification are already part of each unit's criterion, never a unit of their own. "
     "Do NOT add units the goal does not require (no CI, packaging, restructuring). "
@@ -206,7 +211,17 @@ def _unit_key(unit: dict) -> str:
 
 
 def _carry_done(old_units: list, new_units: list) -> list:
-    done_files = {_unit_key(u) for u in old_units if u.get("done")}
+    # file は単位の同一性そのもの。file がプラン内で重複すると同一性が壊れ、失敗した
+    # 単位まで done に化ける（F1-g で偽・完遂として実発火）。重複 file の done は
+    # 引き継がない — 安全側に倒す（済み単位の再実行は起きうるが取り返せる。偽 done は
+    # overall が「検証済み」と信頼するため取り返せない）。
+    old_c = Counter(_unit_key(u) for u in old_units)
+    new_c = Counter(_unit_key(u) for u in new_units)
+    done_files = {
+        _unit_key(u)
+        for u in old_units
+        if u.get("done") and old_c[_unit_key(u)] == 1 and new_c[_unit_key(u)] <= 1
+    }
     for u in new_units:
         if _unit_key(u) in done_files:
             u["done"] = True
