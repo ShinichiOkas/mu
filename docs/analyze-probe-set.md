@@ -108,6 +108,7 @@ sort_bench.py を作り、乱数100万件のリストを組み込み sort/sorted
 | 実行ID | 題材 | モデル | 失敗した? | analysis.reason（原文） | 期待モードと一致? | suggestion は構造を変える提案? | 再計画は盲目リトライでない? | 最終結果 | メモ |
 |---|---|---|---|---|---|---|---|---|---|
 | F1-g | F1 | gemma4:12b | ○（単位3が6周使い切り） | "wrong approach" | △（仕込みは too large。実際は証拠デッドロック＋ツール退行の複合） | ✗（症状の記述のみ） | ✗（同一3単位の焼き直し） | **偽・完遂**（carry_done 穴） | 詳細は下記「実施記録 F1-g」 |
+| F1-g2 | F1 | gemma4:12b | ○（単位3が6周使い切り） | "technical tool execution error (missing path argument)" | ○（正確な診断。ただし分類語彙に無い自由記述） | ✗（「引数を正しく渡して再実行」＝盲目リトライ） | △（3→1単位に併合されたが REPLAN ガード由来） | **偽・完遂**（要件漏れ＋overall 幻覚） | 詳細は下記「実施記録 F1-g2」 |
 | F1-q | F1 | qwen3.5:9b | | | | | | | |
 | F2-g | F2 | gemma4:12b | | | | | | | |
 | ... | | | | | | | | | |
@@ -131,6 +132,55 @@ sort_bench.py を作り、乱数100万件のリストを組み込み sort/sorted
 **偽・完遂の機序（重大なハーネス欠陥・本 doc の観測ポイントが実発火）**: `_carry_done` は **file キーのみ**で done を引き継ぐ。単位1・2（done）と失敗した単位3が同じ `todo_app.py` のため、再計画承認後に**3単位すべてが [x] 化**。次周で pending 空 → overall が `[x]`＝実行検証済みと信頼（設計どおり）→ passed=True → **完遂✓**。
 
 **成果物の実状（実行で確認）**: `todo_app.py` に argparse・`--selftest` 分岐・期限・優先度は**一切無い**。`python todo_app.py --selftest` は引数を無視してデモを実行し exit 0（毎回 todos.json に重複タスクが堆積する非冪等）。**ゴールの成功条件は未達＝完遂✓は偽**。
+
+### F1-g2（2026-07-20 再走 / gemma4:12b / temp/f1 / `_carry_done` 修正後）
+
+> 両走の全生ログ・統一的な診断・考えるべき問いは [experiment-2026-07-20-f1.md](experiment-2026-07-20-f1.md) に集約。
+
+**結果**: 完遂✓ だが **再び偽**。成果物 `todo_app.py` は argparse・`--selftest`・12件のテストを備え
+`exit=0` で走る（初走より格段に良い）が、**9機能のうち「期限(YYYY-MM-DD)」「優先度」が完全に未実装**
+（grep で痕跡ゼロ）。成功条件「全機能を検査」は未達。
+
+**修正の効果検証**:
+- ✅ **`_carry_done` 修正は効いた** — 単位3が失敗した後、再計画で done が化ける現象は起きず、
+  併合された単位が実際に再実行された（初走で観測した偽 done の経路は塞がれている）。
+- ⚠️ **`_PLAN_SYSTEM` の file 一意ガードは無視された** — 初回 Plan は依然として3単位すべて `todo_app.py`。
+- ✅ **`_REPLAN_SYSTEM` のガードは効いた** — 再計画は1単位に併合された。
+- → **プロンプトのガードだけでは不十分で、コード側（`_carry_done`）の防御が効いたという二段構えの実証**。
+
+**analysis の評価（本題）**: reason = "technical tool execution error (missing path argument)" は
+**正確な診断**（初走の "wrong approach" から明確に改善）。ただし 2 点課題が残る:
+- 分類語彙（ill-defined / too large / wrong approach / missing dependency）に「実行系の失敗」が無く、
+  モデルは自由記述で回避している。語彙の追加が要る。
+- suggestion = 「引数を正しく渡して write を再実行し、selftest を走らせよ」＝**盲目リトライ**。
+  実際に効いた構造変更（3単位→1単位の併合）は **`_REPLAN_SYSTEM` のガード由来であって analysis 由来ではない**。
+- → **合格基準1・3 は PASS、基準2（提案の実効性）は FAIL**。
+
+**新発見⓪【重大】L2 Reflect が「書かれていないファイル」を pass させた**: 単位2は `write_file` が
+path 欠けで4回連続失敗し**ファイルを一度も更新できなかった**のに `passed=True`。
+`list_dir` は単位2の前後どちらでも `3200 bytes` を報告している（1バイトも増えていない）。
+Reflect は transcript に現れた「提案されたコード」を証拠に採用し、**実体を見なかった**。
+tool の error 行は同じ transcript 内にあった。
+
+**新発見①【重大】要件がプランを通り抜けて失われる**: 情報の欠落経路が特定できた。
+1. ゴールは9機能（…期限・優先度…）を要求
+2. 再計画の criterion が **7機能だけを列挙**し、期限・優先度を静かに落とした
+3. L2 Reflect は unit goal（task/file/criterion）に対して判定するため、落ちた要件は最初から検査対象外 → pass
+4. → **プランがゴールの「契約」なのに、その忠実性を誰も検査していない**
+
+**新発見②【重大】overall が欠落要件を幻覚で埋める**: `_OVERALL_SYSTEM` は GOAL を持ち
+「DONE 成果物がゴールの要求を網羅するか（scope completeness）」を判定する役目なのに、
+判定文で **"(add, delete, list, complete, deadline, priority, search, undo, JSON save)" と
+明示的に列挙して passed=True** を返した。deadline・priority は実在しない。
+原因は設計上の必然: overall は「`[x]` を信頼しファイル内容を見るな」と指示されているため、
+根拠は criterion のテキストのみ。criterion が要件を落とすと **検出不能なうえ、埋め合わせに幻覚する**。
+`_carry_done` の穴と同じ「静かに成功を報告する」クラスのバグで、最も危険。
+
+**`write_file` の path 欠け（約15回・初走から継続）**: 今回も最大の浪費源（1回20〜30秒の生成 × 約15回）。
+**仮説（未検証）**: L2 の messages が周を追って伸び、**長文脈でツール引数の忠実度が落ちる**。
+根拠は (a) 各単位の初回書き込みは成功し、周を重ねると失敗が連続する、(b) 再計画後の新規 L2 実行
+（messages がリセットされる）では 8355 字を path 付きで一発成功。ただし「content が長いほど失敗」
+という別解釈も否定できず、切り分けは未実施（[[avoid-guesswork-verify-first]] に従い仮説として記録）。
 
 **派生した修正候補（LONGTERM_TODO に登録済み）**:
 1. **[重大] `_carry_done` の同一ファイル穴** — ✅ **2026-07-20 修正済み**。Plan/Replan プロンプトに「file はプラン内で一意（同一ファイルの作業は1単位に併合）」を追加し、`_carry_done` は旧計画・新計画のどちらかで file が重複する場合 done を引き継がない防御に（安全側: 済み単位の再実行は取り返せるが、偽 done は overall が信頼するため取り返せない）。TDD で偽・完遂の再現テスト含む3件を追加、全73 green

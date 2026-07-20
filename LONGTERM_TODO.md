@@ -37,7 +37,16 @@
 - [x] **[重大] `_carry_done` の同一ファイル穴（偽・完遂）** — 2026-07-20 修正済み。Plan/Replan プロンプトに「file はプラン内で一意」ガードを追加し、`_carry_done` は重複 file の done を引き継がない防御に（TDD・3件追加・全73 green）
 - [x] **pytest が temp/ の生成物テストを収集する問題** — 2026-07-20 修正済み。`testpaths=["tests"]` で収集範囲を限定（従来の green 数には temp/ の残骸が混入していた）
 - [ ] **証拠デッドロック** — `read_file` の4000字截断×transcript の6000字上限で、大きいファイルの「全文提示」が原理的に不可能。Reflect を実行ベースの証拠へ誘導する／Plan に「機械可読な合格出力（例: `12/12 passed` を印字）」を criterion として要求させる
-- [ ] **必須引数欠けエラーの steering** — `_invoke` の TypeError 時に usage_text を添えて返す（F1-g で `write_file` の path 欠けが6連発・自己修正できなかった）
+- [ ] **必須引数欠けエラーの steering** — `_invoke` の TypeError 時に usage_text を添えて返す（F1-g / F1-g2 とも `write_file` の path 欠けが十数回連続・自己修正できなかった。実時間の最大の浪費源）
+
+## F1-g2 再走（2026-07-20）で確定した修正候補 — 「静かに成功を報告する」バグ
+
+`_carry_done` の穴と同じクラス（偽・完遂）。**着手前に [docs/experiment-2026-07-20-f1.md](docs/experiment-2026-07-20-f1.md) を読むこと** — 4件の偽陽性を統一的に診断し（「判定が実体でなく表象に対して行われている」）、対処前に考えるべき問い7点を挙げている。師匠の指示によりクールダウン中で、**個別に慌てて潰さない**。
+
+- [ ] **[重大] L2 Reflect が「書かれていないファイル」を pass させる** — 走行2の単位2は `write_file` が path 欠けで4連続失敗しファイルを一度も更新できなかったのに `passed=True`（`list_dir` は前後とも 3200 bytes）。Reflect は transcript 上の「提案されたコード」を証拠に採用し、ディスクの実体を見ていない。tool の error 行は同じ transcript 内にあった
+- [ ] **[重大] 要件がプランを通り抜けて失われる** — 再計画の criterion がゴール9機能のうち7つしか列挙せず、期限・優先度が脱落。L2 Reflect は criterion に対して判定するため、落ちた要件は検査対象外になる。対策候補: Plan/Replan プロンプトに「criterion はゴールの要件を漏れなく含めよ」を課す／L2 へ渡す unit goal に元ゴールを添える（現状は task/file/criterion のみ）
+- [ ] **[重大] overall が欠落要件を幻覚で埋める** — `_OVERALL_SYSTEM` は GOAL を持ち scope 完全性を判定する役目なのに、実在しない deadline・priority を「含む」と明示して passed=True を返した。「`[x]` を信頼しファイル内容を見るな」の指示が強すぎ、criterion に無い機能まで信頼している。対策候補: 「unit の task/criterion に現れない要件は present とみなすな。ゴールの要求を1つずつ criterion と照合せよ」を追加
+- [ ] **[調査] 長文脈でツール引数の忠実度が落ちる仮説** — 各単位の初回書き込みは成功し周を重ねると path 欠けが連続、再計画後の新規 L2 実行（messages リセット）では 8355 字を一発成功。「content が長いほど失敗」との切り分けが未実施
 
 ## 優先度: 低（設計論点・小さな穴）
 
