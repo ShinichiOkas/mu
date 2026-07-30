@@ -11,9 +11,10 @@ from .l0 import (
     ResourceExhausted,
     BadRequest,
 )
-from .l1 import ToolLoop
+from .l1 import ToolLoop, ToolResult
 from .l2 import Agent
 from .l3 import Orchestrator
+from .l4 import Director
 
 __all__ = [
     "OllamaInterface",
@@ -23,6 +24,8 @@ __all__ = [
     "ResourceExhausted",
     "BadRequest",
     "ToolLoop",
+    "ToolResult",
     "Agent",
     "Orchestrator",
+    "Director",
 ]
