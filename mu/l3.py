@@ -4,15 +4,19 @@ L2（単一 checkable タスクの完遂）を"単位"として組み合わせ�
 最後まで完遂する。L2 で暗黙だった **大域的 Plan が明示・必須**になる層。
 
 PDCA が完全体で現れる:
-  P : 複雑ゴールを「ファイルを生む checkable な単位」へ分解      ← HITL 承認
+  P : 複雑ゴールを「ファイルを生む checkable な単位」へ分解      ← 承認スロット
   D : 各単位を L2 が完遂 → 成果物ファイル                       ← 自律
-  C : 成果物ファイルを確認 / L2 の失敗を検知                    ← 自律
-  A : 再計画（条件/アプローチ/計画の変更）                      ← HITL 承認
+  C : 単位の完遂を検知し、完了は**機械的照合**（全単位 done）    ← 自律
+  A : 再計画（条件/アプローチ/計画の変更）                      ← 承認スロット
 
 **ファイル・グラウンディング**: 各単位が成果物ファイルを生む＝checkable かつ
-次の単位への文脈。**判断は外へ、実行は内で** — D・C は自律、P・A は上位
-（人間 or L4）に上げる。承認者は呼び出し側が差し込むスロット（`approve`）。
-上限は呼び出し側が規定、再帰の底は人間。
+次の単位への文脈。**判断は外へ、実行は内で** — 承認者は呼び出し側が差し込む
+スロット（`approve`。人間 or L4）。上限は呼び出し側が規定、再帰の底は人間。
+
+L3 の判定は「与えられた仕様（ゴール）を満たしたか」まで。「仕様はそもそも
+目的を網羅していたか」は L4 の目的判定が担う。かつてここにあった LLM の
+全体判定（overall）は、抽象ゴールに対する推測＝幻覚の温床だった（機序④、
+合意005）ため、機械的照合に縮めた。
 """
 
 from __future__ import annotations
@@ -48,11 +52,6 @@ _ANALYZE_SCHEMA = {
     "properties": {"reason": {"type": "string"}, "suggestion": {"type": "string"}},
     "required": ["reason", "suggestion"],
 }
-_OVERALL_SCHEMA = {
-    "type": "object",
-    "properties": {"passed": {"type": "boolean"}, "reason": {"type": "string"}},
-    "required": ["passed", "reason"],
-}
 
 _PLAN_SYSTEM = (
     "You are a planner. Decompose the GOAL into a short ordered list of small units "
@@ -87,17 +86,6 @@ _ANALYZE_SYSTEM = (
     "attempt, explain briefly why it failed (ill-defined / not checkable, too large, wrong "
     "approach, or a missing dependency) and what to change. Reply as JSON {reason,suggestion}."
 )
-_OVERALL_SYSTEM = (
-    "You are a strict but fair verifier deciding whether an overall GOAL is complete. "
-    "You are given the GOAL and the list of DELIVERABLES with their done-status. "
-    "A unit marked [x] is DONE: it has already produced its file and passed its own "
-    "checkable criterion, verified by execution. Trust this — do NOT ask for file contents "
-    "and do NOT try to re-run or re-verify individual files. "
-    "Judge ONLY whether the set of DONE deliverables covers everything the GOAL requires "
-    "(scope completeness). If every output the goal requires is present and done, answer "
-    "passed=true. Answer passed=false only if the goal clearly needs an output that is "
-    "missing or not yet done. Reply as JSON {passed,reason}."
-)
 
 
 def _identity_approve(units: list) -> list:
@@ -128,46 +116,37 @@ class Orchestrator:
         l2_max: int = 6,
         l2_l1_max: int = 10,
     ) -> dict:
-        units = approve(self._plan(model, goal))          # P（HITL 承認）
+        units = approve(self._plan(model, goal))          # P（承認スロット）
         log(("plan", units))
 
-        # rounds は消費した周回数。1 周 = 1 単位実行 or 1 回の全体判定なので、
-        # max_rounds は暗黙に「単位数＋再計画数＋全体判定」の予算になる。
+        # rounds は消費した周回数。1 周 = 1 単位実行（失敗周は分析＋再計画を含む）。
         # 上限到達の判別（done=False かつ rounds==max_rounds）のため返り値に含める。
         rounds = 0
         for _ in range(max_rounds):
-            rounds += 1
             pending = [u for u in units if not u.get("done")]
-            if pending:
-                unit = pending[0]
-                msgs, passed = self._l2.run(              # D
-                    model, self._unit_goal(unit), tools,
-                    system=system, max_rounds=l2_max, l1_max=l2_l1_max,
-                )
-                if passed:                                # C: 成功
-                    unit["done"] = True
-                    log(("unit_done", unit))
-                    continue
-                analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
-                log(("unit_failed", unit, analysis))
-                units = approve(self._replan(model, goal, units, analysis))  # A（HITL）
-                log(("replan", units))
-            else:
-                verdict = self._overall(model, goal, units)    # 全体判定
-                log(("overall", verdict))
-                if verdict.get("passed"):
-                    return {"units": units, "done": True, "rounds": rounds}
-                analysis = {"reason": verdict.get("reason", ""), "suggestion": ""}
-                units = approve(self._replan(model, goal, units, analysis))  # A（HITL）
-                log(("replan", units))
+            if not pending:
+                break
+            rounds += 1
+            unit = pending[0]
+            msgs, passed = self._l2.run(                  # D
+                model, self._unit_goal(unit), tools,
+                system=system, max_rounds=l2_max, l1_max=l2_l1_max,
+            )
+            if passed:                                    # C: 成功
+                unit["done"] = True
+                log(("unit_done", unit))
+                continue
+            analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
+            log(("unit_failed", unit, analysis))
+            units = approve(self._replan(model, goal, units, analysis))  # A（承認スロット）
+            log(("replan", units))
 
-        # 上限に達した。全単位が done なら、最終の全体判定を必ず1回行う
-        # （max_rounds 直後に overall がスキップされる取りこぼしを防ぐ）。
-        if not [u for u in units if not u.get("done")]:
-            verdict = self._overall(model, goal, units)
-            log(("overall", verdict))
-            return {"units": units, "done": bool(verdict.get("passed")), "rounds": rounds}
-        return {"units": units, "done": False, "rounds": rounds}
+        # C: 完了は機械的照合 — 全単位が done か（空の計画は「全部 done」に化けさせない）。
+        # 各単位は実行で検証済み（L2）なので、ここに LLM の推測を挟まない。
+        done = bool(units) and not [u for u in units if not u.get("done")]
+        reason = "all units done" if done else ("empty plan" if not units else "pending units remain")
+        log(("overall", {"passed": done, "reason": f"{reason} (mechanical)"}))
+        return {"units": units, "done": done, "rounds": rounds}
 
     # --- 単位ゴールの組み立て（ファイル・グラウンディング） ---
     @staticmethod
@@ -195,10 +174,6 @@ class Orchestrator:
     def _analyze(self, model: str, unit: dict, msgs: list) -> dict:
         user = f"UNIT:\n{json.dumps(unit, ensure_ascii=False)}\n\nTRANSCRIPT:\n{transcript(msgs)}"
         return self._structured(model, _ANALYZE_SYSTEM, user, _ANALYZE_SCHEMA)
-
-    def _overall(self, model: str, goal: str, units: list) -> dict:
-        user = f"GOAL:\n{goal}\n\nDELIVERABLES:\n{_plan_summary(units)}"
-        return self._structured(model, _OVERALL_SYSTEM, user, _OVERALL_SCHEMA)
 
     def _structured(self, model: str, system: str, user: str, schema: dict) -> dict:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]

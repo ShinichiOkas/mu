@@ -90,7 +90,6 @@ _TOOL = "        [tool]"
 _STAGES = {
     frozenset({"units"}): "Plan/再計画を作成中",
     frozenset({"reason", "suggestion"}): "失敗を分析中",
-    frozenset({"passed", "reason"}): "全体達成を判定中",
     frozenset({"passed", "reason", "next"}): "Reflect（合否）判定中",
 }
 
@@ -231,6 +230,7 @@ def _log(event: tuple) -> None:
         if analysis.get("suggestion"):
             print(f"      suggestion : {_short(analysis.get('suggestion'))}")
     elif kind == "overall":
+        # 機械的照合の結果（全単位 done か）。LLM の推測判定ではない。
         v = event[1]
         print(f"  [=] OVERALL: passed={v.get('passed')} :: {_short(v.get('reason'), 160)}")
 

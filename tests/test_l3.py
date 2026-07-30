@@ -1,8 +1,11 @@
 """L3（大域的 Plan / 複雑タスクの完遂）のユニットテスト。
 
-Plan/分析/再計画/全体判定（L0 の構造化出力）と、各単位の完遂（L2）を
-フェイクに差し替え、「Plan→承認(HITL)→単位をL2で完遂→失敗なら分析＆再計画」
-の機構を検証する。実サーバは使わない。
+Plan/分析/再計画（L0 の構造化出力）と、各単位の完遂（L2）をフェイクに
+差し替え、「Plan→承認→単位をL2で完遂→失敗なら分析＆再計画」の機構を
+検証する。実サーバは使わない。
+
+完了判定は機械的照合（全単位 done。空の計画は未達）。「仕様を網羅したか」の
+推測判定（旧 overall。機序④＝幻覚の温床）は L4 の目的判定へ移した（合意005）。
 """
 
 import json
@@ -52,7 +55,6 @@ PLAN2 = plan(
     ("implement", "calc.py", "tests pass"),
 )
 PLAN1 = plan(("implement", "calc.py", "tests pass"))
-OVERALL_OK = {"passed": True, "reason": "all deliverables present"}
 ANALYZE = {"reason": "too large", "suggestion": "split"}
 
 
@@ -61,7 +63,7 @@ def make(l0_responses, l2_results):
 
 
 def test_happy_path_all_units_pass():
-    agent = make([PLAN2, OVERALL_OK], [True, True])
+    agent = make([PLAN2], [True, True])
     result = agent.run("m", "build calc", [])
     assert result["done"] is True
     assert agent._l2.calls and len(agent._l2.calls) == 2  # 2 単位を実行
@@ -69,15 +71,15 @@ def test_happy_path_all_units_pass():
 
 
 def test_unit_failure_triggers_analyze_and_replan():
-    # 1単位: 1回失敗 → 分析＋再計画（同じ単位）→ 2回目成功 → 全体OK
-    agent = make([PLAN1, ANALYZE, PLAN1, OVERALL_OK], [False, True])
+    # 1単位: 1回失敗 → 分析＋再計画（同じ単位）→ 2回目成功 → 完遂
+    agent = make([PLAN1, ANALYZE, PLAN1], [False, True])
     result = agent.run("m", "build calc", [])
     assert result["done"] is True
     assert len(agent._l2.calls) == 2  # 失敗→再実行
 
 
 def test_unit_goal_includes_file_and_criterion():
-    agent = make([PLAN1, OVERALL_OK], [True])
+    agent = make([PLAN1], [True])
     agent.run("m", "build calc", [])
     goal_sent = agent._l2.calls[0]
     assert "calc.py" in goal_sent
@@ -87,7 +89,7 @@ def test_unit_goal_includes_file_and_criterion():
 def test_run_forwards_system_preamble_to_l2():
     # 環境グラウンディングは呼び出し側の責務。L3 は system をそのまま L2 へ通す
     # （L3 自身は環境を知らない・opaque に転送するだけ）。
-    agent = make([PLAN1, OVERALL_OK], [True])
+    agent = make([PLAN1], [True])
     agent.run("m", "build calc", [], system="ENV-PREAMBLE-XYZ")
     assert agent._l2.systems[0] == "ENV-PREAMBLE-XYZ"
 
@@ -99,9 +101,9 @@ def test_approve_called_for_plan_and_replan():
         seen.append([u["file"] for u in units])
         return units
 
-    agent = make([PLAN1, ANALYZE, PLAN1, OVERALL_OK], [False, True])
+    agent = make([PLAN1, ANALYZE, PLAN1], [False, True])
     agent.run("m", "build calc", [], approve=approve)
-    assert len(seen) == 2  # Plan と 再計画 の2回、HITL 承認が走る
+    assert len(seen) == 2  # Plan と 再計画 の2回、承認スロットが走る
 
 
 def test_approve_can_edit_plan():
@@ -109,7 +111,7 @@ def test_approve_can_edit_plan():
     def approve(units):
         return units[:1]
 
-    agent = make([PLAN2, OVERALL_OK], [True])
+    agent = make([PLAN2], [True])
     result = agent.run("m", "build calc", [], approve=approve)
     assert len(result["units"]) == 1
     assert len(agent._l2.calls) == 1
@@ -117,10 +119,9 @@ def test_approve_can_edit_plan():
 
 def test_done_units_not_reexecuted_after_replan():
     # 2単位: 1つ目成功, 2つ目失敗→再計画(同じ2単位)。1つ目は done を維持し再実行しない。
-    agent = make([PLAN2, ANALYZE, PLAN2, OVERALL_OK], [True, False, True])
+    agent = make([PLAN2, ANALYZE, PLAN2], [True, False, True])
     result = agent.run("m", "build calc", [])
     # test_calc.py は最初に成功→以降呼ばれない。calc.py は失敗→再実行で計2回。
-    calc_calls = [g for g in agent._l2.calls if "calc.py" in g and "test_calc.py" not in g]
     testfile_calls = [g for g in agent._l2.calls if "test_calc.py" in g]
     assert len(testfile_calls) == 1
     assert result["done"] is True
@@ -132,49 +133,38 @@ def test_max_rounds_returns_not_done():
     assert result["done"] is False
 
 
-def test_final_overall_runs_after_max_rounds_when_all_done():
-    # max_rounds を単位実行で使い切っても、全単位 done なら最終の全体判定を必ず1回行う。
-    agent = make([PLAN1, OVERALL_OK], [True])
-    result = agent.run("m", "build calc", [], max_rounds=1)
-    assert result["done"] is True
-    assert len(agent._l0.calls) == 2  # plan + 最終 overall
-
-
-def test_final_overall_failure_after_max_rounds_returns_not_done():
-    agent = make([PLAN1, {"passed": False, "reason": "goal needs more"}], [True])
-    result = agent.run("m", "build calc", [], max_rounds=1)
-    assert result["done"] is False
-
-
-def test_overall_failure_triggers_replan_and_continues():
-    # 全単位 done → overall 不合格 → 再計画（不足単位を追加）→ 完遂、の else 分岐。
-    agent = make(
-        [PLAN1, {"passed": False, "reason": "tests missing"}, PLAN2, OVERALL_OK],
-        [True, True],
-    )
+def test_completion_is_mechanical_no_llm_judgment():
+    # 完了判定は照合（全単位 done）であり、LLM を呼ばない。
+    # 「仕様を網羅したか」の推測判定（旧 overall）は L4 の目的判定へ移した。
+    agent = make([PLAN2], [True, True])
     result = agent.run("m", "build calc", [])
     assert result["done"] is True
-    # calc.py は done を引き継ぎ再実行されない。追加された test_calc.py だけ実行される。
-    assert len(agent._l2.calls) == 2
-    assert any("test_calc.py" in g for g in agent._l2.calls)
+    assert len(agent._l0.calls) == 1  # plan のみ（overall の LLM 呼び出しは無い）
 
 
-def test_empty_plan_does_not_crash_and_executes_nothing():
-    # Plan が空（units:[] や壊れた {}）でも落ちず、L2 を一度も呼ばずに未達で返る。
-    agent = make(
-        [{"units": []}, {"passed": False, "reason": "no deliverables"}, {"units": []}],
-        [],
-    )
+def test_overall_log_event_reports_mechanical_verdict():
+    events = []
+    agent = make([PLAN1], [True])
+    agent.run("m", "build calc", [], log=events.append)
+    overalls = [e for e in events if e[0] == "overall"]
+    assert len(overalls) == 1
+    assert overalls[0][1]["passed"] is True
+
+
+def test_empty_plan_is_not_done():
+    # Plan が空（units:[] や壊れた {}）でも落ちず、L2 を呼ばず未達で返る。
+    # 機械的照合で「空の計画＝全単位 done」と誤読しない（空 done の穴を塞ぐ）。
+    agent = make([{"units": []}], [])
     result = agent.run("m", "build calc", [], max_rounds=2)
     assert result["done"] is False
     assert agent._l2.calls == []
 
 
 def test_result_includes_rounds_consumed():
-    # 1周=1単位実行 or 1全体判定。上限到達の判別（done=False かつ rounds==max_rounds）用。
-    agent = make([PLAN2, OVERALL_OK], [True, True])
+    # 1周=1単位実行（失敗周は分析＋再計画を含む）。上限到達の判別用。
+    agent = make([PLAN2], [True, True])
     result = agent.run("m", "build calc", [])
-    assert result["rounds"] == 3  # 2単位 + 全体判定1回
+    assert result["rounds"] == 2  # 2単位。完了照合は周を消費しない
 
 
 # --- _carry_done の同一ファイル穴（F1-g で偽・完遂として実発火）---
@@ -188,9 +178,9 @@ PLAN_SAME3 = plan(
 
 def test_replan_with_duplicate_files_does_not_fake_done():
     # 同一ファイル3単位のうち1つが失敗し、再計画が同じ3単位を返しても、
-    # 失敗した単位が done に化けて overall へ直行（偽・完遂）してはならない。
+    # 失敗した単位が done に化けて完了照合へ直行（偽・完遂）してはならない。
     agent = make(
-        [PLAN_SAME3, ANALYZE, PLAN_SAME3, OVERALL_OK],
+        [PLAN_SAME3, ANALYZE, PLAN_SAME3],
         [True, True, False],  # 3単位目だけ失敗。以降（再実行）はデフォルト True
     )
     result = agent.run("m", "build todo app", [])

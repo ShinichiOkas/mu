@@ -86,7 +86,6 @@ _STAGES = {
     frozenset({"achieved", "reason", "gap"}): "目的達成を判定中",
     frozenset({"units"}): "Plan/再計画を作成中",
     frozenset({"reason", "suggestion"}): "失敗を分析中",
-    frozenset({"passed", "reason"}): "全体達成を判定中",
     frozenset({"passed", "reason", "next"}): "Reflect（合否）判定中",
 }
 
