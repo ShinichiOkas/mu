@@ -140,6 +140,32 @@ def test_missing_required_arg_still_errors():
     assert tool_msgs[0]["content"].startswith("error:")
 
 
+def test_missing_required_arg_echoes_usage_and_received_args():
+    # path 欠け等の必須引数欠落は、usage と受領引数をエコーして steering する
+    # （F1×gemma4 で完全版が2回載り損ねた偽・完遂の第1因子。pi 学びA-1）。
+    # 関数は呼ばずに手前で止める（半端な引数で実行しない）。
+    called = []
+
+    def write_file(path: str, content: str) -> str:
+        """書く。"""
+        called.append(path)
+        return "ok"
+
+    l0 = FakeL0([resp_tool("write_file", content="abc"), resp_text("done")])
+    messages = ToolLoop(l0).run(
+        "m", [{"role": "user", "content": "x"}],
+        [(write_file, "write_file(path, content): USAGE-MARKER 指定パスに書き込む。")],
+    )
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    body = tool_msgs[0]["content"]
+    assert body.startswith("error:")
+    assert "path" in body                 # 欠けた引数の名指し
+    assert "USAGE-MARKER" in body         # usage のエコー
+    assert "content" in body              # 受領済み引数のエコー
+    assert tool_msgs[0]["ok"] is False
+    assert called == []                   # 半端な引数では実行しない
+
+
 def test_known_args_only_leaves_result_unannotated():
     # 未知引数が無ければ結果に注記を付けない（既存の tool 結果契約を汚さない）。
     l0 = FakeL0([resp_tool("add", a=2, b=3), resp_text("done")])

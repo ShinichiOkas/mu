@@ -84,10 +84,11 @@ class ToolLoop:
         if not calls:
             return messages, True
 
+        usages = {func.__name__: usage for func, usage in tools}
         for tc in calls:
             name = tc.function.name
             args = dict(tc.function.arguments or {})
-            r = _invoke(dispatch, name, args)
+            r = _invoke(dispatch, usages, name, args)
             messages.append(
                 {"role": "tool", "tool_name": name, "content": r.content, "ok": r.ok, "facts": r.facts}
             )
@@ -125,11 +126,22 @@ def _model_view(m: dict) -> dict:
     return m
 
 
-def _invoke(dispatch: dict, name: str, args: dict) -> ToolResult:
+def _invoke(dispatch: dict, usages: dict, name: str, args: dict) -> ToolResult:
     func = dispatch.get(name)
     if func is None:
         return ToolResult(f"error: unknown tool '{name}'", ok=False)
     kept, dropped = _bind_to_signature(func, args)
+    missing = _missing_required(func, kept)
+    if missing:
+        # 必須引数の欠落は実行せず手前で止め、usage と受領引数をエコーして steering する。
+        # 素の TypeError 文字列だけでは弱いモデルが同じ呼び出しを繰り返す
+        # （F1 実走で write_file の path 欠けが偽・完遂の第1因子になった）。
+        return ToolResult(
+            f"error: missing required argument(s) {missing} for {name}.\n"
+            f"usage: {usages.get(name, name)}\n"
+            f"received arguments: {sorted(kept)} — call again with ALL required arguments.",
+            ok=False,
+        )
     try:
         result = func(**kept)
     except Exception as e:  # ツールの失敗は結果として model に返す（回復可能に）
@@ -151,6 +163,18 @@ def _normalize(result: Any) -> ToolResult:
         return result
     text = str(result)
     return ToolResult(text, ok=not text.startswith("error:"))
+
+
+def _missing_required(func: Callable, kept: dict) -> list:
+    """束縛後になお欠けている必須引数名を返す（デフォルト無しの位置/キーワード引数）。"""
+    params = inspect.signature(func).parameters
+    return [
+        p.name
+        for p in params.values()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        and p.default is p.empty
+        and p.name not in kept
+    ]
 
 
 def _bind_to_signature(func: Callable, args: dict) -> tuple[dict, set]:
