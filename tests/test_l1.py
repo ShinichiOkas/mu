@@ -174,6 +174,86 @@ def test_caller_system_is_merged_into_single_system():
     assert out[0] == {"role": "system", "content": "ENV-ABC"}  # 永続側は併合しない
 
 
+def test_toolresult_message_carries_ok_and_facts():
+    # ToolResult を返すツールの facts / ok は tool メッセージ（永続 state）に残る。
+    from mu.l1 import ToolResult
+
+    def writer() -> ToolResult:
+        """書く。"""
+        return ToolResult("wrote 5 bytes", ok=True, facts={"path": "a.txt", "bytes": 5})
+
+    l0 = FakeL0([resp_tool("writer"), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(writer, "writer")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "wrote 5 bytes"
+    assert tool_msgs[0]["ok"] is True
+    assert tool_msgs[0]["facts"] == {"path": "a.txt", "bytes": 5}
+
+
+def test_failed_toolresult_marks_ok_false():
+    from mu.l1 import ToolResult
+
+    def failer() -> ToolResult:
+        """失敗する。"""
+        return ToolResult("error: no", ok=False, facts={"exit": 1})
+
+    l0 = FakeL0([resp_tool("failer"), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(failer, "failer")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["ok"] is False
+    assert tool_msgs[0]["facts"] == {"exit": 1}
+
+
+def test_plain_result_defaults_ok_true_empty_facts():
+    # 素の値を返す従来ツールも ok/facts を持つ（ok=True, facts={} に正規化）。
+    l0 = FakeL0([resp_tool("add", a=2, b=3), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(add, "add")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert tool_msgs[0]["ok"] is True
+    assert tool_msgs[0]["facts"] == {}
+
+
+def test_exception_and_unknown_tool_mark_ok_false():
+    l0 = FakeL0([resp_tool("boom"), resp_tool("ghost"), resp_text("done")])
+    messages = ToolLoop(l0).run(
+        "m", [{"role": "user", "content": "x"}], [(boom, "boom(): 失敗する")]
+    )
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert [m["ok"] for m in tool_msgs] == [False, False]
+
+
+def test_ok_and_facts_are_stripped_from_messages_sent_to_model():
+    # facts/ok は Reflect（検証者）向けのチャネル。モデルへ送る形は従来と同一に保つ。
+    from mu.l1 import ToolResult
+
+    def writer() -> ToolResult:
+        """書く。"""
+        return ToolResult("wrote", facts={"bytes": 5})
+
+    l0 = FakeL0([resp_tool("writer"), resp_text("done")])
+    ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(writer, "writer")])
+    sent_tool_msgs = [m for m in l0.calls[1]["messages"] if m.get("role") == "tool"]
+    assert sent_tool_msgs
+    for m in sent_tool_msgs:
+        assert "facts" not in m and "ok" not in m
+
+
+def test_dropped_args_note_preserves_toolresult_facts():
+    # 未知引数の注記は content に付くが、facts / ok は保たれる。
+    from mu.l1 import ToolResult
+
+    def writer(path: str) -> ToolResult:
+        """書く。"""
+        return ToolResult("wrote", facts={"path": path})
+
+    l0 = FakeL0([resp_tool("writer", path="a.txt", hallucinated="x"), resp_text("done")])
+    messages = ToolLoop(l0).run("m", [{"role": "user", "content": "x"}], [(writer, "writer")])
+    tool_msgs = [m for m in messages if m.get("role") == "tool"]
+    assert "hallucinated" in tool_msgs[0]["content"]  # 注記あり
+    assert tool_msgs[0]["facts"] == {"path": "a.txt"}
+    assert tool_msgs[0]["ok"] is True
+
+
 def test_stateless_resume_with_saved_messages():
     # 1周目: ツールを実行して中断（done=False）
     l0a = FakeL0([resp_tool("add", a=4, b=4)])

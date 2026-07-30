@@ -15,15 +15,31 @@ L0 の上に「行動する層（Do）」を1枚重ねる。本質はこれだ�
 2. `chat(tools=[func, ...])` の構造化スキーマ（tool_calls を確実に受け取る。
    関数→スキーマは公式ライブラリが自動生成）
 3. dispatch `{func.__name__: func}`（実行するのは mu 側）
+
+**構造化 tool 結果**（合意005）: ツールは str のほか `ToolResult` を返せる。
+content（モデル向け散文）と別に ok / facts（機械可読な事実。ディスクの stat・
+exit code 等、実体から作る）を持ち、tool メッセージに保持される。facts / ok は
+検証者（L2 Reflect・L3 analyze）向けのチャネルで、モデルへ送る形からは剥がす
+— 判定を「表象」でなく「実体」に寄せるための別チャネル。
 """
 
 from __future__ import annotations
 
 import inspect
+from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
 # ツール = (呼び出せる関数, 使い方テキスト)
 Tool = tuple[Callable[..., Any], str]
+
+
+@dataclass
+class ToolResult:
+    """ツール実行の結果。content は散文、ok / facts は実体からの機械可読な事実。"""
+
+    content: str
+    ok: bool = True
+    facts: dict = field(default_factory=dict)
 
 _TOOLS_HEADER = (
     "You have access to the tools listed below. "
@@ -71,8 +87,10 @@ class ToolLoop:
         for tc in calls:
             name = tc.function.name
             args = dict(tc.function.arguments or {})
-            result = _invoke(dispatch, name, args)
-            messages.append({"role": "tool", "tool_name": name, "content": str(result)})
+            r = _invoke(dispatch, name, args)
+            messages.append(
+                {"role": "tool", "tool_name": name, "content": r.content, "ok": r.ok, "facts": r.facts}
+            )
         return messages, False
 
     def run(self, model: str, messages: list, tools: Sequence[Tool], max_rounds: int = 32) -> list:
@@ -89,30 +107,50 @@ class ToolLoop:
         # system 注入は毎周その場で組み立て、永続 messages には残さない（無状態）。
         # 呼び出し側が先頭に system（環境プリアンブル等）を持つ場合は 1 枚に併合する
         # （多くのモデルテンプレートは先頭 1 枚の system を想定するため）。
+        # facts / ok は検証者向けチャネルなので、モデルへ送る形からは剥がす。
+        msgs = [_model_view(m) for m in messages]
         if not tools:
-            return list(messages)
+            return msgs
         content = _system_content(tools)
-        if messages and messages[0].get("role") == "system":
-            merged = {"role": "system", "content": f"{content}\n\n{messages[0]['content']}"}
-            return [merged, *messages[1:]]
-        return [{"role": "system", "content": content}, *messages]
+        if msgs and msgs[0].get("role") == "system":
+            merged = {"role": "system", "content": f"{content}\n\n{msgs[0]['content']}"}
+            return [merged, *msgs[1:]]
+        return [{"role": "system", "content": content}, *msgs]
 
 
-def _invoke(dispatch: dict, name: str, args: dict) -> Any:
+def _model_view(m: dict) -> dict:
+    """モデルへ送るメッセージ形。tool メッセージから facts / ok を剥がす。"""
+    if m.get("role") == "tool" and ("facts" in m or "ok" in m):
+        return {"role": "tool", "tool_name": m.get("tool_name"), "content": m.get("content", "")}
+    return m
+
+
+def _invoke(dispatch: dict, name: str, args: dict) -> ToolResult:
     func = dispatch.get(name)
     if func is None:
-        return f"error: unknown tool '{name}'"
+        return ToolResult(f"error: unknown tool '{name}'", ok=False)
     kept, dropped = _bind_to_signature(func, args)
     try:
         result = func(**kept)
     except Exception as e:  # ツールの失敗は結果として model に返す（回復可能に）
-        return f"error: {e}"
+        return ToolResult(f"error: {e}", ok=False)
+    r = _normalize(result)
     if dropped:
         # モデルがスキーマにない引数を幻覚しても、正しい引数で実行し、落としたことだけ
         # 注記する。厳格な func(**args) は余計な1引数で正しい呼び出しごと落とし、弱い
         # モデルを無限ループさせていた（実ログで観測）。落とすのは判断でなく実行の頑健化。
-        return f"{result}\n[note] ignored unknown arguments: {sorted(dropped)}"
-    return result
+        r = ToolResult(
+            f"{r.content}\n[note] ignored unknown arguments: {sorted(dropped)}", ok=r.ok, facts=r.facts
+        )
+    return r
+
+
+def _normalize(result: Any) -> ToolResult:
+    """ツールの返り値を ToolResult に正規化する。素の値は従来契約（"error:" 接頭辞）で判定。"""
+    if isinstance(result, ToolResult):
+        return result
+    text = str(result)
+    return ToolResult(text, ok=not text.startswith("error:"))
 
 
 def _bind_to_signature(func: Callable, args: dict) -> tuple[dict, set]:

@@ -38,7 +38,14 @@ _REFLECT_SYSTEM = (
     "attempt, decide whether the goal is achieved. Judge ONLY against the constraints "
     "explicitly stated in the GOAL. Do NOT invent extra requirements the goal does not "
     "mention (e.g. trailing whitespace, or the letter-case of a filename on a "
-    "case-insensitive OS). If the transcript clearly shows the stated constraints are met, "
+    "case-insensitive OS). "
+    "EVIDENCE POLICY: transcript lines like `[tool NAME ok | key=value ...]` or "
+    "`[tool NAME FAILED | ...]` are ground-truth facts recorded by the tool runtime "
+    "(bytes actually written to disk, command exit codes). Prefer these facts over any "
+    "prose. Code or file contents that merely APPEAR in assistant text are NOT evidence "
+    "that a file exists on disk — only a tool fact (e.g. write_file ok bytes=...) or a "
+    "read-back proves it. A FAILED tool line means that action did not succeed. "
+    "If the transcript clearly shows the stated constraints are met, "
     "PASS. If the result cannot be verified from the transcript (e.g. a file was written "
     "but its content is not shown), do not pass; set next to instruct the agent to reveal "
     "the concrete evidence (e.g. read the file back and show its full content). "
@@ -128,7 +135,16 @@ def transcript(messages: list, limit: int = 6000) -> str:
         if role == "system":
             continue
         if role == "tool":
-            parts.append(f"[tool {m.get('tool_name')}] {content}")
+            if "ok" in m or "facts" in m:
+                # 構造化 tool 結果: ok / facts は実体から記録された事実のチャネル。
+                # 検証者が散文より優先して見られるようヘッダに描画する。
+                status = "ok" if m.get("ok") else "FAILED"
+                facts = m.get("facts") or {}
+                facts_s = " ".join(f"{k}={v}" for k, v in facts.items())
+                head = f"[tool {m.get('tool_name')} {status}" + (f" | {facts_s}" if facts_s else "")
+                parts.append(f"{head}] {content}")
+            else:
+                parts.append(f"[tool {m.get('tool_name')}] {content}")
         elif role == "assistant":
             if m.get("tool_calls"):
                 names = ", ".join(tc["function"]["name"] for tc in m["tool_calls"])

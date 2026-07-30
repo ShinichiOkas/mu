@@ -115,6 +115,59 @@ def test_feedback_is_excluded_from_next_reflect_transcript():
     assert "MARKER-do-X" not in second_reflect_user
 
 
+def test_transcript_renders_tool_facts_channel():
+    # facts 付き tool メッセージは「[tool name ok | k=v ...]」と描画され、
+    # 検証者（Reflect / L3 analyze）に機械可読な事実として見える。
+    from mu.l2 import transcript
+
+    msgs = [
+        {"role": "tool", "tool_name": "write_file", "content": "wrote 5 bytes",
+         "ok": True, "facts": {"path": "a.txt", "bytes": 5}},
+    ]
+    text = transcript(msgs)
+    assert "write_file ok" in text
+    assert "path=a.txt" in text
+    assert "bytes=5" in text
+
+
+def test_transcript_marks_failed_tool_loudly():
+    from mu.l2 import transcript
+
+    msgs = [
+        {"role": "tool", "tool_name": "execute_command", "content": "exit=1\nboom",
+         "ok": False, "facts": {"exit": 1}},
+    ]
+    text = transcript(msgs)
+    assert "execute_command FAILED" in text
+    assert "exit=1" in text
+
+
+def test_transcript_legacy_tool_message_renders_as_before():
+    # ok/facts を持たない旧形式（保存済み messages・テスト用フェイク）は従来描画のまま。
+    from mu.l2 import transcript
+
+    msgs = [{"role": "tool", "tool_name": "add", "content": "5"}]
+    assert "[tool add] 5" in transcript(msgs)
+
+
+def test_reflect_prompt_carries_tool_facts():
+    # Reflect の user プロンプト（transcript 経由）に facts が届くこと（機序②の防御線）。
+    agent = make([], [verdict(True)])
+    agent._l1 = FakeL1()  # D は何もしない
+
+    def run_with_tool_msg():
+        messages = [
+            {"role": "user", "content": "goal"},
+            {"role": "tool", "tool_name": "write_file", "content": "wrote",
+             "ok": True, "facts": {"path": "t.py", "bytes": 42}},
+        ]
+        return agent._reflect("m", "goal", messages)
+
+    run_with_tool_msg()
+    reflect_user = agent._l0.calls[0]["messages"][1]["content"]
+    assert "bytes=42" in reflect_user
+
+
 def test_empty_next_falls_back_to_neutral_instruction():
     # verdict が passed=False なのに next が空のとき、空の指示ではなく中立指示で steering する。
     agent = make(["a"], [verdict(False, "not yet", "")])
