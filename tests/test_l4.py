@@ -275,6 +275,14 @@ def test_truncated_evidence_downgrades_yes_to_uncertain(tmp_path, monkeypatch):
     assert "truncated" in result["assessment"]["reason"]
 
 
+def test_specify_prompt_carries_env_for_check_commands(tmp_path, monkeypatch):
+    # criteria の check も実環境で走るため、specify のプロンプトに環境を写す。
+    agent = make([SPEC, ASSESS_YES])
+    run(agent, tmp_path, monkeypatch, system="ENV-PS-MARKER")
+    specify_system = agent._l0.calls[0]["messages"][0]["content"]
+    assert "ENV-PS-MARKER" in specify_system
+
+
 def test_l3_receives_system_and_limits(tmp_path, monkeypatch):
     agent = make([SPEC, ASSESS_YES])
     run(agent, tmp_path, monkeypatch, system="ENV-XYZ", l3_max=5, l2_max=4, l2_l1_max=3)

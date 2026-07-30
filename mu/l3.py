@@ -77,10 +77,11 @@ _PLAN_SYSTEM = (
     "Do NOT add units the goal does not require (no CI, linting, packaging, or restructuring). "
     "Use simple, concrete file paths (e.g. calc.py, not src/calc.py). "
     "When a unit's criterion can be verified by running a command, ALSO give check: "
-    "{run, expect} — run is a PowerShell command exercising the criterion; expect is a "
-    "substring that MUST appear in its output (a marker the deliverable is required to "
-    "print, e.g. 'SELFTEST OK 12'). Prefer a visible output marker over exit codes alone: "
-    "a script that does nothing also exits 0. "
+    "{run, expect} — run is a command exercising the criterion (it must work in the "
+    "execution environment stated below, if any); expect is a substring that MUST appear "
+    "in its output — a short ASCII marker the deliverable is required to print "
+    "(e.g. 'SELFTEST OK 12'; non-ASCII markers get corrupted). Prefer a visible output "
+    "marker over exit codes alone: a script that does nothing also exits 0. "
     "Reply as JSON {units:[{task,file,criterion,check?}]} with at least one unit."
 )
 _REPLAN_SYSTEM = (
@@ -95,8 +96,9 @@ _REPLAN_SYSTEM = (
     "running and verification are already part of each unit's criterion, never a unit of their own. "
     "Do NOT add units the goal does not require (no CI, packaging, restructuring). "
     "When a unit's criterion can be verified by running a command, ALSO give check: "
-    "{run, expect} — run is a PowerShell command; expect is a substring that MUST appear "
-    "in its output (prefer a visible marker over exit codes alone). "
+    "{run, expect} — run is a command that works in the execution environment stated "
+    "below (if any); expect is a short ASCII marker that MUST appear in its output "
+    "(prefer a visible marker over exit codes alone; non-ASCII markers get corrupted). "
     "Reply as JSON {units:[{task,file,criterion,check?}]}."
 )
 _ANALYZE_SYSTEM = (
@@ -134,7 +136,7 @@ class Orchestrator:
         l2_max: int = 6,
         l2_l1_max: int = 10,
     ) -> dict:
-        units = approve(self._plan(model, goal))          # P（承認スロット）
+        units = approve(self._plan(model, goal, system))  # P（承認スロット）
         log(("plan", units))
 
         # rounds は消費した周回数。1 周 = 1 単位実行（失敗周は分析＋再計画を含む）。
@@ -170,7 +172,7 @@ class Orchestrator:
             else:
                 analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
             log(("unit_failed", unit, analysis))
-            units = approve(self._replan(model, goal, units, analysis))  # A（承認スロット）
+            units = approve(self._replan(model, goal, units, analysis, system))  # A（承認スロット）
             log(("replan", units))
 
         # C: 完了は機械的照合 — 全単位が done か（空の計画は「全部 done」に化けさせない）。
@@ -198,16 +200,18 @@ class Orchestrator:
         return goal
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
-    def _plan(self, model: str, goal: str) -> list:
-        data = self._structured(model, _PLAN_SYSTEM, f"GOAL:\n{goal}", _PLAN_SCHEMA)
+    def _plan(self, model: str, goal: str, system: str | None = None) -> list:
+        data = self._structured(model, _with_env(_PLAN_SYSTEM, system), f"GOAL:\n{goal}", _PLAN_SCHEMA)
         return [dict(u, done=False) for u in data.get("units", [])]
 
-    def _replan(self, model: str, goal: str, units: list, analysis: dict) -> list:
+    def _replan(
+        self, model: str, goal: str, units: list, analysis: dict, system: str | None = None
+    ) -> list:
         user = (
             f"GOAL:\n{goal}\n\nCURRENT PLAN:\n{_plan_summary(units)}\n\n"
             f"FAILURE ANALYSIS:\n{json.dumps(analysis, ensure_ascii=False)}\n\nProduce a revised plan."
         )
-        data = self._structured(model, _REPLAN_SYSTEM, user, _PLAN_SCHEMA)
+        data = self._structured(model, _with_env(_REPLAN_SYSTEM, system), user, _PLAN_SCHEMA)
         new_units = [dict(u, done=False) for u in data.get("units", [])]
         return _carry_done(units, new_units) or units  # 空応答なら現状維持
 
@@ -219,6 +223,15 @@ class Orchestrator:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         resp = self._l0.chat(model, messages, format=schema, think=False)
         return _parse_json(resp.message.content)
+
+
+def _with_env(prompt: str, system: str | None) -> str:
+    """check コマンドは実環境で走るため、計画プロンプトにも環境（呼び出し側供給）を写す。
+
+    grep / ls など環境に無いコマンドの check は、正しい成果物でも落ちる偽・不合格を生む
+    （sales×gemma4 再走で実発火）。L3 は環境の中身に関知せず前置するだけ（opaque）。
+    """
+    return f"{prompt}\n\nExecution environment for check commands:\n{system}" if system else prompt
 
 
 def run_check(check: dict | None, tools: Sequence[Tool]) -> tuple[bool | None, str]:

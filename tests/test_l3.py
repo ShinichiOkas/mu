@@ -94,6 +94,17 @@ def test_run_forwards_system_preamble_to_l2():
     assert agent._l2.systems[0] == "ENV-PREAMBLE-XYZ"
 
 
+def test_plan_prompt_carries_env_for_check_commands():
+    # check コマンドは実環境で走るため、Plan/再計画のプロンプトにも環境を写す
+    # （grep/ls など環境に無いコマンドの check は偽・不合格を生む。sales×gemma4 再走で実発火）。
+    agent = make([PLAN1, ANALYZE, PLAN1], [False, True])
+    agent.run("m", "build calc", [], system="ENV-PS-MARKER")
+    plan_system = agent._l0.calls[0]["messages"][0]["content"]
+    replan_system = agent._l0.calls[2]["messages"][0]["content"]
+    assert "ENV-PS-MARKER" in plan_system
+    assert "ENV-PS-MARKER" in replan_system
+
+
 def test_approve_called_for_plan_and_replan():
     seen = []
 

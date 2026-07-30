@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l3 import Orchestrator, _parse_json, run_check  # 層間共用ヘルパ
+from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 
 # criteria の各項目は {text, run, expect}: text は条件の記述、run/expect は
 # criterion に埋め込まれた検査コマンド（合意005 決定6）。検査は LLM が定めて
@@ -80,9 +80,10 @@ _SPECIFY_SYSTEM = (
     "2) criteria: observable completion criteria on concrete artifacts (files, outputs), "
     "checkable by a third party without asking you. Each criterion is {text, run, expect}: "
     "text describes the condition; when it can be verified by running a command, run is a "
-    "PowerShell command and expect is a substring that MUST appear in its output — prefer "
-    "a visible marker the deliverables are REQUIRED to print (a script that does nothing "
-    "also exits 0). Leave run/expect empty only when no command can verify it. "
+    "command that works in the execution environment stated below (if any) and expect is a "
+    "substring that MUST appear in its output — a short ASCII marker the deliverables are "
+    "REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get "
+    "corrupted). Leave run/expect empty only when no command can verify it. "
     "3) spec: the detailed task specification to hand to an implementation planner. "
     "Self-contained (repeat the definitions and criteria inside it, including the required "
     "output markers), in the same language as the purpose, naming concrete file "
@@ -154,7 +155,7 @@ class Director:
         l2_max: int = 6,
         l2_l1_max: int = 10,
     ) -> dict:
-        spec = self._specify(model, purpose, log)                     # P
+        spec = self._specify(model, purpose, log, system)             # P
         rounds = 0
         result: dict = {}
         assessment: dict = {}
@@ -185,7 +186,7 @@ class Director:
                 assessment = self._assess(model, purpose, spec, result, checks)  # C: 目的判定
             log(("assess", assessment))
             if assessment["achieved"] == "no" and assessment.get("gap") and rounds < max_rounds:
-                spec = self._respecify(model, purpose, spec, assessment["gap"], log)  # A: 自律
+                spec = self._respecify(model, purpose, spec, assessment["gap"], log, system)  # A: 自律
                 log(("respec", assessment["gap"]))
                 continue
             decision = review(                                        # A: 再帰の底 = 人間
@@ -197,7 +198,7 @@ class Director:
             feedback = str(decision.get("feedback") or "")
             if not feedback:
                 return self._done(False, True, assessment, spec, spec_path, result, rounds)
-            spec = self._respecify(model, purpose, spec, feedback, log)
+            spec = self._respecify(model, purpose, spec, feedback, log, system)
             log(("respec", feedback))
         return self._done(False, True, assessment, spec, spec_path, result, rounds)
 
@@ -209,16 +210,21 @@ class Director:
         }
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
-    def _specify(self, model: str, purpose: str, log: Callable) -> dict:
-        data = self._structured(model, _SPECIFY_SYSTEM, f"PURPOSE:\n{purpose}", _SPECIFY_SCHEMA)
+    def _specify(self, model: str, purpose: str, log: Callable, system: str | None = None) -> dict:
+        data = self._structured(
+            model, _with_env(_SPECIFY_SYSTEM, system), f"PURPOSE:\n{purpose}", _SPECIFY_SCHEMA
+        )
         return _normalize_spec(data, purpose, log)
 
-    def _respecify(self, model: str, purpose: str, spec: dict, feedback: str, log: Callable) -> dict:
+    def _respecify(
+        self, model: str, purpose: str, spec: dict, feedback: str, log: Callable,
+        system: str | None = None,
+    ) -> dict:
         user = (
             f"PURPOSE:\n{purpose}\n\nCURRENT SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
             f"FEEDBACK:\n{feedback}"
         )
-        data = self._structured(model, _RESPECIFY_SYSTEM, user, _SPECIFY_SCHEMA)
+        data = self._structured(model, _with_env(_RESPECIFY_SYSTEM, system), user, _SPECIFY_SCHEMA)
         new = _normalize_spec(data, purpose, log)
         return new if data.get("spec") else spec  # 壊れた改訂で現仕様を失わない
 
