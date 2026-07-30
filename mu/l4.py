@@ -24,12 +24,16 @@ PDCA は L3 と同じ形（再帰同一構造）:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l3 import Orchestrator, _parse_json  # _parse_json は層間共用のヘルパ
+from .l3 import Orchestrator, _parse_json, run_check  # 層間共用ヘルパ
 
+# criteria の各項目は {text, run, expect}: text は条件の記述、run/expect は
+# criterion に埋め込まれた検査コマンド（合意005 決定6）。検査は LLM が定めて
+# artifact に明示され（人間が直せる）、実行と照合はコード側の事実になる。
 _SPECIFY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -41,7 +45,18 @@ _SPECIFY_SCHEMA = {
                 "required": ["term", "definition"],
             },
         },
-        "criteria": {"type": "array", "items": {"type": "string"}},
+        "criteria": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "run": {"type": "string"},
+                    "expect": {"type": "string"},
+                },
+                "required": ["text"],
+            },
+        },
         "spec": {"type": "string"},
     },
     "required": ["definitions", "criteria", "spec"],
@@ -62,20 +77,25 @@ _SPECIFY_SYSTEM = (
     "a measurement procedure (e.g. 'unprofitable = gross margin below 5%'), not a synonym. "
     "If the purpose does not fix a threshold or boundary, choose a reasonable one and state "
     "it explicitly; it is a visible, revisable assumption, not a hidden guess. "
-    "2) criteria: observable completion criteria on concrete artifacts (files, outputs, "
-    "exit codes), checkable by a third party without asking you. Prefer criteria that can "
-    "be verified by running something. "
+    "2) criteria: observable completion criteria on concrete artifacts (files, outputs), "
+    "checkable by a third party without asking you. Each criterion is {text, run, expect}: "
+    "text describes the condition; when it can be verified by running a command, run is a "
+    "PowerShell command and expect is a substring that MUST appear in its output — prefer "
+    "a visible marker the deliverables are REQUIRED to print (a script that does nothing "
+    "also exits 0). Leave run/expect empty only when no command can verify it. "
     "3) spec: the detailed task specification to hand to an implementation planner. "
-    "Self-contained (repeat the definitions and criteria inside it), in the same language "
-    "as the purpose, naming concrete file deliverables. Do NOT add work the purpose does "
-    "not require. Reply as JSON {definitions:[{term,definition}], criteria:[...], spec}."
+    "Self-contained (repeat the definitions and criteria inside it, including the required "
+    "output markers), in the same language as the purpose, naming concrete file "
+    "deliverables. Do NOT add work the purpose does not require. "
+    "Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
 _RESPECIFY_SYSTEM = (
     "You revise a specification. Given the PURPOSE, the CURRENT SPEC (JSON) and FEEDBACK "
     "(a concrete gap found in the outcome, or an instruction from the human), produce a "
     "revised full specification addressing the feedback. Keep definitions and criteria "
-    "that are still right; change only what the feedback requires. "
-    "Reply as JSON {definitions:[{term,definition}], criteria:[...], spec}."
+    "that are still right; change only what the feedback requires. Criteria are "
+    "{text, run, expect} — run/expect embed an executable check (see the current spec). "
+    "Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
 _ASSESS_SYSTEM = (
     "You judge whether a PURPOSE (why the work was requested) has been achieved. "
@@ -94,7 +114,13 @@ _ASSESS_SYSTEM = (
 )
 
 # 成果物1ファイルあたり証拠として読む上限（LLM 文脈の肥大を防ぐ）。
-_EVIDENCE_LIMIT = 1200
+# 1200 では通常のコードファイルがほぼ必ず切れ、切れた先への外挿（F1×gemma4）を誘発した。
+# 切れた証拠での自律 yes は _assess のコードガードで禁止される（対処3）ため、
+# この上限は「ガードが発動する頻度」とのトレードオフになる。
+_EVIDENCE_LIMIT = 6000
+
+# 証拠に含める criteria 名指しファイルの抽出（テキストからのファイル名らしき語）。
+_FILENAME_RE = re.compile(r"[\w\-./\\]+\.[A-Za-z0-9]{1,5}")
 
 
 def _auto_review(report: dict) -> dict:
@@ -141,7 +167,22 @@ class Director:
                 log=log, system=system,
                 max_rounds=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
             )
-            assessment = self._assess(model, purpose, spec, result)   # C: 実体を目的に照らす
+            # C: criteria 埋め込みの check をコード側で実行・照合（verify）。
+            # 1つでも落ちれば LLM の assess を経ずに決定的に no（幻覚の余地なし）。
+            checks = _run_criteria_checks(spec, tools)
+            if checks:
+                log(("checks", checks))
+            failed = [c for c in checks if c["ok"] is False]
+            if failed:
+                assessment = {
+                    "achieved": "no",
+                    "reason": "criteria checks failed (code-side verification)",
+                    "gap": "; ".join(
+                        f"{c['text']} (check: {c['run']}): {c['detail']}" for c in failed
+                    ),
+                }
+            else:
+                assessment = self._assess(model, purpose, spec, result, checks)  # C: 目的判定
             log(("assess", assessment))
             if assessment["achieved"] == "no" and assessment.get("gap") and rounds < max_rounds:
                 spec = self._respecify(model, purpose, spec, assessment["gap"], log)  # A: 自律
@@ -181,17 +222,33 @@ class Director:
         new = _normalize_spec(data, purpose, log)
         return new if data.get("spec") else spec  # 壊れた改訂で現仕様を失わない
 
-    def _assess(self, model: str, purpose: str, spec: dict, result: dict) -> dict:
+    def _assess(self, model: str, purpose: str, spec: dict, result: dict, checks: list) -> dict:
+        evidence, truncated = _evidence(result.get("units", []), spec.get("criteria", []))
+        checks_s = "\n".join(
+            f"- [{'ok' if c['ok'] else ('SKIPPED' if c['ok'] is None else 'FAILED')}] "
+            f"{c['text']} :: {c['detail']}"
+            for c in checks
+        ) or "(none)"
         user = (
             f"PURPOSE:\n{purpose}\n\n"
             f"SPEC (adopted assumptions):\n{json.dumps(spec, ensure_ascii=False)}\n\n"
-            f"EVIDENCE (read from disk):\n{_evidence(result.get('units', []))}"
+            f"CRITERIA CHECKS (executed by code, ground truth):\n{checks_s}\n\n"
+            f"EVIDENCE (read from disk):\n{evidence}"
         )
         data = self._structured(model, _ASSESS_SYSTEM, user, _ASSESS_SCHEMA)
         achieved = data.get("achieved")
         if achieved not in ("yes", "no", "uncertain"):
             # 壊れた判定は楽観に倒さない（安全側 = uncertain → 上げる）。
             return {"achieved": "uncertain", "reason": "unparseable assessment", "gap": ""}
+        if achieved == "yes" and truncated:
+            # 切り詰めた証拠の上の yes は自律では受理しない（コード側ガード。合意005 対処3）。
+            # 見えていない部分への外挿は F1×gemma4 で実発火した。人間の受理は review でできる。
+            return {
+                "achieved": "uncertain",
+                "reason": "evidence was truncated; autonomous yes is not allowed on partial "
+                          f"evidence (code guard). Model said yes: {str(data.get('reason', ''))[:300]}",
+                "gap": str(data.get("gap", "")),
+            }
         return {"achieved": achieved, "reason": str(data.get("reason", "")), "gap": str(data.get("gap", ""))}
 
     def _structured(self, model: str, system: str, user: str, schema: dict) -> dict:
@@ -210,17 +267,51 @@ def _normalize_spec(data: dict, purpose: str, log: Callable) -> dict:
             d for d in data.get("definitions", [])
             if isinstance(d, dict) and d.get("term") and d.get("definition")
         ],
-        "criteria": [str(c) for c in data.get("criteria", []) if c],
+        "criteria": [c for c in map(_normalize_criterion, data.get("criteria", [])) if c],
         "spec": str(data["spec"]),
     }
 
 
+def _normalize_criterion(c: Any) -> dict | None:
+    """criterion を {text, run, expect} に正規化。旧形式（素の文字列）も受ける。"""
+    if isinstance(c, str):
+        return {"text": c, "run": "", "expect": ""} if c.strip() else None
+    if isinstance(c, dict) and str(c.get("text", "")).strip():
+        return {
+            "text": str(c["text"]),
+            "run": str(c.get("run", "") or ""),
+            "expect": str(c.get("expect", "") or ""),
+        }
+    return None
+
+
+def _run_criteria_checks(spec: dict, tools: Sequence[Tool]) -> list:
+    """run を持つ criteria をコード側で実行・照合する（L3 の unit check と同じ形の verify）。"""
+    results = []
+    for c in spec.get("criteria", []):
+        if not c.get("run"):
+            continue
+        ok, detail = run_check({"run": c["run"], "expect": c.get("expect", "")}, tools)
+        results.append({"text": c["text"], "run": c["run"], "ok": ok, "detail": detail})
+    return results
+
+
+def _criterion_line(c: dict) -> str:
+    line = c["text"]
+    if c.get("run"):
+        line += f"（検査: `{c['run']}`"
+        if c.get("expect"):
+            line += f" → 出力に「{c['expect']}」を含むこと"
+        line += "）"
+    return line
+
+
 def _l3_goal(spec: dict, spec_path: str) -> str:
     """L4 の Plan（仕様）を L3 の goal に組む。仕様書ファイルへの参照も渡す。"""
-    crits = "\n".join(f"- {c}" for c in spec.get("criteria", []))
+    crits = "\n".join(f"- {_criterion_line(c)}" for c in spec.get("criteria", []))
     parts = [spec["spec"]]
     if crits:
-        parts.append(f"完了条件（すべて満たすこと）:\n{crits}")
+        parts.append(f"完了条件（すべて満たすこと。検査コマンドはコード側で実行される）:\n{crits}")
     parts.append(f"仕様書: {spec_path}（操作的定義を含む。必要なら read_file で参照）")
     return "\n\n".join(parts)
 
@@ -228,7 +319,7 @@ def _l3_goal(spec: dict, spec_path: str) -> str:
 def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
     """仕様を artifact に書く。L3/L2 も参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
     defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
-    crits = "\n".join(f"- [ ] {c}" for c in spec.get("criteria", []))
+    crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
     text = (
         "# SPEC — L4 が目的から定めた仕様\n"
         "（L4 の生成物。定義・完了条件は仮定を含む。直接編集して直してよい）\n\n"
@@ -243,23 +334,43 @@ def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def _evidence(units: list, limit: int = _EVIDENCE_LIMIT) -> str:
-    """成果物ファイルをディスクから読み直して証拠に組む。done フラグ（表象）は信用しない。"""
-    seen = set()
-    parts = []
+def _evidence(units: list, criteria: list, limit: int = _EVIDENCE_LIMIT) -> tuple[str, bool]:
+    """成果物ファイルをディスクから読み直して証拠に組む。done フラグ（表象）は信用しない。
+
+    units のファイルに加え、criteria が名指しするファイルと workdir の一覧も含める
+    （対処2 — 完了条件の対象が plan の units に現れないことがある。sales×gemma4 で実発火）。
+    返り値: (証拠テキスト, どこかで切り詰めたか)。切り詰めがあると自律 yes は禁止される。
+    """
+    paths: list[str] = []
     for u in units:
         path = str(u.get("file") or "")
-        if not path or path in seen:
-            continue
-        seen.add(path)
+        if path and path not in paths:
+            paths.append(path)
+    mentioned = " ".join(
+        f"{c.get('text', '')} {c.get('run', '')} {c.get('expect', '')}" for c in criteria
+    )
+    for m in _FILENAME_RE.findall(mentioned):
+        if m not in paths and Path(m).is_file():
+            paths.append(m)
+
+    unit_files = {str(u.get("file") or "") for u in units}
+    truncated = False
+    parts = []
+    listing = sorted(p.name for p in Path(".").iterdir() if p.is_file())
+    parts.append("workdir files: " + (", ".join(listing[:40]) or "(empty)"))
+    for path in paths:
         p = Path(path)
-        mark = "done" if u.get("done") else "not-done"
+        origin = "unit deliverable" if path in unit_files else "named in criteria"
         if p.is_file():
             text = p.read_text(encoding="utf-8", errors="replace")
-            excerpt = text[:limit] + (
-                f"\n...(truncated, {len(text)} chars total)" if len(text) > limit else ""
-            )
-            parts.append(f"--- {path} (exists on disk, {p.stat().st_size} bytes, unit={mark}) ---\n{excerpt}")
+            if len(text) > limit:
+                truncated = True
+                excerpt = text[:limit] + f"\n...(truncated, {len(text)} chars total)"
+            else:
+                excerpt = text
+            parts.append(f"--- {path} (exists on disk, {p.stat().st_size} bytes, {origin}) ---\n{excerpt}")
         else:
-            parts.append(f"--- {path} (MISSING on disk, unit={mark}) ---")
-    return "\n".join(parts) or "(no deliverables)"
+            parts.append(f"--- {path} (MISSING on disk, {origin}) ---")
+    if len(parts) == 1:
+        parts.append("(no deliverables)")
+    return "\n".join(parts), truncated

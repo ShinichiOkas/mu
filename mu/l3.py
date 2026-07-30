@@ -29,6 +29,9 @@ from .l1 import Tool
 from .l2 import Agent, transcript
 
 # 単位（unit）: task / 出力ファイル / checkable な成功条件。
+# check は criterion に埋め込まれた検査コマンド（合意005 決定6）: LLM が定めて明示し、
+# 実行と照合はコード側で行う。expect（可視出力）まで見るのが肝 — exit 0 だけでは
+# 何も実行しない no-op スクリプトが自明に通る（F1×gemma4 の偽・完遂で実発火）。
 _PLAN_SCHEMA = {
     "type": "object",
     "properties": {
@@ -40,6 +43,13 @@ _PLAN_SCHEMA = {
                     "task": {"type": "string"},
                     "file": {"type": "string"},
                     "criterion": {"type": "string"},
+                    "check": {
+                        "type": "object",
+                        "properties": {
+                            "run": {"type": "string"},
+                            "expect": {"type": "string"},
+                        },
+                    },
                 },
                 "required": ["task", "file", "criterion"],
             },
@@ -66,7 +76,12 @@ _PLAN_SYSTEM = (
     "Order units so that dependencies (via files) come first. "
     "Do NOT add units the goal does not require (no CI, linting, packaging, or restructuring). "
     "Use simple, concrete file paths (e.g. calc.py, not src/calc.py). "
-    "Reply as JSON {units:[{task,file,criterion}]} with at least one unit."
+    "When a unit's criterion can be verified by running a command, ALSO give check: "
+    "{run, expect} — run is a PowerShell command exercising the criterion; expect is a "
+    "substring that MUST appear in its output (a marker the deliverable is required to "
+    "print, e.g. 'SELFTEST OK 12'). Prefer a visible output marker over exit codes alone: "
+    "a script that does nothing also exits 0. "
+    "Reply as JSON {units:[{task,file,criterion,check?}]} with at least one unit."
 )
 _REPLAN_SYSTEM = (
     "You are a planner revising a plan after a problem. Given the GOAL, the CURRENT PLAN "
@@ -79,7 +94,10 @@ _REPLAN_SYSTEM = (
     "Do NOT create a unit whose only job is to run, execute, verify, or confirm something — "
     "running and verification are already part of each unit's criterion, never a unit of their own. "
     "Do NOT add units the goal does not require (no CI, packaging, restructuring). "
-    "Reply as JSON {units:[{task,file,criterion}]}."
+    "When a unit's criterion can be verified by running a command, ALSO give check: "
+    "{run, expect} — run is a PowerShell command; expect is a substring that MUST appear "
+    "in its output (prefer a visible marker over exit codes alone). "
+    "Reply as JSON {units:[{task,file,criterion,check?}]}."
 )
 _ANALYZE_SYSTEM = (
     "You diagnose why a sub-task failed. Given the failed UNIT and the TRANSCRIPT of the "
@@ -132,11 +150,25 @@ class Orchestrator:
                 model, self._unit_goal(unit), tools,
                 system=system, max_rounds=l2_max, l1_max=l2_l1_max,
             )
-            if passed:                                    # C: 成功
-                unit["done"] = True
-                log(("unit_done", unit))
-                continue
-            analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
+            if passed:                                    # C: 成功（LLM の判定）
+                # verify ゲート: criterion 埋め込みの check をコード側で実行・照合する。
+                # LLM の pass はここを通って初めて done になる（合意005 決定6）。
+                ok, detail = run_check(unit.get("check"), tools)
+                if ok is None and unit.get("check"):
+                    log(("unit_check_skipped", unit, detail))  # 劣化は黙らせない
+                if ok is not False:
+                    unit["done"] = True
+                    log(("unit_done", unit))
+                    continue
+                log(("unit_check_failed", unit, detail))
+                # check 失敗の分析は決定的（コード側の事実）— LLM の分析は挟まない。
+                analysis = {
+                    "reason": f"criterion check failed: {detail}",
+                    "suggestion": "make the deliverable actually satisfy the check command "
+                                  "(including its expected visible output)",
+                }
+            else:
+                analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
             log(("unit_failed", unit, analysis))
             units = approve(self._replan(model, goal, units, analysis))  # A（承認スロット）
             log(("replan", units))
@@ -151,11 +183,19 @@ class Orchestrator:
     # --- 単位ゴールの組み立て（ファイル・グラウンディング） ---
     @staticmethod
     def _unit_goal(unit: dict) -> str:
-        return (
+        goal = (
             f"{unit['task']}\n"
             f"出力ファイル: {unit['file']}\n"
             f"成功条件（これを満たすこと）: {unit['criterion']}"
         )
+        check = unit.get("check") or {}
+        if check.get("run"):
+            # check は L2 への契約でもある: 成果物はこのコマンドで検証され、
+            # expect が指定されていればその文字列を出力に含む必要がある。
+            goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
+            if check.get("expect"):
+                goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
+        return goal
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
     def _plan(self, model: str, goal: str) -> list:
@@ -179,6 +219,35 @@ class Orchestrator:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         resp = self._l0.chat(model, messages, format=schema, think=False)
         return _parse_json(resp.message.content)
+
+
+def run_check(check: dict | None, tools: Sequence[Tool]) -> tuple[bool | None, str]:
+    """criterion 埋め込みの check をコード側で実行・照合する（層間共用の verify ヘルパ）。
+
+    返り値: (True=合格 / False=不合格 / None=実行できない, 詳細)。
+    実行は呼び出し側が注入した execute_command ツールを使う — 環境への接地は
+    呼び出し側の責務のまま、mu の層は実行器を持たない。
+    """
+    run = ((check or {}).get("run") or "").strip()
+    if not run:
+        return None, "no check command"
+    execute = next((func for func, _ in tools if func.__name__ == "execute_command"), None)
+    if execute is None:
+        return None, "no execute_command tool available"
+    try:
+        result = execute(run)
+    except Exception as e:
+        return False, f"check raised: {e}"
+    content = str(getattr(result, "content", result))
+    ok = getattr(result, "ok", None)
+    if ok is None:  # 素の str を返す実行器: 従来契約（exit=N 先頭行）から成否を読む
+        ok = content.startswith("exit=0")
+    expect = ((check or {}).get("expect") or "").strip()
+    if not ok:
+        return False, f"command failed: {content[:300]}"
+    if expect and expect not in content:
+        return False, f"expected output '{expect}' not found in: {content[:300]}"
+    return True, content[:300]
 
 
 def _unit_key(unit: dict) -> str:

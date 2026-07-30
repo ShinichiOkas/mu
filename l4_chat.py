@@ -176,7 +176,11 @@ def _show_spec(spec: dict, spec_path: str) -> None:
     for d in spec.get("definitions", []):
         print(f"  定義: {d.get('term')} = {_short(d.get('definition'), 100)}")
     for c in spec.get("criteria", []):
-        print(f"  完了条件: {_short(c, 100)}")
+        text = c.get("text") if isinstance(c, dict) else c
+        print(f"  完了条件: {_short(text, 100)}")
+        if isinstance(c, dict) and c.get("run"):
+            expect = f" → 「{_short(c.get('expect'), 60)}」" if c.get("expect") else ""
+            print(f"    検査: {_short(c.get('run'), 80)}{expect}")
     print(f"  仕様: {_short(spec.get('spec'), 200)}")
 
 
@@ -192,8 +196,16 @@ def _log(event: tuple) -> None:
         print(f"{_L4} 目的判定: {a.get('achieved')} :: {_short(a.get('reason'), 160)}")
         if a.get("gap"):
             print(f"{_L4}   gap: {_short(a.get('gap'), 160)}")
+    elif kind == "checks":
+        for c in event[1]:
+            mark = "ok" if c.get("ok") else ("skip" if c.get("ok") is None else "NG")
+            print(f"{_L4} 検査[{mark}] {_short(c.get('text'), 80)} :: {_short(c.get('detail'), 100)}")
     elif kind == "respec":
         print(f"{_L4} 仕様を改訂して再実行: {_short(event[1], 160)}")
+    elif kind == "unit_check_failed":
+        print(f"{_L3} [!] UNIT CHECK NG: {event[1].get('file')} -> {_short(event[2], 140)}")
+    elif kind == "unit_check_skipped":
+        print(f"{_L3} [?] UNIT CHECK SKIP: {event[1].get('file')} ({_short(event[2], 80)})")
     elif kind in ("plan", "replan"):
         print(f"{_L3} Plan{'（再計画）' if kind == 'replan' else ''}を自律承認:")
         for i, u in enumerate(event[1], 1):

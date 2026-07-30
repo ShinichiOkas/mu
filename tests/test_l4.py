@@ -193,6 +193,88 @@ def test_unparseable_specify_falls_back_to_purpose(tmp_path, monkeypatch):
     assert any(e[0] == "spec_fallback" for e in events)
 
 
+SPEC_CHECKED = {
+    "definitions": [{"term": "不採算", "definition": "粗利率が5%未満"}],
+    "criteria": [{
+        "text": "answer.csv が不採算商品だけを含む",
+        "run": "python verify_answer.py",
+        "expect": "ANSWER OK",
+    }],
+    "spec": "sales.csv から不採算商品を answer.csv に出力する",
+}
+
+
+def make_exec(script):
+    """execute_command のフェイク（tools 注入用）。"""
+    from mu.l1 import ToolResult
+    calls = []
+
+    def execute_command(command: str) -> ToolResult:
+        """実行する。"""
+        calls.append(command)
+        return script.get(command, ToolResult("exit=1\n(no entry)", ok=False))
+
+    execute_command.calls = calls
+    return (execute_command, "execute_command(command): 実行する。")
+
+
+def test_criteria_strings_are_normalized_to_objects(tmp_path, monkeypatch):
+    # 旧形式（文字列 criteria）も {text, run, expect} に正規化される（後方互換）。
+    agent = make([SPEC, ASSESS_YES])
+    result = run(agent, tmp_path, monkeypatch)
+    c = result["spec"]["criteria"][0]
+    assert c["text"] == SPEC["criteria"][0]
+    assert c["run"] == "" and c["expect"] == ""
+
+
+def test_criteria_check_fail_forces_no_without_llm_assess(tmp_path, monkeypatch):
+    # criteria の check がコード側で落ちたら、LLM の assess を呼ばず決定的に no。
+    monkeypatch.chdir(tmp_path)
+    tool = make_exec({})  # どのコマンドも失敗
+    agent = make([SPEC_CHECKED])
+    result = agent.run("m", "purpose", [tool], max_rounds=1)
+    assert result["achieved"] is False
+    assert result["escalated"] is True
+    assert result["assessment"]["achieved"] == "no"
+    assert "ANSWER OK" in result["assessment"]["gap"] or "verify_answer" in result["assessment"]["gap"]
+    assert len(agent._l0.calls) == 1  # specify のみ（assess の LLM は呼ばれない）
+
+
+def test_criteria_check_pass_feeds_assess_evidence(tmp_path, monkeypatch):
+    from mu.l1 import ToolResult
+    monkeypatch.chdir(tmp_path)
+    tool = make_exec({"python verify_answer.py": ToolResult("exit=0\nANSWER OK", ok=True)})
+    agent = make([SPEC_CHECKED, ASSESS_YES])
+    result = agent.run("m", "purpose", [tool])
+    assert result["achieved"] is True
+    user = agent._l0.calls[-1]["messages"][1]["content"]
+    assert "ANSWER OK" in user  # check の実行結果が証拠として assess に渡る
+
+
+def test_evidence_includes_workdir_listing_and_criteria_named_files(tmp_path, monkeypatch):
+    # 対処2: units のファイル以外でも、criteria が名指しするファイルと workdir 一覧を証拠に含める。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "answer.csv").write_text("MARKER-ANSWER-ROWS", encoding="utf-8")
+    (tmp_path / "stray.txt").write_text("x", encoding="utf-8")
+    agent = make([SPEC_CHECKED, ASSESS_YES])
+    agent.run("m", "purpose", [])
+    user = agent._l0.calls[-1]["messages"][1]["content"]
+    assert "MARKER-ANSWER-ROWS" in user  # criteria 名指しファイルの中身
+    assert "stray.txt" in user           # workdir 一覧
+
+
+def test_truncated_evidence_downgrades_yes_to_uncertain(tmp_path, monkeypatch):
+    # 対処3: 切り詰めた証拠の上で LLM が yes と言っても、コード側で uncertain に落とす。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "out.txt").write_text("A" * 10000, encoding="utf-8")
+    agent = make([SPEC, ASSESS_YES])
+    result = agent.run("m", "purpose", [])
+    assert result["achieved"] is False
+    assert result["escalated"] is True
+    assert result["assessment"]["achieved"] == "uncertain"
+    assert "truncated" in result["assessment"]["reason"]
+
+
 def test_l3_receives_system_and_limits(tmp_path, monkeypatch):
     agent = make([SPEC, ASSESS_YES])
     run(agent, tmp_path, monkeypatch, system="ENV-XYZ", l3_max=5, l2_max=4, l2_l1_max=3)

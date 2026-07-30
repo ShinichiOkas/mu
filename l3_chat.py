@@ -191,6 +191,10 @@ def _show_units(units: list) -> None:
         print(f"  {i}. [{mark}] {u.get('file')}")
         print(f"        task: {_short(u.get('task'))}")
         print(f"        基準: {_short(u.get('criterion'))}")
+        check = u.get("check") or {}
+        if check.get("run"):
+            expect = f" → 「{_short(check.get('expect'), 60)}」" if check.get("expect") else ""
+            print(f"        検査: {_short(check.get('run'), 80)}{expect}")
 
 
 def _approve(units: list) -> list:
@@ -229,6 +233,10 @@ def _log(event: tuple) -> None:
         print(f"  [!] UNIT FAILED: {event[1].get('file')} -> {_short(analysis.get('reason'))}")
         if analysis.get("suggestion"):
             print(f"      suggestion : {_short(analysis.get('suggestion'))}")
+    elif kind == "unit_check_failed":
+        print(f"  [!] UNIT CHECK NG: {event[1].get('file')} -> {_short(event[2], 140)}")
+    elif kind == "unit_check_skipped":
+        print(f"  [?] UNIT CHECK SKIP: {event[1].get('file')} ({_short(event[2], 80)})")
     elif kind == "overall":
         # 機械的照合の結果（全単位 done か）。LLM の推測判定ではない。
         v = event[1]

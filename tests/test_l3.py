@@ -167,6 +167,89 @@ def test_result_includes_rounds_consumed():
     assert result["rounds"] == 2  # 2単位。完了照合は周を消費しない
 
 
+# --- 単位 check（criterion 埋め込み検査。LLM pass の後のコード側 verify ゲート）---
+
+from mu.l1 import ToolResult
+
+
+def make_exec(script):
+    """execute_command のフェイク。コマンド→ToolResult の対応表で応える。"""
+    calls = []
+
+    def execute_command(command: str) -> ToolResult:
+        """実行する。"""
+        calls.append(command)
+        return script.get(command, ToolResult("exit=1\n(no entry)", ok=False, facts={"exit": 1}))
+
+    execute_command.calls = calls
+    return (execute_command, "execute_command(command): 実行する。")
+
+
+PLAN_CHECKED = {
+    "units": [{
+        "task": "implement", "file": "app.py",
+        "criterion": "selftest passes",
+        "check": {"run": "python app.py --selftest", "expect": "SELFTEST OK 12"},
+    }]
+}
+
+
+def test_unit_check_pass_gates_llm_pass_to_done():
+    tool = make_exec({"python app.py --selftest": ToolResult("exit=0\nSELFTEST OK 12", ok=True)})
+    agent = make([PLAN_CHECKED], [True])
+    result = agent.run("m", "build app", [tool])
+    assert result["done"] is True
+    assert tool[0].calls == ["python app.py --selftest"]  # コード側で1回実行された
+
+
+def test_unit_check_fail_blocks_fake_done_and_replans():
+    # LLM が pass と言っても、check（可視出力 expect）が満たされなければ done にしない。
+    # no-op exit=0（F1×gemma4 の偽・完遂）はここで死ぬ。
+    tool = make_exec({"python app.py --selftest": ToolResult("exit=0\n", ok=True)})  # 出力なし
+    events = []
+    agent = make([PLAN_CHECKED, PLAN_CHECKED], [True, True])
+    # 2周目も check が通らないので max_rounds=2 で未達に終わる
+    result = agent.run("m", "build app", [tool], log=events.append, max_rounds=2)
+    assert result["done"] is False
+    assert any(e[0] == "unit_check_failed" for e in events)
+
+
+def test_unit_check_fail_uses_deterministic_analysis_not_llm():
+    # check 失敗の分析は決定的（コード側の事実）— _ANALYZE の LLM は呼ばない。
+    tool = make_exec({"python app.py --selftest": ToolResult("exit=1\nboom", ok=False)})
+    agent = make([PLAN_CHECKED, {"units": []}], [True])
+    agent.run("m", "build app", [tool], max_rounds=1)
+    # l0 呼び出しは plan と replan の2回だけ（analyze の LLM 呼び出しが無い）
+    assert len(agent._l0.calls) == 2
+
+
+def test_unit_without_check_keeps_previous_behavior():
+    tool = make_exec({})
+    agent = make([PLAN1], [True])
+    result = agent.run("m", "build calc", [tool])
+    assert result["done"] is True
+    assert tool[0].calls == []  # check が無ければ何も実行しない
+
+
+def test_unit_check_without_executor_is_skipped_but_logged():
+    # execute_command が無い環境では check を実行できない。黙って劣化させず log に出す。
+    events = []
+    agent = make([PLAN_CHECKED], [True])
+    result = agent.run("m", "build app", [], log=events.append)
+    assert result["done"] is True  # LLM pass を受理（従来動作）
+    assert any(e[0] == "unit_check_skipped" for e in events)
+
+
+def test_unit_goal_includes_check_contract():
+    # check は L2 への契約として unit goal に載る（成果物が expect を印字するよう誘導）。
+    tool = make_exec({"python app.py --selftest": ToolResult("exit=0\nSELFTEST OK 12", ok=True)})
+    agent = make([PLAN_CHECKED], [True])
+    agent.run("m", "build app", [tool])
+    goal_sent = agent._l2.calls[0]
+    assert "python app.py --selftest" in goal_sent
+    assert "SELFTEST OK 12" in goal_sent
+
+
 # --- _carry_done の同一ファイル穴（F1-g で偽・完遂として実発火）---
 
 PLAN_SAME3 = plan(
