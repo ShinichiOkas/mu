@@ -1,7 +1,10 @@
 {
   "sprint_id": "006-pjm-role-process",
-  "status": "retrospecting",
-  "goal": "PjM プロセス（役割注釈付きタスク列）の逐次実行ループ。役割=タスク属性、L3 は役割を着て1タスク完遂、QA/アーキテクトは独立タスク。並列はスコープ外",
+  "status": "completed",
+  "goal": "PjM プロセス（役割注釈付きタスク列）の逐次実行ループ。役割=タスク属性、L3 は役割を着て1タスク完遂、QA/アーキテクトは独立タスク。並列はスコープ外（達成。受入8走 偽・完遂0、F1/sales 初完遂）",
   "created_at": "2026-08-01T00:32:29+09:00",
-  "agreement_path": ".pair-agent/agreements/006-pjm-role-process.md"
+  "agreed_at": "2026-08-01T01:00:00+09:00",
+  "completed_at": "2026-08-01T07:01:56+09:00",
+  "agreement_path": ".pair-agent/agreements/006-pjm-role-process.md",
+  "sprint_doc": ".pair-agent/sprints/006-pjm-role-process.md"
 }
