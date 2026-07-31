@@ -1,24 +1,26 @@
-"""L4 — 目的の層（なぜ作るか / Director）。
+"""L4 — 目的の層（PdM + PjM / Director）。
 
-L3（詳細な仕様とゴールを与えられ完遂する層）の上に「目的を仕様に変換し、
-成果を目的に照らす」層を重ねる。人間が自然に言えるのは目的であり、詳細な
-仕様ではない — その落差を埋めるのがこの層（合意005）。
+人間が自然に言えるのは目的であり、詳細な仕様ではない。その落差を埋めるのが
+この層（合意005）。合意006 で、単一の会話ではなく**役割注釈付きプロセス**として
+仕事を編む形に拡張された。マルチエージェントは新しいフレームワークではなく、
+「役割を着せた L3 の逐次ループ」であり、並列化は後から足せる最適化にすぎない。
 
-PDCA は L3 と同じ形（再帰同一構造）:
-  P : 目的 → 操作的定義 + 完了条件 + 仕様。**定義は artifact（ファイル）**
-      に明示する — 推測をなくすのではなく、検証可能な仮定に変える   ← 自律
-  D : L3 に仕様を渡して完遂させる（L3 の Plan 承認は L4 が自律）     ← 自律
-  C : 成果（ディスク上の実体）を**目的**に照らして判定               ← 自律
-  A : 具体的な欠落は自律で仕様を改訂。判定できないときは判定できないと
-      分かって**人間に上げる**（review スロット）                    ← HITL
+役割分担（合意006。各役割の定義書は PjM に渡されるナレッジベース）:
+  PdM : 目的 → 操作的定義＋受入基準＋仕様（SPEC.md artifact）           ← specify
+  PjM : SPEC → プロセス（役割注釈付きタスク列）を編み、人選（モデル割当）し、
+        失敗や verdict を受けて**部分再実行**（どのタスクを無効化するか）を判断 ← LLM 判断
+  実行: プロセスの1タスクずつを、役割定義を system に前置した L3 が完遂     ← コードのループ
+  QA  : プロセス末尾の独立タスク。SPEC と実物だけを見て verdict.md を書く。
+        L4 は verdict を機械的に読む（一発 LLM 判定 assess は廃止）
 
-手続きの成功と目的の達成は別の事実である（スクリプトが exit 0 で「該当なし」と
-出力しても、本当に該当が無いのか結合キーを間違えたのかは目的を持つ層にしか
-区別できない）。だから C は L3 の done を信用せず、成果物ファイルをディスク
-から読み直して判定する。判定は yes / no / uncertain の3値で、uncertain を
-楽観の yes に倒さないことが偽・完遂の再発防止線。
+決定論の床（コード側）:
+  - プロセス末尾に QA タスクが無ければ**コードが必ず足す**（検証を飛ばして完遂に到達できない）
+  - 部分再実行の依存伝播はコードが行い、**QA タスクは必ず再実行**（done を carry しない）
+  - spec の criteria check（実行＋可視マーカー照合）は verdict とは独立に走る
+  - 壊れた verdict / 壊れた PjM 判断は安全側（uncertain / escalate）に落ちる
 
-**無状態**。上限・承認者・レビュー担当は呼び出し側が規定する。再帰の底は人間。
+**無状態**。上限（予算の封筒）・レビュー担当・役割 KB・モデルプールは呼び出し側が規定する。
+人間はモデルプールの外にいる（PjM が管理する人員ではなく、escalate で依頼する相手。再帰の底）。
 """
 
 from __future__ import annotations
@@ -31,9 +33,8 @@ from typing import Any, Callable, Sequence
 from .l1 import Tool
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 
-# criteria の各項目は {text, run, expect}: text は条件の記述、run/expect は
-# criterion に埋め込まれた検査コマンド（合意005 決定6）。検査は LLM が定めて
-# artifact に明示され（人間が直せる）、実行と照合はコード側の事実になる。
+# --- スキーマ -----------------------------------------------------------------
+
 _SPECIFY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -61,15 +62,41 @@ _SPECIFY_SCHEMA = {
     },
     "required": ["definitions", "criteria", "spec"],
 }
-_ASSESS_SCHEMA = {
+_PROCESS_SCHEMA = {
     "type": "object",
     "properties": {
-        "achieved": {"type": "string", "enum": ["yes", "no", "uncertain"]},
-        "reason": {"type": "string"},
-        "gap": {"type": "string"},
+        "tasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string"},
+                    "task": {"type": "string"},
+                    "file": {"type": "string"},
+                    "criterion": {"type": "string"},
+                    "check": {
+                        "type": "object",
+                        "properties": {"run": {"type": "string"}, "expect": {"type": "string"}},
+                    },
+                    "model": {"type": "string"},
+                },
+                "required": ["role", "task", "file", "criterion"],
+            },
+        }
     },
-    "required": ["achieved", "reason", "gap"],
+    "required": ["tasks"],
 }
+_DECIDE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["rerun", "replan", "respec", "escalate"]},
+        "invalidate": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string"},
+    },
+    "required": ["action", "invalidate", "reason"],
+}
+
+# --- プロンプト ---------------------------------------------------------------
 
 _SPECIFY_SYSTEM = (
     "You turn an abstract PURPOSE (why) into a concrete, checkable specification (what). "
@@ -84,11 +111,10 @@ _SPECIFY_SYSTEM = (
     "substring that MUST appear in its output — a short ASCII marker the deliverables are "
     "REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get "
     "corrupted). Leave run/expect empty only when no command can verify it. "
-    "3) spec: the detailed task specification to hand to an implementation planner. "
-    "Self-contained (repeat the definitions and criteria inside it, including the required "
-    "output markers), in the same language as the purpose, naming concrete file "
-    "deliverables. Do NOT add work the purpose does not require. "
-    "Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
+    "3) spec: the detailed task specification, self-contained (repeat the definitions and "
+    "criteria inside it, including the required output markers), in the same language as "
+    "the purpose, naming concrete file deliverables. Do NOT add work the purpose does not "
+    "require. Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
 _RESPECIFY_SYSTEM = (
     "You revise a specification. Given the PURPOSE, the CURRENT SPEC (JSON) and FEEDBACK "
@@ -98,43 +124,65 @@ _RESPECIFY_SYSTEM = (
     "{text, run, expect} — run/expect embed an executable check (see the current spec). "
     "Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
-_ASSESS_SYSTEM = (
-    "You judge whether a PURPOSE (why the work was requested) has been achieved. "
-    "You are given the PURPOSE, the SPEC that was adopted for it (its definitions and "
-    "criteria were assumptions — question them, do not just re-check them), and EVIDENCE "
-    "read directly from the files on disk (existence, size, content excerpts). "
-    "Procedure success and purpose achievement are DIFFERENT facts: a script may run, "
-    "pass its checks and print 'nothing found' while the purpose is not served (e.g. a "
-    "wrong join dropped every row). Judge against the purpose. "
-    "Reply achieved='yes' ONLY if the evidence itself shows the purpose is met. "
-    "Reply achieved='no' if something concrete is missing or wrong — describe exactly "
-    "what in 'gap'. Reply achieved='uncertain' if the evidence cannot settle it or the "
-    "judgment needs knowledge you do not have (say what is missing in 'reason'); "
-    "NEVER guess: prefer 'uncertain' over an optimistic 'yes'. "
-    "Reply as JSON {achieved: 'yes'|'no'|'uncertain', reason, gap}."
+_PROCESS_SYSTEM = (
+    "You are the project manager (PjM). Given a SPEC, your role knowledge base (ROLES) and "
+    "your staff pool (AVAILABLE MODELS), design the PROCESS: an ordered list of tasks that "
+    "will fulfil the spec. Each task = {role, task, file, criterion, check?, model?}. "
+    "Rules: use only the listed role names. Every task produces ONE concrete file — 'file' "
+    "must be non-empty and UNIQUE across tasks. Order tasks so dependencies (via files) come "
+    "first. Scale the process to the difficulty: a small job needs few tasks; add an "
+    "'architect' task producing a design document (design.md) when structure, quality "
+    "attributes or design rules matter. The FINAL task MUST be role 'qa' with file "
+    "'verdict.md' — it independently verifies the deliverables against the SPEC. "
+    "check = {run, expect}: run is a command that works in the execution environment stated "
+    "below (if any); expect is a short ASCII marker that MUST appear in its output. "
+    "Set 'model' from AVAILABLE MODELS when a different worker fits the task (e.g. "
+    "verification by a different model family); omit it to use the default. "
+    "Do NOT add tasks the spec does not require. Reply as JSON {tasks:[...]}."
+)
+_DECIDE_SYSTEM = (
+    "You are the project manager (PjM) deciding how to proceed after a round of execution. "
+    "You are given the SPEC, the PROCESS with per-task done-status, and the ROUND RESULT "
+    "(a failed task, failed deterministic checks, and/or the QA verdict). Choose ONE action: "
+    "'rerun' — the process is right but some work must be redone: list in 'invalidate' the "
+    "FILES of ONLY the tasks that need redoing (smallest set; dependents and QA are re-run "
+    "automatically). 'replan' — the process itself is wrong; the task list will be rebuilt. "
+    "'respec' — the specification or its definitions are wrong; it will be revised using "
+    "your 'reason'. 'escalate' — human judgment is needed or no further progress is "
+    "possible. Reply as JSON {action, invalidate, reason}."
 )
 
-# 成果物1ファイルあたり証拠として読む上限（LLM 文脈の肥大を防ぐ）。
-# 1200 では通常のコードファイルがほぼ必ず切れ、切れた先への外挿（F1×gemma4）を誘発した。
-# 切れた証拠での自律 yes は _assess のコードガードで禁止される（対処3）ため、
-# この上限は「ガードが発動する頻度」とのトレードオフになる。
-_EVIDENCE_LIMIT = 6000
-
-# 証拠に含める criteria 名指しファイルの抽出（テキストからのファイル名らしき語）。
-_FILENAME_RE = re.compile(r"[\w\-./\\]+\.[A-Za-z0-9]{1,5}")
+# QA タスクが欠けたプロセスへコードが足す既定タスク（検証を飛ばして完遂に到達させない）。
+_DEFAULT_QA_TASK = {
+    "role": "qa",
+    "task": "受け入れ基準に照らして成果物を独立に検証し、判定書を書く",
+    "file": "verdict.md",
+    "criterion": "verdict.md が『ACHIEVED: yes|no|uncertain』の1行目を含む",
+}
 
 
 def _auto_review(report: dict) -> dict:
-    """既定のレビュー: L4 自身の判定が yes のときだけ受理。uncertain / no は上げる。"""
-    return {"accept": report.get("assessment", {}).get("achieved") == "yes", "feedback": ""}
+    """既定のレビュー: ラウンドが完全に ok（全タスク done・check 全通過・verdict yes）のときだけ受理。"""
+    return {"accept": bool(report.get("ok")), "feedback": ""}
 
 
 def _noop(_event: Any) -> None:
     pass
 
 
+def load_roles(path: str = "roles") -> dict:
+    """role 定義書（PjM のナレッジベース）をディレクトリから読む。{role名: 本文}。"""
+    p = Path(path)
+    if not p.is_dir():
+        return {}
+    return {
+        f.stem: f.read_text(encoding="utf-8")
+        for f in sorted(p.glob("*.md"))
+    }
+
+
 class Director:
-    """L4。目的を仕様へ変換して L3 に完遂させ、成果を目的に照らして判定する。"""
+    """L4。PdM が仕様を定め、PjM がプロセスを編み、役割を着た L3 に1タスクずつ完遂させる。"""
 
     def __init__(self, l0: Any, l3: Any = None) -> None:
         self._l0 = l0
@@ -146,7 +194,10 @@ class Director:
         purpose: str,
         tools: Sequence[Tool],
         *,
+        roles: dict | None = None,
+        models: Sequence[str] | None = None,
         spec_path: str = "SPEC.md",
+        process_path: str = "PROCESS.md",
         review: Callable[[dict], dict] = _auto_review,
         log: Callable[[Any], None] = _noop,
         system: str | None = None,
@@ -155,59 +206,100 @@ class Director:
         l2_max: int = 6,
         l2_l1_max: int = 10,
     ) -> dict:
-        spec = self._specify(model, purpose, log, system)             # P
+        roles = roles or {}
+        pool = list(models) if models else [model]
+        limits = {"max_rounds": l3_max, "l2_max": l2_max, "l2_l1_max": l2_l1_max}
+
+        spec = self._specify(model, purpose, log, system)                  # PdM
+        tasks = self._pjm_process(model, spec, roles, pool, log, system)   # PjM: P（体制＝プロセス）
         rounds = 0
-        result: dict = {}
-        assessment: dict = {}
+        verdict: dict | None = None
         for _ in range(max_rounds):
             rounds += 1
-            _write_spec(spec_path, purpose, spec)                     # 定義の artifact 化
-            log(("spec", spec, spec_path))
-            result = self._l3.run(                                    # D（Plan 承認は自律）
-                model, _l3_goal(spec, spec_path), tools,
-                log=log, system=system,
-                max_rounds=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
-            )
-            # C: criteria 埋め込みの check をコード側で実行・照合（verify）。
-            # 1つでも落ちれば LLM の assess を経ずに決定的に no（幻覚の余地なし）。
-            checks = _run_criteria_checks(spec, tools)
+            _write_spec(spec_path, purpose, spec)
+            _write_process(process_path, purpose, tasks)
+            log(("process", tasks, process_path))
+
+            failure = self._execute(model, tasks, tools, roles, pool,      # 役割を着た L3 の逐次ループ
+                                    spec_path, system, log, limits)
+            checks = _run_criteria_checks(spec, tools)                     # 決定論の床
             if checks:
                 log(("checks", checks))
-            failed = [c for c in checks if c["ok"] is False]
-            if failed:
-                assessment = {
-                    "achieved": "no",
-                    "reason": "criteria checks failed (code-side verification)",
-                    "gap": "; ".join(
-                        f"{c['text']} (check: {c['run']}): {c['detail']}" for c in failed
-                    ),
-                }
-            else:
-                assessment = self._assess(model, purpose, spec, result, checks)  # C: 目的判定
-            log(("assess", assessment))
-            if assessment["achieved"] == "no" and assessment.get("gap") and rounds < max_rounds:
-                spec = self._respecify(model, purpose, spec, assessment["gap"], log, system)  # A: 自律
-                log(("respec", assessment["gap"]))
-                continue
-            decision = review(                                        # A: 再帰の底 = 人間
-                {"purpose": purpose, "spec": spec, "spec_path": spec_path,
-                 "result": result, "assessment": assessment}
-            )
+            verdict = _read_verdict(tasks) if failure is None else None    # QA の判定を機械的に読む
+            if verdict:
+                log(("verdict", verdict))
+            failed_checks = [c for c in checks if c["ok"] is False]
+            ok = failure is None and not failed_checks and bool(verdict) and verdict["achieved"] == "yes"
+
+            if not ok:
+                decision = self._pjm_decide(                               # PjM: A（部分再実行の判断）
+                    model, spec, tasks, failure, failed_checks, verdict, log, system
+                )
+                act = decision.get("action")
+                if rounds < max_rounds:
+                    if act == "rerun":
+                        _invalidate(tasks, decision.get("invalidate", []))
+                        continue
+                    if act == "replan":
+                        new = self._pjm_process(model, spec, roles, pool, log, system)
+                        tasks = _carry_done_tasks(tasks, new)
+                        continue
+                    if act == "respec":
+                        spec = self._respecify(model, purpose, spec, decision.get("reason", ""), log, system)
+                        tasks = self._pjm_process(model, spec, roles, pool, log, system)
+                        continue
+                # escalate / 壊れた判断 / 予算切れ → 人間の判断へ落ちる
+
+            assessment = verdict or {
+                "achieved": "uncertain", "reason": "no verdict (QA task not completed)", "gap": "",
+            }
+            decision = review({
+                "purpose": purpose, "spec": spec, "spec_path": spec_path,
+                "tasks": tasks, "process_path": process_path,
+                "assessment": assessment, "checks": checks, "ok": ok,
+            })
             if decision.get("accept"):
-                return self._done(True, False, assessment, spec, spec_path, result, rounds)
+                return self._done(True, False, assessment, spec, spec_path, tasks, process_path, rounds)
             feedback = str(decision.get("feedback") or "")
             if not feedback:
-                return self._done(False, True, assessment, spec, spec_path, result, rounds)
+                return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
             spec = self._respecify(model, purpose, spec, feedback, log, system)
-            log(("respec", feedback))
-        return self._done(False, True, assessment, spec, spec_path, result, rounds)
+            tasks = self._pjm_process(model, spec, roles, pool, log, system)
+
+        assessment = verdict or {"achieved": "uncertain", "reason": "rounds exhausted", "gap": ""}
+        return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
 
     @staticmethod
-    def _done(achieved, escalated, assessment, spec, spec_path, result, rounds) -> dict:
+    def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds) -> dict:
         return {
             "achieved": achieved, "escalated": escalated, "assessment": assessment,
-            "spec": spec, "spec_path": spec_path, "result": result, "rounds": rounds,
+            "spec": spec, "spec_path": spec_path, "tasks": tasks,
+            "process_path": process_path, "rounds": rounds,
         }
+
+    # --- 実行ループ（コード・決定論）: 1タスクずつ役割を着せて L3 に完遂させる ---
+    def _execute(
+        self, model: str, tasks: list, tools: Sequence[Tool], roles: dict,
+        pool: list, spec_path: str, system: str | None, log: Callable, limits: dict,
+    ) -> dict | None:
+        """pending タスクを順に実行する。最初に失敗したタスクを返す（全部成功なら None）。"""
+        for i, t in enumerate(tasks):
+            if t.get("done"):
+                continue
+            task_system = "\n\n".join(s for s in (roles.get(t["role"], ""), system) if s)
+            task_model = t.get("model") if t.get("model") in pool else model
+            prior = [p["file"] for p in tasks[:i] if p.get("done")]
+            result = self._l3.run(
+                task_model, _task_goal(t, spec_path, prior), tools,
+                log=log, system=task_system or None,
+                max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
+                l2_l1_max=limits["l2_l1_max"],
+            )
+            t["done"] = bool(result.get("done"))
+            log(("task_done", t) if t["done"] else ("task_failed", t))
+            if not t["done"]:
+                return t
+        return None
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
     def _specify(self, model: str, purpose: str, log: Callable, system: str | None = None) -> dict:
@@ -228,40 +320,181 @@ class Director:
         new = _normalize_spec(data, purpose, log)
         return new if data.get("spec") else spec  # 壊れた改訂で現仕様を失わない
 
-    def _assess(self, model: str, purpose: str, spec: dict, result: dict, checks: list) -> dict:
-        evidence, truncated = _evidence(result.get("units", []), spec.get("criteria", []))
-        checks_s = "\n".join(
-            f"- [{'ok' if c['ok'] else ('SKIPPED' if c['ok'] is None else 'FAILED')}] "
-            f"{c['text']} :: {c['detail']}"
-            for c in checks
-        ) or "(none)"
+    def _pjm_process(
+        self, model: str, spec: dict, roles: dict, pool: list, log: Callable,
+        system: str | None = None,
+    ) -> list:
+        roles_s = "\n".join(f"- {name}: {_first_line(doc)}" for name, doc in roles.items()) or "(none)"
         user = (
-            f"PURPOSE:\n{purpose}\n\n"
-            f"SPEC (adopted assumptions):\n{json.dumps(spec, ensure_ascii=False)}\n\n"
-            f"CRITERIA CHECKS (executed by code, ground truth):\n{checks_s}\n\n"
-            f"EVIDENCE (read from disk):\n{evidence}"
+            f"SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
+            f"ROLES (your knowledge base):\n{roles_s}\n\n"
+            f"AVAILABLE MODELS (default first):\n{', '.join(pool)}"
         )
-        data = self._structured(model, _ASSESS_SYSTEM, user, _ASSESS_SCHEMA)
-        achieved = data.get("achieved")
-        if achieved not in ("yes", "no", "uncertain"):
-            # 壊れた判定は楽観に倒さない（安全側 = uncertain → 上げる）。
-            return {"achieved": "uncertain", "reason": "unparseable assessment", "gap": ""}
-        if achieved == "yes" and truncated:
-            # 切り詰めた証拠の上の yes は自律では受理しない（コード側ガード。合意005 対処3）。
-            # 見えていない部分への外挿は F1×gemma4 で実発火した。人間の受理は review でできる。
-            return {
-                "achieved": "uncertain",
-                "reason": "evidence was truncated; autonomous yes is not allowed on partial "
-                          f"evidence (code guard). Model said yes: {str(data.get('reason', ''))[:300]}",
-                "gap": str(data.get("gap", "")),
-            }
-        return {"achieved": achieved, "reason": str(data.get("reason", "")), "gap": str(data.get("gap", ""))}
+        data = self._structured(model, _with_env(_PROCESS_SYSTEM, system), user, _PROCESS_SCHEMA)
+        return _normalize_tasks(data.get("tasks", []), roles, log)
+
+    def _pjm_decide(
+        self, model: str, spec: dict, tasks: list, failure: dict | None,
+        failed_checks: list, verdict: dict | None, log: Callable, system: str | None = None,
+    ) -> dict:
+        result_parts = []
+        if failure is not None:
+            result_parts.append(f"FAILED TASK: {json.dumps(failure, ensure_ascii=False)}")
+        if failed_checks:
+            result_parts.append(
+                "FAILED CHECKS:\n" + "\n".join(f"- {c['text']}: {c['detail']}" for c in failed_checks)
+            )
+        if verdict is not None:
+            result_parts.append(f"QA VERDICT: {json.dumps(verdict, ensure_ascii=False)}")
+        user = (
+            f"SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
+            f"PROCESS:\n{_process_summary(tasks)}\n\n"
+            f"ROUND RESULT:\n" + ("\n".join(result_parts) or "(no info)")
+        )
+        data = self._structured(model, _with_env(_DECIDE_SYSTEM, system), user, _DECIDE_SCHEMA)
+        if data.get("action") not in ("rerun", "replan", "respec", "escalate"):
+            data = {"action": "escalate", "invalidate": [], "reason": "unparseable PjM decision"}
+        log(("pjm", data))
+        return data
 
     def _structured(self, model: str, system: str, user: str, schema: dict) -> dict:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         resp = self._l0.chat(model, messages, format=schema, think=False)
         return _parse_json(resp.message.content)
 
+
+# --- プロセス（役割注釈付きタスク列）のヘルパ ---------------------------------
+
+def _normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
+    """PjM 応答をタスク列に正規化する。末尾に QA タスクが無ければコードが必ず足す。"""
+    tasks = []
+    for t in raw:
+        if not isinstance(t, dict):
+            continue
+        file = str(t.get("file", "")).strip()
+        text = str(t.get("task", "")).strip()
+        if not file or not text:
+            continue
+        role = str(t.get("role", "")).strip()
+        if roles and role not in roles:
+            log(("role_fallback", role, "implementer"))
+            role = "implementer"
+        task = {
+            "role": role, "task": text, "file": file,
+            "criterion": str(t.get("criterion", "")), "done": False,
+        }
+        check = t.get("check") or {}
+        if isinstance(check, dict) and (check.get("run") or "").strip():
+            task["check"] = {"run": str(check["run"]), "expect": str(check.get("expect", "") or "")}
+        if (t.get("model") or "").strip():
+            task["model"] = str(t["model"])
+        tasks.append(task)
+    if not any(t["role"] == "qa" for t in tasks):
+        log(("qa_appended", _DEFAULT_QA_TASK["file"]))
+        tasks.append(dict(_DEFAULT_QA_TASK, done=False))
+    return tasks
+
+
+def _task_goal(task: dict, spec_path: str, prior_files: list) -> str:
+    goal = (
+        f"{task['task']}\n"
+        f"役割: {task['role']}\n"
+        f"出力ファイル: {task['file']}\n"
+        f"成功条件（これを満たすこと）: {task['criterion']}"
+    )
+    check = task.get("check") or {}
+    if check.get("run"):
+        goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
+        if check.get("expect"):
+            goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
+    refs = [spec_path, *prior_files]
+    goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
+    return goal
+
+
+def _invalidate(tasks: list, files: list) -> None:
+    """指定ファイルのタスクを無効化し、依存（後続タスクの記述に現れるファイル）へ伝播する。
+
+    QA タスクは必ず無効化する（部分再実行の経路から「検証を飛ばして完遂」に到達させない）。
+    判断（どこを無効化するか）は PjM、伝播はここ（コードの決定論）。
+    """
+    invalid = {str(f).strip() for f in files if str(f).strip()}
+    changed = True
+    while changed:  # 固定点まで伝播（invalid 集合は単調増加なので停止する）
+        changed = False
+        for t in tasks:
+            if t["file"] in invalid:
+                if t.get("done"):
+                    t["done"] = False
+                    changed = True
+                continue
+            texts = " ".join([
+                t.get("task", ""), t.get("criterion", ""),
+                (t.get("check") or {}).get("run", ""), (t.get("check") or {}).get("expect", ""),
+            ])
+            if any(f in texts for f in invalid):  # 無効化されたファイルに言及＝依存とみなす
+                invalid.add(t["file"])
+                t["done"] = False
+                changed = True
+    for t in tasks:
+        if t["role"] == "qa":
+            t["done"] = False
+
+
+def _carry_done_tasks(old: list, new: list) -> list:
+    """replan 後の done 引き継ぎ。file が両側で一意な非 QA タスクのみ（_carry_done と同じ防御）。
+
+    QA タスクは決して carry しない — 再計画後は必ず検証し直す。
+    """
+    from collections import Counter
+    old_c = Counter(t["file"] for t in old)
+    new_c = Counter(t["file"] for t in new)
+    done_files = {
+        t["file"] for t in old
+        if t.get("done") and t["role"] != "qa" and old_c[t["file"]] == 1 and new_c[t["file"]] <= 1
+    }
+    for t in new:
+        if t["role"] != "qa" and t["file"] in done_files:
+            t["done"] = True
+    return new
+
+
+def _process_summary(tasks: list) -> str:
+    return "\n".join(
+        f"- [{'x' if t.get('done') else ' '}] ({t['role']}) {t['file']}: {t['task']}"
+        for t in tasks
+    )
+
+
+def _read_verdict(tasks: list) -> dict | None:
+    """最後の QA タスクの判定書を機械的に読む。QA 未完なら None、壊れは uncertain（安全側）。"""
+    qa = [t for t in tasks if t["role"] == "qa"]
+    if not qa or not qa[-1].get("done"):
+        return None
+    p = Path(qa[-1]["file"])
+    if not p.is_file():
+        return {"achieved": "uncertain", "reason": f"verdict file missing: {qa[-1]['file']}", "gap": ""}
+    text = p.read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"ACHIEVED:\s*(yes|no|uncertain)", text, re.IGNORECASE)
+    if not m:
+        return {"achieved": "uncertain", "reason": "verdict unparseable (no ACHIEVED line)", "gap": ""}
+    reason = re.search(r"REASON:\s*(.+)", text)
+    gap = re.search(r"GAP:\s*(.+)", text)
+    return {
+        "achieved": m.group(1).lower(),
+        "reason": reason.group(1).strip() if reason else "",
+        "gap": gap.group(1).strip() if gap else "",
+    }
+
+
+def _first_line(text: str) -> str:
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip().lstrip("# ")
+    return ""
+
+
+# --- 仕様（SPEC）のヘルパ（005 から継続） -------------------------------------
 
 def _normalize_spec(data: dict, purpose: str, log: Callable) -> dict:
     """specify 応答を仕様 dict に正規化。壊れていたら目的の原文を仕様として使う（劣化を可視化）。"""
@@ -292,7 +525,7 @@ def _normalize_criterion(c: Any) -> dict | None:
 
 
 def _run_criteria_checks(spec: dict, tools: Sequence[Tool]) -> list:
-    """run を持つ criteria をコード側で実行・照合する（L3 の unit check と同じ形の verify）。"""
+    """run を持つ criteria をコード側で実行・照合する（決定論の床。verdict とは独立）。"""
     results = []
     for c in spec.get("criteria", []):
         if not c.get("run"):
@@ -312,27 +545,17 @@ def _criterion_line(c: dict) -> str:
     return line
 
 
-def _l3_goal(spec: dict, spec_path: str) -> str:
-    """L4 の Plan（仕様）を L3 の goal に組む。仕様書ファイルへの参照も渡す。"""
-    crits = "\n".join(f"- {_criterion_line(c)}" for c in spec.get("criteria", []))
-    parts = [spec["spec"]]
-    if crits:
-        parts.append(f"完了条件（すべて満たすこと。検査コマンドはコード側で実行される）:\n{crits}")
-    parts.append(f"仕様書: {spec_path}（操作的定義を含む。必要なら read_file で参照）")
-    return "\n\n".join(parts)
-
-
 def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
-    """仕様を artifact に書く。L3/L2 も参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
+    """仕様を artifact に書く。全タスクが参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
     defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
     crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
     text = (
-        "# SPEC — L4 が目的から定めた仕様\n"
-        "（L4 の生成物。定義・完了条件は仮定を含む。直接編集して直してよい）\n\n"
+        "# SPEC — L4（PdM）が目的から定めた仕様\n"
+        "（L4 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）\n\n"
         f"## 目的（人間の入力・原文）\n{purpose}\n\n"
         f"## 操作的定義\n{defs or '(なし)'}\n\n"
-        f"## 完了条件\n{crits or '(なし)'}\n\n"
-        f"## 仕様（L3 への入力）\n{spec.get('spec', '')}\n"
+        f"## 受入基準\n{crits or '(なし)'}\n\n"
+        f"## 仕様\n{spec.get('spec', '')}\n"
     )
     p = Path(spec_path)
     if p.parent != Path("."):
@@ -340,43 +563,26 @@ def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def _evidence(units: list, criteria: list, limit: int = _EVIDENCE_LIMIT) -> tuple[str, bool]:
-    """成果物ファイルをディスクから読み直して証拠に組む。done フラグ（表象）は信用しない。
-
-    units のファイルに加え、criteria が名指しするファイルと workdir の一覧も含める
-    （対処2 — 完了条件の対象が plan の units に現れないことがある。sales×gemma4 で実発火）。
-    返り値: (証拠テキスト, どこかで切り詰めたか)。切り詰めがあると自律 yes は禁止される。
-    """
-    paths: list[str] = []
-    for u in units:
-        path = str(u.get("file") or "")
-        if path and path not in paths:
-            paths.append(path)
-    mentioned = " ".join(
-        f"{c.get('text', '')} {c.get('run', '')} {c.get('expect', '')}" for c in criteria
+def _write_process(process_path: str, purpose: str, tasks: list) -> None:
+    """プロセス（体制表）を artifact に書く。誰が・どの役割で・どのモデルで・何を作るか。"""
+    lines = []
+    for i, t in enumerate(tasks, 1):
+        mark = "x" if t.get("done") else " "
+        model = f"（model: {t['model']}）" if t.get("model") else ""
+        lines.append(f"{i}. [{mark}] **{t['role']}**{model} → `{t['file']}`")
+        lines.append(f"   - task: {t['task']}")
+        lines.append(f"   - 成功条件: {t.get('criterion', '')}")
+        check = t.get("check") or {}
+        if check.get("run"):
+            expect = f" → 「{check.get('expect', '')}」" if check.get("expect") else ""
+            lines.append(f"   - 検査: `{check['run']}`{expect}")
+    text = (
+        "# PROCESS — L4（PjM）が編んだプロセス（体制表）\n"
+        "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）\n\n"
+        f"## 目的\n{purpose}\n\n"
+        f"## タスク列\n" + "\n".join(lines) + "\n"
     )
-    for m in _FILENAME_RE.findall(mentioned):
-        if m not in paths and Path(m).is_file():
-            paths.append(m)
-
-    unit_files = {str(u.get("file") or "") for u in units}
-    truncated = False
-    parts = []
-    listing = sorted(p.name for p in Path(".").iterdir() if p.is_file())
-    parts.append("workdir files: " + (", ".join(listing[:40]) or "(empty)"))
-    for path in paths:
-        p = Path(path)
-        origin = "unit deliverable" if path in unit_files else "named in criteria"
-        if p.is_file():
-            text = p.read_text(encoding="utf-8", errors="replace")
-            if len(text) > limit:
-                truncated = True
-                excerpt = text[:limit] + f"\n...(truncated, {len(text)} chars total)"
-            else:
-                excerpt = text
-            parts.append(f"--- {path} (exists on disk, {p.stat().st_size} bytes, {origin}) ---\n{excerpt}")
-        else:
-            parts.append(f"--- {path} (MISSING on disk, {origin}) ---")
-    if len(parts) == 1:
-        parts.append("(no deliverables)")
-    return "\n".join(parts), truncated
+    p = Path(process_path)
+    if p.parent != Path("."):
+        p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
