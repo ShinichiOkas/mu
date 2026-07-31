@@ -1,0 +1,42 @@
+# Analysis of Buggy Stats Module
+
+## Failed Test Cases and Root Causes
+
+1. **test_mean_empty_raises**
+   - **Root Cause**: The `mean` function returns `0` for an empty list instead of raising a `ValueError`.
+   - **Current Implementation**: `if not xs: return 0`
+
+2. **test_median_empty_raises**
+   - **Root Cause**: The `median` function returns `0` for an empty list instead of raising a `ValueError`.
+   - **Current Implementation**: `if not xs: return 0`
+
+3. **test_median_even_is_average_of_middle_two**
+   - **Root Cause**: The `median` function always returns the element at index `len(s) // 2`. For even-length lists, it should return the average of the two middle elements.
+   - **Current Implementation**: `return s[len(s) // 2]`
+
+4. **test_variance_is_sample_variance**
+   - **Root Cause**: The `variance` function calculates population variance (dividing by `n`) instead of sample variance (dividing by `n-1`).
+   - **Current Implementation**: `sum(...) / len(xs)`
+
+5. **test_variance_single_raises**
+   - **Root Cause**: The `variance` function does not check for a single-element list and would return `0` (or cause division by zero if fixed to `n-1`), whereas the test expects a `ValueError`.
+   - **Current Implementation**: No check for `len(xs) < 2`.
+
+6. **test_value_range**
+   - **Root Cause**: The `value_range` function returns `max(xs)` instead of the range (max - min).
+   - **Current Implementation**: `return max(xs)`
+
+7. **test_value_range_empty_raises**
+   - **Root Cause**: `max()` on an empty list raises `ValueError` by default in Python, but the logic in `buggy_stats.py` might need explicit handling or is currently implicitly failing/succeeding based on `max()` behavior. However, the test requires `ValueError` to be raised. (Actually, `max([])` raises `ValueError`, so this might pass, but the implementation is conceptually wrong for the range). *Correction*: Based on the execution output, `test_value_range_empty_raises` actually passed (indicated by the dots `.FFF.F.FF` - there are 9 tests, 6 failed. The dots are at positions 1, 5, 7, 9? No, let's check: `. (pass) F (fail) F (fail) F (fail) . (pass) F (fail) . (pass) F (fail) F (fail)`. Wait, `test_value_range_empty_raises` is the 9th test. The output says `FAILED (failures=6)`. The tests were: 1:mean, 2:mean_empty, 3:median_odd, 4:median_even, 5:median_empty, 6:variance_sample, 7:variance_single, 8:value_range, 9:value_range_empty.
+   Looking at the fail logs:
+   - test_mean_empty_raises (2)
+   - test_median_empty_raises (5)
+   - test_median_even_is_average_of_middle_two (4)
+   - test_value_range (8)
+   - test_variance_is_sample_variance (6)
+   - test_variance_single_raises (7)
+   Total 6 failures.
+   The tests that passed: `test_mean`, `test_median_odd`, `test_value_range_empty_raises`.
+   So `test_value_range_empty_raises` passed because `max([])` raises `ValueError`.
+
+ANALYSIS COMPLETE

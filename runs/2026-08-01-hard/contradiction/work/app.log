@@ -1,0 +1,8 @@
+2026-07-30 09:01:12 INFO  login user=山田太郎 mail=taro.yamada@example.com
+2026-07-30 09:03:45 INFO  order id=1001 item=notebook qty=2
+2026-07-30 09:05:10 WARN  retry payment tel=090-0000-1111 user=山田太郎
+2026-07-30 10:12:33 INFO  login user=鈴木花子 mail=hanako.suzuki@example.com
+2026-07-30 10:15:02 INFO  inquiry from=hanako.suzuki@example.com subject=返品について
+2026-07-30 11:02:51 ERROR db timeout query=orders
+2026-07-30 11:04:00 INFO  callback scheduled tel=080-2222-3333 user=鈴木花子
+2026-07-30 12:30:19 INFO  logout user=山田太郎

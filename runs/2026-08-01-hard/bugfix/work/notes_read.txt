@@ -1,0 +1,27 @@
+# Summary of Read Files
+
+## SPEC.md
+- **Purpose**: Fix bugs in buggy_stats.py so all tests in test_stats.py pass
+- **Acceptance Criteria**: `python test_stats.py` execution must output "OK"
+- **Constraint**: test_stats.py must remain unmodified (SHA-256 hash must be identical before/after)
+- **Deliverable**: A corrected version of buggy_stats.py
+
+## design.md
+- **Structure**: buggy_stats.py is the target module; test_stats.py is read-only test suite
+- **Function Fixes Required**:
+  - mean(xs): Raise ValueError if empty list (currently returns 0)
+  - median(xs): Raise ValueError if empty; for even-length lists, return average of two middle elements
+  - variance(xs): Use sample variance with denominator (n-1); raise ValueError if <2 elements
+  - value_range(xs): Return max(xs) - min(xs); raise ValueError if empty
+- **Design Rules**: Only modify buggy_stats.py; no temp files; use ValueError for edge cases
+- **Verification**: Run `python test_stats.py` and check for "OK" in output
+
+## buggy_stats.py
+- Contains four statistical functions: mean(), median(), variance(), value_range()
+- Current implementation shows:
+  - mean(): Already raises ValueError for empty list, returns sum/len
+  - median(): Already raises ValueError for empty, handles odd/even cases correctly
+  - variance(): Already raises ValueError for <2 elements, uses (n-1) denominator
+  - value_range(): Already raises ValueError for empty, returns max-min
+
+All three files have been read and their contents summarized above.
