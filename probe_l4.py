@@ -28,7 +28,7 @@ from mu.l4 import Director, load_roles
 from tools import TOOLS
 from l4_chat import _VerboseL0, _verbose_tools, _log, _env_preamble, _L4, _L3, _L2, _L1, ROLES_DIR
 
-L4_MAX = 2      # probe は自動レビューなので改訂ループは1回まで（実行時間の抑制）
+L4_MAX = 3      # PjM 判断サイクル。部分再実行（rerun 後の再ラウンド）まで観測するため 3
 L3_MAX = 8
 L2_MAX = 6
 L2_L1_MAX = 10

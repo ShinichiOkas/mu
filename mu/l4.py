@@ -136,8 +136,9 @@ _PROCESS_SYSTEM = (
     "'verdict.md' — it independently verifies the deliverables against the SPEC. "
     "check = {run, expect}: run is a command that works in the execution environment stated "
     "below (if any); expect is a short ASCII marker that MUST appear in its output. "
-    "Set 'model' from AVAILABLE MODELS when a different worker fits the task (e.g. "
-    "verification by a different model family); omit it to use the default. "
+    "Staffing: the FIRST model in AVAILABLE MODELS is the default and your strongest "
+    "general worker — use it (by omitting 'model') for architect and implementer tasks. "
+    "Assign a DIFFERENT model mainly to the final qa task, for decorrelated verification. "
     "Do NOT add tasks the spec does not require. Reply as JSON {tasks:[...]}."
 )
 _DECIDE_SYSTEM = (
