@@ -1,7 +1,7 @@
 # 合意ドキュメント 005 — L4（目的の層 / なぜ作るか）と抽象度の再帰
 
 - **sprint**: 005-l4-purpose-layer
-- **status**: retrospecting（2026-07-31 完了条件すべて成立。振り返り待ち）
+- **status**: completed（2026-07-31 振り返り完了。ビジョン記録・Skill 4件登録済み）
 - **version**: 3
 - **開始**: 2026-07-21
 - **前提**: L0〜L3 実装・検証済み（北極星到達）。F1 probe 2走で「偽・完遂」を4件観測（[docs/experiment-2026-07-20-f1.md](../../docs/experiment-2026-07-20-f1.md)）
