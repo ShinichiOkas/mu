@@ -1,26 +1,27 @@
-r"""l4_chat.py — L4（目的の層 / Director）を触る最小 CLI。
+r"""l4_chat.py — L4（PdM + PjM / Director）を触る最小 CLI。
 
-L4 = 目的（なぜ作るか）を受け取り、操作的定義＋完了条件＋仕様に変換して
-L3 に完遂させ、成果を**目的**に照らして判定する層。
+L4 = 目的（なぜ作るか）を受け取り、
+  PdM が操作的定義＋受入基準＋仕様（SPEC.md）を定め、
+  PjM が役割注釈付きプロセス（PROCESS.md）を編んで人選し、
+  1タスクずつ役割を着せた L3 に完遂させ、
+  末尾の QA タスク（独立文脈）が書く verdict.md を機械的に読んで判定する層。
 
-HITL の位置が L3 と変わる（合意005「承認の位置が一段低すぎた」）:
-  - L3 の Plan / 再計画の承認 = **L4 が自律**（人間には流れが実況されるだけ）
-  - 人間が判断するのは**目的の達成**だけ。定義は事前確認せず、決めて明示し
-    動かして見せてから直す（SPEC.md を直接編集してもよい）
-最終判定のプロンプトで
+役割定義書（PjM のナレッジベース）はリポジトリの roles/ から読む。
+失敗や verdict 不合格は PjM が部分再実行（rerun/replan/respec）を判断し、
+判断できないときは人間に上がる。最終判定のプロンプトで
     y      = 目的達成として受理
     f XXX  = フィードバック XXX で仕様を改訂して再実行
     n      = 終了（未達のまま引き取る）
-を受ける。L4 の判定が uncertain（判定できない）のときも、黙って完遂にせず
-ここに上がってくる — それが偽・完遂の再発防止線。
+を受ける。
 
-上限（L4_MAX / L3_MAX / L2_MAX / L2_L1_MAX）はこの呼び出し側が規定する。
-成果物ファイルと SPEC.md は cwd に生成される（file grounding）。使い捨ての
-ディレクトリで実行すること。
+上限（L4_MAX / L3_MAX / L2_MAX / L2_L1_MAX）はこの呼び出し側が規定する（予算の封筒）。
+成果物・SPEC.md・PROCESS.md・verdict.md は cwd に生成される（file grounding）。
+使い捨てのディレクトリで実行すること。
 
 使い方:
-    .\.venv\Scripts\python.exe l4_chat.py [model]
-既定モデルは gemma4:12b（参照モデル。もう一つは qwen3.5:9b）。
+    .\.venv\Scripts\python.exe l4_chat.py [model] [追加モデル...]
+追加モデルは PjM の人選プール（例: QA を別ファミリーに出す qwen3.5:9b）。
+既定モデルは gemma4:12b。開発回転は gemma4:31b-cloud を推奨（役割別3構成）。
 """
 
 import functools
@@ -29,12 +30,13 @@ import os
 import platform
 import sys
 import time
+from pathlib import Path
 
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
 from mu.l3 import Orchestrator
-from mu.l4 import Director
+from mu.l4 import Director, load_roles
 from tools import TOOLS
 
 # Windows コンソール等でも日本語・記号で落ちないよう UTF-8 にそろえる。
@@ -44,9 +46,10 @@ for _stream in (sys.stdout, sys.stdin):
     except (AttributeError, ValueError):
         pass
 
-DEFAULT_MODEL = "gemma4:12b"  # 参照モデル（他は qwen3.5:9b）
-L4_MAX = 3       # L4 の上限（仕様改訂→再実行の回数）
-L3_MAX = 8       # 1 仕様で L3 を回す上限
+DEFAULT_MODEL = "gemma4:12b"
+ROLES_DIR = str(Path(__file__).resolve().parent / "roles")  # cwd に依らず repo の roles/ を読む
+L4_MAX = 3       # L4 の上限（PjM 判断サイクルの回数）
+L3_MAX = 8       # 1 タスクで L3 を回す上限
 L2_MAX = 6       # 1 単位で L2 を回す上限
 L2_L1_MAX = 10   # L2 の 1 周で L1 を回す上限
 
@@ -61,7 +64,7 @@ def _short(text: object, n: int = 120) -> str:
 
 
 def _env_preamble() -> str:
-    """L2 実行へ渡す環境グラウンディング（環境の文脈は呼び出し側の責務）。"""
+    """タスク実行と check コマンド設計へ渡す環境グラウンディング（呼び出し側の責務）。"""
     return (
         "Environment:\n"
         f"- OS: {platform.system()} {platform.release()}\n"
@@ -82,8 +85,9 @@ _TOOL = "          [tool]"
 
 # format スキーマの property 集合 → その呼び出しの意味（表示専用。未知形は総称へ）。
 _STAGES = {
-    frozenset({"definitions", "criteria", "spec"}): "仕様を策定中（目的→定義/完了条件/仕様）",
-    frozenset({"achieved", "reason", "gap"}): "目的達成を判定中",
+    frozenset({"definitions", "criteria", "spec"}): "仕様を策定中（PdM: 定義/受入基準/仕様）",
+    frozenset({"tasks"}): "プロセスを編成中（PjM: 役割・人選・順序）",
+    frozenset({"action", "invalidate", "reason"}): "進め方を判断中（PjM: 部分再実行）",
     frozenset({"units"}): "Plan/再計画を作成中",
     frozenset({"reason", "suggestion"}): "失敗を分析中",
     frozenset({"passed", "reason", "next"}): "Reflect（合否）判定中",
@@ -172,40 +176,56 @@ def _verbose_tools(tools: list) -> list:
 
 
 def _show_spec(spec: dict, spec_path: str) -> None:
-    print(f"── L4 が定めた仕様（{spec_path} に書き出し済み。直接編集も可）──")
+    print(f"── PdM が定めた仕様（{spec_path} に書き出し済み。直接編集も可）──")
     for d in spec.get("definitions", []):
         print(f"  定義: {d.get('term')} = {_short(d.get('definition'), 100)}")
     for c in spec.get("criteria", []):
-        text = c.get("text") if isinstance(c, dict) else c
-        print(f"  完了条件: {_short(text, 100)}")
-        if isinstance(c, dict) and c.get("run"):
+        print(f"  受入基準: {_short(c.get('text'), 100)}")
+        if c.get("run"):
             expect = f" → 「{_short(c.get('expect'), 60)}」" if c.get("expect") else ""
             print(f"    検査: {_short(c.get('run'), 80)}{expect}")
     print(f"  仕様: {_short(spec.get('spec'), 200)}")
 
 
+def _show_process(tasks: list, process_path: str) -> None:
+    print(f"── PjM が編んだプロセス（{process_path} に書き出し済み。直接編集も可）──")
+    for i, t in enumerate(tasks, 1):
+        mark = "x" if t.get("done") else " "
+        model = f" @{t['model']}" if t.get("model") else ""
+        print(f"  {i}. [{mark}] ({t['role']}{model}) {t['file']}: {_short(t['task'], 80)}")
+
+
 def _log(event: tuple) -> None:
-    """自律部の進行を表示。L3 の Plan 承認は L4 が自律なので、Plan も表示だけする。"""
     kind = event[0]
     if kind == "spec":
-        _show_spec(event[1], event[2])
+        _show_spec(event[1], event[2]) if len(event) > 2 else None
     elif kind == "spec_fallback":
         print(f"{_L4} [!] {event[1]}")
-    elif kind == "assess":
-        a = event[1]
-        print(f"{_L4} 目的判定: {a.get('achieved')} :: {_short(a.get('reason'), 160)}")
-        if a.get("gap"):
-            print(f"{_L4}   gap: {_short(a.get('gap'), 160)}")
+    elif kind == "process":
+        _show_process(event[1], event[2])
+    elif kind == "qa_appended":
+        print(f"{_L4} [+] QA タスクをコードが補完: {event[1]}")
+    elif kind == "role_fallback":
+        print(f"{_L4} [?] 未知の役割 {event[1]} を implementer に置換")
+    elif kind == "task_done":
+        print(f"{_L4} [x] TASK DONE  : ({event[1]['role']}) {event[1]['file']}")
+    elif kind == "task_failed":
+        print(f"{_L4} [!] TASK FAILED: ({event[1]['role']}) {event[1]['file']}")
     elif kind == "checks":
         for c in event[1]:
             mark = "ok" if c.get("ok") else ("skip" if c.get("ok") is None else "NG")
             print(f"{_L4} 検査[{mark}] {_short(c.get('text'), 80)} :: {_short(c.get('detail'), 100)}")
+    elif kind == "verdict":
+        v = event[1]
+        print(f"{_L4} QA 判定: {v.get('achieved')} :: {_short(v.get('reason'), 160)}")
+        if v.get("gap"):
+            print(f"{_L4}   gap: {_short(v.get('gap'), 160)}")
+    elif kind == "pjm":
+        d = event[1]
+        inv = f" invalidate={d.get('invalidate')}" if d.get("invalidate") else ""
+        print(f"{_L4} PjM 判断: {d.get('action')}{inv} :: {_short(d.get('reason'), 140)}")
     elif kind == "respec":
         print(f"{_L4} 仕様を改訂して再実行: {_short(event[1], 160)}")
-    elif kind == "unit_check_failed":
-        print(f"{_L3} [!] UNIT CHECK NG: {event[1].get('file')} -> {_short(event[2], 140)}")
-    elif kind == "unit_check_skipped":
-        print(f"{_L3} [?] UNIT CHECK SKIP: {event[1].get('file')} ({_short(event[2], 80)})")
     elif kind in ("plan", "replan"):
         print(f"{_L3} Plan{'（再計画）' if kind == 'replan' else ''}を自律承認:")
         for i, u in enumerate(event[1], 1):
@@ -216,6 +236,10 @@ def _log(event: tuple) -> None:
     elif kind == "unit_failed":
         analysis = event[2]
         print(f"{_L3} [!] UNIT FAILED: {event[1].get('file')} -> {_short(analysis.get('reason'))}")
+    elif kind == "unit_check_failed":
+        print(f"{_L3} [!] UNIT CHECK NG: {event[1].get('file')} -> {_short(event[2], 140)}")
+    elif kind == "unit_check_skipped":
+        print(f"{_L3} [?] UNIT CHECK SKIP: {event[1].get('file')} ({_short(event[2], 80)})")
     elif kind == "overall":
         v = event[1]
         print(f"{_L3} [=] OVERALL: passed={v.get('passed')} :: {_short(v.get('reason'), 160)}")
@@ -224,16 +248,17 @@ def _log(event: tuple) -> None:
 def _review(report: dict) -> dict:
     """HITL: 目的の達成を人間が判断する（再帰の底）。"""
     a = report.get("assessment", {})
-    units = report.get("result", {}).get("units", [])
     print("── 目的レビュー ──")
     print(f"  目的: {_short(report.get('purpose'), 160)}")
-    print(f"  L4 の判定: {a.get('achieved')} :: {_short(a.get('reason'), 200)}")
+    print(f"  ラウンド: {'完全 ok' if report.get('ok') else '未達あり'}")
+    print(f"  QA 判定: {a.get('achieved')} :: {_short(a.get('reason'), 200)}")
     if a.get("gap"):
         print(f"  gap: {_short(a.get('gap'), 200)}")
-    print("  成果物:")
-    for u in units:
-        print(f"    {'[x]' if u.get('done') else '[ ]'} {u.get('file')}")
-    print(f"  仕様書: {report.get('spec_path')}（定義・完了条件はここ）")
+    print("  プロセス:")
+    for t in report.get("tasks", []):
+        model = f" @{t['model']}" if t.get("model") else ""
+        print(f"    {'[x]' if t.get('done') else '[ ]'} ({t['role']}{model}) {t['file']}")
+    print(f"  仕様書: {report.get('spec_path')} / 体制表: {report.get('process_path')}")
     while True:
         try:
             cmd = input("目的は達成？ [y=受理 / f <指示>=改訂して再実行 / n=終了] > ").strip()
@@ -255,17 +280,19 @@ def _review(report: dict) -> dict:
 
 def main() -> None:
     model = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MODEL
+    pool = [model, *sys.argv[2:]]
+    roles = load_roles(ROLES_DIR)
     l0 = OllamaInterface()
-    # 層ごとにラベルの違う実況プロキシを合成点へ差し込む（層自体は無変更）。
     l1 = ToolLoop(_VerboseL0(l0, _L1))
     l2 = Agent(_VerboseL0(l0, _L2), l1)
     l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
     director = Director(_VerboseL0(l0, _L4), l3)
     tools = _verbose_tools(TOOLS)
 
-    print(f"L4 chat / model={model}  l4_max={L4_MAX}  (目的を入力 / /exit で終了)")
-    print(f"  cwd={os.getcwd()}  <- 成果物と SPEC.md はここに作られます")
+    print(f"L4 chat / model={model}  pool={pool}  roles={sorted(roles)}  l4_max={L4_MAX}")
+    print(f"  cwd={os.getcwd()}  <- 成果物・SPEC.md・PROCESS.md・verdict.md はここに作られます")
     print("  環境:", platform.system(), platform.release(), "/ execute_command=PowerShell")
+    print("  (目的を入力 / /exit で終了)")
     while True:
         try:
             purpose = input("purpose> ").strip()
@@ -280,6 +307,7 @@ def main() -> None:
         try:
             result = director.run(
                 model, purpose, tools,
+                roles=roles, models=pool,
                 review=_review, log=_log, system=_env_preamble(),
                 max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
             )
@@ -292,13 +320,11 @@ def main() -> None:
 
         if result["achieved"]:
             status = "目的達成（人間が受理）✓"
-        elif result["escalated"]:
+        else:
             a = result.get("assessment", {})
             status = f"未達（{a.get('achieved')}: {_short(a.get('reason'), 120)}）"
-        else:
-            status = "未達"
         print(f"=== {status} ===")
-        print(f"  仕様書: {result.get('spec_path')} / L4 {result.get('rounds')}周")
+        print(f"  体制表: {result.get('process_path')} / L4 {result.get('rounds')}周")
 
 
 if __name__ == "__main__":

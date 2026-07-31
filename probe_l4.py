@@ -9,8 +9,9 @@ uncertain / no は escalated=True で終わる — 合意005 の受入条件
   sales : データ→答え型（売上表から不採算商品の特定）。定義の artifact 化を観測する
 
 使い方:
-    .\.venv\Scripts\python.exe probe_l4.py <f1|sales> <model> <workdir>
-workdir は使い捨てディレクトリを指定する（成果物・SPEC.md がそこに作られる）。
+    .\.venv\Scripts\python.exe probe_l4.py <f1|sales> <model> <workdir> [qa_model]
+workdir は使い捨てディレクトリを指定する（成果物・SPEC.md・PROCESS.md がそこに作られる）。
+qa_model を渡すと PjM の人選プールに加わる（QA を別ファミリーに出す等）。
 """
 
 import json
@@ -23,9 +24,9 @@ from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
 from mu.l3 import Orchestrator
-from mu.l4 import Director
+from mu.l4 import Director, load_roles
 from tools import TOOLS
-from l4_chat import _VerboseL0, _verbose_tools, _log, _env_preamble, _L4, _L3, _L2, _L1
+from l4_chat import _VerboseL0, _verbose_tools, _log, _env_preamble, _L4, _L3, _L2, _L1, ROLES_DIR
 
 L4_MAX = 2      # probe は自動レビューなので改訂ループは1回まで（実行時間の抑制）
 L3_MAX = 8
@@ -64,7 +65,9 @@ SDカード,2500,2440,150
 
 def main() -> None:
     case, model, workdir = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+    pool = [model, *sys.argv[4:]]
     purpose = PURPOSES[case]
+    roles = load_roles(ROLES_DIR)  # chdir 前に repo の roles/ を読む
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     if case == "sales":
@@ -76,12 +79,13 @@ def main() -> None:
     l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
     director = Director(_VerboseL0(l0, _L4), l3)
 
-    print(f"probe_l4 case={case} model={model} workdir={workdir}")
+    print(f"probe_l4 case={case} model={model} pool={pool} roles={sorted(roles)} workdir={workdir}")
     print(f"purpose: {purpose}")
     t0 = time.monotonic()
     try:
         result = director.run(
             model, purpose, _verbose_tools(TOOLS),
+            roles=roles, models=pool,
             log=_log, system=_env_preamble(),
             max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
@@ -95,8 +99,9 @@ def main() -> None:
         {k: result[k] for k in ("achieved", "escalated", "assessment", "rounds")},
         ensure_ascii=False, indent=2,
     ))
-    for u in result.get("result", {}).get("units", []):
-        print(f"  {'[x]' if u.get('done') else '[ ]'} {u.get('file')}")
+    for t in result.get("tasks", []):
+        model_s = f" @{t['model']}" if t.get("model") else ""
+        print(f"  {'[x]' if t.get('done') else '[ ]'} ({t['role']}{model_s}) {t.get('file')}")
     print(f"elapsed: {elapsed:.0f}s")
     print("files in workdir:")
     for p in sorted(Path(".").iterdir()):
