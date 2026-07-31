@@ -23,6 +23,33 @@ from mu.l1 import ToolResult
 # read_file / execute_command の出力上限（LLM 文脈の肥大を防ぐ）。
 _MAX_OUTPUT = 4000
 
+# 保護された入力ファイル（絶対パス）。呼び出し側が protect() で登録する。
+# 合意006 決定④の解除条件（実走で設計規則が破られ QA/check も検出できない入力破壊を観測）
+# の発火により実装。プロンプトの「読み取り専用」規則は確率的にしか効かないため、
+# 決定的に守りたい不変条件としてコード側に置く。
+# 既知の限界: execute_command 内のシェルリダイレクト等はこの保護を通らない。
+_PROTECTED: set = set()
+
+
+def protect(paths) -> None:
+    """指定パスを書き込み禁止（読み取り専用）として登録する。呼び出し側の責務で宣言する。"""
+    _PROTECTED.update(str(Path(p).resolve()) for p in paths)
+
+
+def clear_protection() -> None:
+    """保護登録をすべて解除する（テスト・セッション切替用）。"""
+    _PROTECTED.clear()
+
+
+def _protected_result(path: str, action: str) -> ToolResult:
+    return ToolResult(
+        f"error: {path} is a protected input file (read-only / 保護された入力ファイル)。"
+        "上書き・編集は禁止。内容が仕様と食い違う場合は、ファイルを直すのではなく"
+        "実物に合わせて作業すること。",
+        ok=False,
+        facts={"action": action, "path": path, "protected": True},
+    )
+
 # PowerShell 実行体。pwsh(7) を優先し、無ければ Windows PowerShell。
 _POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
 
@@ -41,6 +68,8 @@ def read_file(path: str) -> ToolResult:
 def write_file(path: str, content: str) -> ToolResult:
     """指定パスにテキストを書き込む（新規作成 or 上書き）。"""
     p = Path(path)
+    if str(p.resolve()) in _PROTECTED:
+        return _protected_result(path, "write")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     size = p.stat().st_size  # 書けた実体の証拠はディスクの stat から取る
@@ -53,6 +82,8 @@ def write_file(path: str, content: str) -> ToolResult:
 def edit_file(path: str, old: str, new: str) -> ToolResult:
     """ファイル内の文字列 old をすべて new に置換する。"""
     p = Path(path)
+    if str(p.resolve()) in _PROTECTED:
+        return _protected_result(path, "edit")
     text = p.read_text(encoding="utf-8", errors="replace")
     count = text.count(old)
     if count == 0:

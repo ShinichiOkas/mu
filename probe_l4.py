@@ -20,6 +20,7 @@ import sys
 import time
 from pathlib import Path
 
+import tools as tools_mod
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
@@ -72,6 +73,7 @@ def main() -> None:
     os.chdir(workdir)
     if case == "sales":
         Path("sales.csv").write_text(SALES_CSV, encoding="utf-8")
+        tools_mod.protect(["sales.csv"])  # 入力は読み取り専用（コード側の決定論ガード）
 
     l0 = OllamaInterface()
     l1 = ToolLoop(_VerboseL0(l0, _L1))
