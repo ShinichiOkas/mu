@@ -3,6 +3,35 @@
 長期の改善タスクリスト。出典は実装レビュー [docs/review-2026-07-20.md](docs/review-2026-07-20.md)（項番 A/B/C/D はレポート内の見出しに対応）。
 着手時はスプリントとして協議してから進める。
 
+## 合意007（2026-08-02 draft）で実装順序が確定した項目
+
+出典: [docs/review-2026-08-02.md](docs/review-2026-08-02.md)（項番 B/C は同メモの見出し）と
+[合意007](.pair-agent/agreements/007-capability-and-allocation.md)。順序は師匠賛成済み。片側ずつ（二正面回避）。
+
+### 次スプリント候補: 能力側の床
+
+- [ ] **check の同語反復ゲート**（B-2①）— `expect` が `run` の部分列なら不正として弾く（コード数行）
+- [ ] **[重大] check の反証テスト**（B-2②）— 成果物なしの状態で check を先に走らせ、そこで合格する
+  check は無効として差し戻す。「不合格になりうる検査」だけを床として数える。
+  H セット実測で空振り3件（deadstock 同語反復・jsonparse expect なし・perf 比較なし）を捕捉できる
+- [ ] **[重大] specify に unsatisfiable チャネル**（C-3）— `_SPECIFY_SCHEMA` に
+  unsatisfiable / blocking_questions を追加、非空ならコード側で無条件 escalate（H3 の機構化）
+- [ ] **qa 役割に原文照合の検査項目**（C-3補足）— `roles/qa.md` に
+  「SPEC が目的の制約を弱めていないか（SPEC.md 内の目的原文と照合）」を1行追加
+
+### その次: 媒体統合＋deps（同一スプリント。還元の反証テストを兼ねる）
+
+- [ ] **unit/task を単一 WBS 項目型へ統合**（合意007-3）— 置き場所は層でないファイル（例 `mu/work.py`）。
+  構造規約に「媒体は層ではない」を追記。統合が軋んだ場所は合意007 の改訂材料として記録する
+- [ ] **[重大] 依存の明示 `deps`**（C-2）— 散文部分一致の `_invalidate` を廃止、伝播は前方のみ。
+  deadstock 実走で承認済み design.md が巻き添え再生成された（2970→2626 bytes）。並列化（O2）の前提条件
+- [ ] **rerun で invalidate 空のとき QA だけ空振りする穴**（C-2小）— 1周を捨てるバグ
+
+### その後（統合結果を見て協議）
+
+- [ ] 役割の対称化（PdM/PjM を roles/ へ、`l3_chat --role`。合意007-4・5）
+- [ ] 再現性: tools.py の sh バックエンド＋CI（D-1）→ H1〜H6 を回帰スイート化（D-2）
+
 **2026-07-20 処理**: 下記のうち「実機の genuine failure が必要な `_ANALYZE_SYSTEM`」と「L4 着手時に検討と規定した L3 step 面」を除き、全項目を実装・検証済み（テスト 71 green、live 含む）。
 
 ## 優先度: 高
