@@ -121,6 +121,10 @@ _SPECIFY_SYSTEM = (
     "substring that MUST appear in its output — a short ASCII marker the deliverables are "
     "REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get "
     "corrupted). Leave run/expect empty only when no command can verify it. "
+    "If EXISTING FILES are listed below, they are the REAL inputs read from disk: use their "
+    "actual names, headers, columns and value spellings — never invent, rename or 'clean up' "
+    "a format. If the purpose describes an input differently from the file, the FILE is right; "
+    "say so in the spec and require the work to adapt to the file, never the file to the spec. "
     "3) spec: the detailed task specification, self-contained (repeat the definitions and "
     "criteria inside it, including the required output markers), in the same language as "
     "the purpose, naming concrete file deliverables. Do NOT add work the purpose does not "
@@ -178,6 +182,45 @@ _DEFAULT_QA_TASK = {
 }
 
 
+def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300) -> str:
+    """作業ディレクトリの**実在する入力**を一覧＋先頭抜粋にして返す（合意007 C2）。
+
+    PdM は目的の文章だけからは入力の形式を知りえず、実測すると形式を発明する
+    （sales×12b: ヘッダーを2度発明 → 不一致 → respec → 入力破壊）。仕様を作る前に
+    実物を前置する。005 の assess 証拠グラウンディング・006 の env preamble と同型で、
+    「事実は呼び出し側（コード）が渡し、LLM に想像させない」形。
+    """
+    p = Path(workdir or ".")
+    if not p.is_dir():
+        return ""
+    entries = [f for f in sorted(p.iterdir()) if f.name not in exclude and not f.name.startswith(".")]
+    lines = []
+    for f in entries[:max_files]:
+        if f.is_dir():
+            lines.append(f"- {f.name}/ (directory)")
+            continue
+        try:
+            size = f.stat().st_size
+            text = f.read_text(encoding="utf-8", errors="strict")[:head]
+        except (OSError, UnicodeDecodeError):
+            lines.append(f"- {f.name} (binary or unreadable)")
+            continue
+        lines.append(f"- {f.name} ({size} bytes) — 先頭:")
+        lines.extend(f"    {line}" for line in text.splitlines()[:5])
+    if len(entries) > max_files:
+        lines.append(f"- （他 {len(entries) - max_files} 件）")
+    return "\n".join(lines)
+
+
+def _inputs_block(inputs: str) -> str:
+    if not inputs:
+        return ""
+    return (
+        "\n\nEXISTING FILES IN THE WORK DIRECTORY (the real inputs, read from disk):\n"
+        f"{inputs}"
+    )
+
+
 def _infeasible(spec: dict) -> bool:
     """PdM が明示的に「充足不能」と申告したか。欠落・True はどちらも「進める」（合意007 決定4）。"""
     return spec.get("feasible") is False
@@ -232,8 +275,13 @@ class Director:
         pool = list(models) if models else [model]
         limits = {"max_rounds": l3_max, "l2_max": l2_max, "l2_l1_max": l2_l1_max}
 
-        spec = self._specify(model, purpose, log, system)                  # PdM
-        if _infeasible(spec):                                              # 充足不能なら人間へ（合意007）
+        inputs = _input_grounding(                                         # 入力の実物（合意007 C2）
+            str(Path(spec_path).parent), {Path(spec_path).name, Path(process_path).name}
+        )
+        if inputs:
+            log(("inputs", inputs))
+        spec = self._specify(model, purpose, log, system, inputs)          # PdM
+        if _infeasible(spec):                                            # 充足不能なら人間へ（合意007）
             return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, log)
         tasks = self._pjm_process(model, spec, roles, pool, log, system)   # PjM: P（体制＝プロセス）
         rounds = 0
@@ -269,7 +317,9 @@ class Director:
                         tasks = _carry_done_tasks(tasks, new)
                         continue
                     if act == "respec":
-                        spec = self._respecify(model, purpose, spec, decision.get("reason", ""), log, system)
+                        spec = self._respecify(
+                            model, purpose, spec, decision.get("reason", ""), log, system, inputs
+                        )
                         if _infeasible(spec):
                             return self._stop_infeasible(
                                 purpose, spec, spec_path, process_path, tasks, rounds, log
@@ -291,7 +341,7 @@ class Director:
             feedback = str(decision.get("feedback") or "")
             if not feedback:
                 return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
-            spec = self._respecify(model, purpose, spec, feedback, log, system)
+            spec = self._respecify(model, purpose, spec, feedback, log, system, inputs)
             if _infeasible(spec):
                 return self._stop_infeasible(purpose, spec, spec_path, process_path, tasks, rounds, log)
             tasks = self._pjm_process(model, spec, roles, pool, log, system)
@@ -353,18 +403,23 @@ class Director:
         return None
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
-    def _specify(self, model: str, purpose: str, log: Callable, system: str | None = None) -> dict:
+    def _specify(
+        self, model: str, purpose: str, log: Callable, system: str | None = None,
+        inputs: str = "",
+    ) -> dict:
         data = self._structured(
-            model, _with_env(_SPECIFY_SYSTEM, system), f"PURPOSE:\n{purpose}", _SPECIFY_SCHEMA
+            model, _with_env(_SPECIFY_SYSTEM, system),
+            f"PURPOSE:\n{purpose}{_inputs_block(inputs)}", _SPECIFY_SCHEMA,
         )
         return _normalize_spec(data, purpose, log)
 
     def _respecify(
         self, model: str, purpose: str, spec: dict, feedback: str, log: Callable,
-        system: str | None = None,
+        system: str | None = None, inputs: str = "",
     ) -> dict:
         user = (
-            f"PURPOSE:\n{purpose}\n\nCURRENT SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
+            f"PURPOSE:\n{purpose}{_inputs_block(inputs)}\n\n"
+            f"CURRENT SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
             f"FEEDBACK:\n{feedback}"
         )
         data = self._structured(model, _with_env(_RESPECIFY_SYSTEM, system), user, _SPECIFY_SCHEMA)

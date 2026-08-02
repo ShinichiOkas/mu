@@ -416,3 +416,61 @@ def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
     specify_system = agent._l0.calls[0]["messages"][0]["content"]
     assert "feasible" in specify_system
     assert "weaken" in specify_system.lower()
+
+
+# --- C2（合意007）: PdM を入力の実物に接地する ---------------------------------
+#
+# sales×12b の観測: 仕様が sales.csv のヘッダーを2度発明し、実物との不一致が
+# respec と入力破壊の起点になった。仕様を作る前に実物を見せる（呼び出し側が事実を前置する形）。
+
+def test_specify_sees_the_real_input_files(tmp_path, monkeypatch):
+    (tmp_path / "sales.csv").write_text("商品ID,数量,単価\np008,3,120\n", encoding="utf-8")
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    specify_user = agent._l0.calls[0]["messages"][1]["content"]
+    assert "sales.csv" in specify_user
+    assert "商品ID,数量,単価" in specify_user      # ヘッダーの実物が渡る（発明させない）
+
+
+def test_grounding_excludes_generated_artifacts(tmp_path, monkeypatch):
+    # 前走の SPEC.md / PROCESS.md は入力ではない（自分の生成物を入力と誤認させない）。
+    (tmp_path / "SPEC.md").write_text("OLD-SPEC-MARKER", encoding="utf-8")
+    (tmp_path / "PROCESS.md").write_text("OLD-PROCESS-MARKER", encoding="utf-8")
+    (tmp_path / "input.txt").write_text("REAL-INPUT", encoding="utf-8")
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    specify_user = agent._l0.calls[0]["messages"][1]["content"]
+    assert "REAL-INPUT" in specify_user
+    assert "OLD-SPEC-MARKER" not in specify_user
+    assert "OLD-PROCESS-MARKER" not in specify_user
+
+
+def test_respecify_also_sees_the_real_input_files(tmp_path, monkeypatch):
+    # respec は入力破壊の起点だった経路。改訂時にも実物を見せる。
+    (tmp_path / "sales.csv").write_text("商品ID,数量,単価\np008,3,120\n", encoding="utf-8")
+    decide = {"action": "respec", "invalidate": [], "reason": "ヘッダーが違う"}
+    agent = make(
+        [SPEC, PROCESS3, decide, SPEC, PROCESS3],
+        [{"done": True}, {"done": True},
+         {"done": True, "writes": [("verdict.md", VERDICT_NO_IMPL)]}] + ok3(),
+    )
+    run(agent, tmp_path, monkeypatch, max_rounds=2)
+    respecify_user = agent._l0.calls[3]["messages"][1]["content"]
+    assert "商品ID,数量,単価" in respecify_user
+
+
+def test_grounding_truncates_large_files(tmp_path):
+    from mu.l4 import _input_grounding
+    (tmp_path / "big.txt").write_text("x" * 50_000, encoding="utf-8")
+    text = _input_grounding(str(tmp_path), set())
+    assert "big.txt" in text
+    assert len(text) < 2_000            # 先頭だけ。文脈を食い潰さない
+    assert "50000 bytes" in text        # 実サイズは見える
+
+
+def test_grounding_is_empty_when_no_inputs(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    specify_user = agent._l0.calls[0]["messages"][1]["content"]
+    assert specify_user.startswith("PURPOSE:")
+    assert "EXISTING" not in specify_user
