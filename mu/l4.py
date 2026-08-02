@@ -59,8 +59,10 @@ _SPECIFY_SCHEMA = {
             },
         },
         "spec": {"type": "string"},
+        "feasible": {"type": "boolean"},
+        "conflicts": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["definitions", "criteria", "spec"],
+    "required": ["definitions", "criteria", "spec", "feasible", "conflicts"],
 }
 _PROCESS_SCHEMA = {
     "type": "object",
@@ -100,6 +102,14 @@ _DECIDE_SCHEMA = {
 
 _SPECIFY_SYSTEM = (
     "You turn an abstract PURPOSE (why) into a concrete, checkable specification (what). "
+    "0) feasible: FIRST judge whether the purpose's constraints can all hold AT ONCE. "
+    "You must NEVER weaken, reinterpret, narrow or silently drop a constraint to make the "
+    "purpose satisfiable, and never adopt a degenerate solution (an empty or trivial output) "
+    "that technically satisfies the words. If two or more constraints cannot hold together "
+    "(e.g. 'remove all X from the copy' and 'the copy must be byte-identical'), set "
+    "feasible=false and list the clashing constraints in 'conflicts', quoting the purpose; "
+    "then it is NOT your job to solve it — a human decides, and the remaining fields may be "
+    "left minimal. Otherwise set feasible=true and conflicts=[]. "
     "1) definitions: define every vague or domain term OPERATIONALLY — a definition must be "
     "a measurement procedure (e.g. 'unprofitable = gross margin below 5%'), not a synonym. "
     "If the purpose does not fix a threshold or boundary, choose a reasonable one and state "
@@ -114,7 +124,8 @@ _SPECIFY_SYSTEM = (
     "3) spec: the detailed task specification, self-contained (repeat the definitions and "
     "criteria inside it, including the required output markers), in the same language as "
     "the purpose, naming concrete file deliverables. Do NOT add work the purpose does not "
-    "require. Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
+    "require. Reply as JSON "
+    "{feasible, conflicts:[...], definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
 _RESPECIFY_SYSTEM = (
     "You revise a specification. Given the PURPOSE, the CURRENT SPEC (JSON) and FEEDBACK "
@@ -122,7 +133,12 @@ _RESPECIFY_SYSTEM = (
     "revised full specification addressing the feedback. Keep definitions and criteria "
     "that are still right; change only what the feedback requires. Criteria are "
     "{text, run, expect} — run/expect embed an executable check (see the current spec). "
-    "Reply as JSON {definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
+    "The same rule as the initial specification applies: never weaken, reinterpret or drop "
+    "a constraint of the PURPOSE to make it satisfiable, and never adopt a degenerate "
+    "solution. If the purpose's constraints cannot all hold at once, set feasible=false and "
+    "list the clashing constraints in 'conflicts' — a human decides, not you. "
+    "Reply as JSON "
+    "{feasible, conflicts:[...], definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
 )
 _PROCESS_SYSTEM = (
     "You are the project manager (PjM). Given a SPEC, your role knowledge base (ROLES) and "
@@ -160,6 +176,11 @@ _DEFAULT_QA_TASK = {
     "file": "verdict.md",
     "criterion": "verdict.md が『ACHIEVED: yes|no|uncertain』の1行目を含む",
 }
+
+
+def _infeasible(spec: dict) -> bool:
+    """PdM が明示的に「充足不能」と申告したか。欠落・True はどちらも「進める」（合意007 決定4）。"""
+    return spec.get("feasible") is False
 
 
 def _auto_review(report: dict) -> dict:
@@ -212,6 +233,8 @@ class Director:
         limits = {"max_rounds": l3_max, "l2_max": l2_max, "l2_l1_max": l2_l1_max}
 
         spec = self._specify(model, purpose, log, system)                  # PdM
+        if _infeasible(spec):                                              # 充足不能なら人間へ（合意007）
+            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, log)
         tasks = self._pjm_process(model, spec, roles, pool, log, system)   # PjM: P（体制＝プロセス）
         rounds = 0
         verdict: dict | None = None
@@ -222,7 +245,7 @@ class Director:
             log(("process", tasks, process_path))
 
             failure = self._execute(model, tasks, tools, roles, pool,      # 役割を着た L3 の逐次ループ
-                                    spec_path, system, log, limits)
+                                    spec_path, purpose, system, log, limits)
             checks = _run_criteria_checks(spec, tools)                     # 決定論の床
             if checks:
                 log(("checks", checks))
@@ -247,6 +270,10 @@ class Director:
                         continue
                     if act == "respec":
                         spec = self._respecify(model, purpose, spec, decision.get("reason", ""), log, system)
+                        if _infeasible(spec):
+                            return self._stop_infeasible(
+                                purpose, spec, spec_path, process_path, tasks, rounds, log
+                            )
                         tasks = self._pjm_process(model, spec, roles, pool, log, system)
                         continue
                 # escalate / 壊れた判断 / 予算切れ → 人間の判断へ落ちる
@@ -265,9 +292,31 @@ class Director:
             if not feedback:
                 return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
             spec = self._respecify(model, purpose, spec, feedback, log, system)
+            if _infeasible(spec):
+                return self._stop_infeasible(purpose, spec, spec_path, process_path, tasks, rounds, log)
             tasks = self._pjm_process(model, spec, roles, pool, log, system)
 
         assessment = verdict or {"achieved": "uncertain", "reason": "rounds exhausted", "gap": ""}
+        return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
+
+    def _stop_infeasible(
+        self, purpose: str, spec: dict, spec_path: str, process_path: str,
+        tasks: list, rounds: int, log: Callable,
+    ) -> dict:
+        """PdM が「目的は充足不能」と申告したとき、仕様を作らせず人間へ上げる（合意007 C1-(d)）。
+
+        H3 の観測（矛盾を検出しながら退化解を独断採用し全層が忠実に「達成」した）への対処。
+        判断（矛盾か否か）は LLM、**握り潰させない分岐はここ（コードの決定論）**。
+        申告は SPEC.md にも残す——観測を殺さないガードにするため（合意007 決定4）。
+        """
+        _write_spec(spec_path, purpose, spec)
+        conflicts = spec.get("conflicts") or []
+        log(("infeasible", conflicts))
+        assessment = {
+            "achieved": "uncertain",
+            "reason": "PdM が目的を充足不能と申告した（制約が同時に満たせない）。人間の判断が要る",
+            "gap": "; ".join(conflicts),
+        }
         return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
 
     @staticmethod
@@ -281,7 +330,8 @@ class Director:
     # --- 実行ループ（コード・決定論）: 1タスクずつ役割を着せて L3 に完遂させる ---
     def _execute(
         self, model: str, tasks: list, tools: Sequence[Tool], roles: dict,
-        pool: list, spec_path: str, system: str | None, log: Callable, limits: dict,
+        pool: list, spec_path: str, purpose: str, system: str | None,
+        log: Callable, limits: dict,
     ) -> dict | None:
         """pending タスクを順に実行する。最初に失敗したタスクを返す（全部成功なら None）。"""
         for i, t in enumerate(tasks):
@@ -291,7 +341,7 @@ class Director:
             task_model = t.get("model") if t.get("model") in pool else model
             prior = [p["file"] for p in tasks[:i] if p.get("done")]
             result = self._l3.run(
-                task_model, _task_goal(t, spec_path, prior), tools,
+                task_model, _task_goal(t, spec_path, prior, purpose), tools,
                 log=log, system=task_system or None,
                 max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
                 l2_l1_max=limits["l2_l1_max"],
@@ -319,6 +369,8 @@ class Director:
         )
         data = self._structured(model, _with_env(_RESPECIFY_SYSTEM, system), user, _SPECIFY_SCHEMA)
         new = _normalize_spec(data, purpose, log)
+        if _infeasible(new):
+            return new  # 充足不能の申告は spec 本文が空でも「壊れ」ではない（合意007）
         return new if data.get("spec") else spec  # 壊れた改訂で現仕様を失わない
 
     def _pjm_process(
@@ -396,7 +448,7 @@ def _normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
     return tasks
 
 
-def _task_goal(task: dict, spec_path: str, prior_files: list) -> str:
+def _task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") -> str:
     goal = (
         f"{task['task']}\n"
         f"役割: {task['role']}\n"
@@ -410,6 +462,16 @@ def _task_goal(task: dict, spec_path: str, prior_files: list) -> str:
             goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
     refs = [spec_path, *prior_files]
     goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
+    if task["role"] == "qa" and purpose:
+        # QA だけは目的の原文も見る（合意007 C1-(b)）。SPEC は PdM の生成物であり、
+        # 目的の制約を弱めた仕様が下りてくる経路（H3）が実在する。仕様に忠実であることと
+        # 目的が達成されたことは別であり、その差を検査できるのは原文を持つ QA だけ。
+        goal += (
+            f"\n\n目的の原文（PURPOSE。人間が言った言葉。SPEC はこれを PdM が仕様化したもの）:\n{purpose}\n"
+            "※ 受入基準の検査に加えて、SPEC が上の目的の制約を弱めていないか"
+            "（制約を落とす・言い換えて緩める・退化解を許す）も検査すること。"
+            "弱めていれば ACHIEVED: no とし、GAP にその矛盾を書く。"
+        )
     return goal
 
 
@@ -498,10 +560,21 @@ def _first_line(text: str) -> str:
 # --- 仕様（SPEC）のヘルパ（005 から継続） -------------------------------------
 
 def _normalize_spec(data: dict, purpose: str, log: Callable) -> dict:
-    """specify 応答を仕様 dict に正規化。壊れていたら目的の原文を仕様として使う（劣化を可視化）。"""
+    """specify 応答を仕様 dict に正規化。壊れていたら目的の原文を仕様として使う（劣化を可視化）。
+
+    合意007: `feasible` / `conflicts`（PdM の充足可能性の申告）も持ち回る。
+    **欠落は feasible=True 扱い**——申告できないモデルで常に止まると自律の到達距離を
+    測れなくなるため、明示的な false だけを escalate の分岐条件にする。
+    """
+    feasible = False if data.get("feasible") is False else True
+    conflicts = [str(c).strip() for c in (data.get("conflicts") or []) if str(c).strip()]
     if not data.get("spec"):
-        log(("spec_fallback", "specify が壊れたため目的の原文を仕様として使う"))
-        return {"definitions": [], "criteria": [], "spec": purpose}
+        if feasible:  # 充足不能の申告時は spec が空でも壊れではない（仕様を作らないのが正しい）
+            log(("spec_fallback", "specify が壊れたため目的の原文を仕様として使う"))
+        return {
+            "definitions": [], "criteria": [], "spec": "" if not feasible else purpose,
+            "feasible": feasible, "conflicts": conflicts,
+        }
     return {
         "definitions": [
             d for d in data.get("definitions", [])
@@ -509,6 +582,8 @@ def _normalize_spec(data: dict, purpose: str, log: Callable) -> dict:
         ],
         "criteria": [c for c in map(_normalize_criterion, data.get("criteria", [])) if c],
         "spec": str(data["spec"]),
+        "feasible": feasible,
+        "conflicts": conflicts,
     }
 
 
@@ -550,10 +625,20 @@ def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
     """仕様を artifact に書く。全タスクが参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
     defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
     crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
+    infeasible = ""
+    if _infeasible(spec):
+        conflicts = "\n".join(f"- {c}" for c in spec.get("conflicts", [])) or "- （申告なし）"
+        infeasible = (
+            "## 充足不能の申告（PdM）\n"
+            "この目的は制約が同時に満たせないと判断された。**仕様は作られていない**——"
+            "制約を弱めた仕様や退化解を独断で採らず、人間の判断を待つ（合意007）。\n"
+            f"{conflicts}\n\n"
+        )
     text = (
         "# SPEC — L4（PdM）が目的から定めた仕様\n"
         "（L4 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）\n\n"
         f"## 目的（人間の入力・原文）\n{purpose}\n\n"
+        f"{infeasible}"
         f"## 操作的定義\n{defs or '(なし)'}\n\n"
         f"## 受入基準\n{crits or '(なし)'}\n\n"
         f"## 仕様\n{spec.get('spec', '')}\n"

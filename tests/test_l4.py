@@ -346,3 +346,73 @@ def test_process_prompt_lists_roles_and_models(tmp_path, monkeypatch):
     process_user = agent._l0.calls[1]["messages"][1]["content"]
     assert "architect" in process_user and "qa" in process_user
     assert "qwen-x" in process_user
+
+
+# --- C1（合意007）: 検出した矛盾を独断解決させない -----------------------------
+#
+# 難課題 H3 の観測: PdM は矛盾（完全除去 かつ 1文字も変えるな）を検出しながら
+# 人間に上げず、退化解（0バイトファイル）を仕様として採用し全層が忠実に「達成」した。
+# 対処は三重 — (a) specify の規範 / (d) feasible 申告＋コード分岐 / (b) QA が目的原文と照合。
+
+INFEASIBLE_SPEC = {
+    "feasible": False,
+    "conflicts": ["『個人情報を完全に除去』と『1文字も変えるな』は同時に満たせない"],
+    "definitions": [],
+    "criteria": [],
+    "spec": "",
+}
+
+
+def test_infeasible_purpose_escalates_without_starting_the_process(tmp_path, monkeypatch):
+    # (d) 決定論の分岐: feasible=false なら PjM を起動せず即 escalate（握り潰し経路を塞ぐ）。
+    agent = make([INFEASIBLE_SPEC], [])
+    monkeypatch.chdir(tmp_path)
+    result = agent.run("m", "個人情報を完全に除去せよ。ただし1文字も変えるな", [], roles=ROLES)
+    assert result["achieved"] is False
+    assert result["escalated"] is True
+    assert len(agent._l0.calls) == 1     # PjM（プロセス生成）は呼ばれない
+    assert agent._l3.calls == []         # タスクは1つも実行されない
+    assert result["tasks"] == []
+    assert "1文字も変えるな" in result["assessment"]["gap"]
+    text = (tmp_path / "SPEC.md").read_text(encoding="utf-8")
+    assert "充足不能" in text and "1文字も変えるな" in text   # 人間が読める形で残る
+
+
+def test_missing_feasible_field_is_treated_as_feasible(tmp_path, monkeypatch):
+    # 申告できないモデルで常に止まると自律の到達距離が測れない（合意007 決定4）。
+    # 明示的な false だけを分岐条件にする。
+    agent = make([SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["achieved"] is True
+
+
+def test_respec_declaring_infeasible_escalates_immediately(tmp_path, monkeypatch):
+    # respec 経由で矛盾が判明した場合も、プロセスを組み直さずその場で人間へ上げる。
+    decide = {"action": "respec", "invalidate": [], "reason": "定義が矛盾している"}
+    agent = make(
+        [SPEC, PROCESS3, decide, INFEASIBLE_SPEC],
+        [{"done": True}, {"done": True},
+         {"done": True, "writes": [("verdict.md", VERDICT_NO_IMPL)]}],
+    )
+    result = run(agent, tmp_path, monkeypatch, max_rounds=3)
+    assert result["escalated"] is True
+    assert len(agent._l3.calls) == 3     # 2周目のタスクは走らない
+
+
+def test_qa_task_goal_carries_the_original_purpose(tmp_path, monkeypatch):
+    # (b) QA の二重化: SPEC が目的の制約を弱めていないか検査できるよう、目的の原文を接地する。
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    goals = [c["goal"] for c in agent._l3.calls]
+    assert "不採算商品を特定" in goals[2]
+    assert "弱め" in goals[2]
+    assert "不採算商品を特定" not in goals[0]   # 他役割は従来どおり SPEC 経由
+
+
+def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
+    # (a) 規範: 制約を弱めた仕様を作るな、が specify の system に入っていること。
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    specify_system = agent._l0.calls[0]["messages"][0]["content"]
+    assert "feasible" in specify_system
+    assert "weaken" in specify_system.lower()
