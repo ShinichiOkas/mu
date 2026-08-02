@@ -1,3 +1,7 @@
+---
+tools: read_file, list_dir, execute_command, write_file
+write_scope: own
+---
 # role: qa（品質保証）
 
 職掌: 検証、受け入れ基準チェック。

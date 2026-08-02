@@ -14,6 +14,8 @@
         L4 は verdict を機械的に読む（一発 LLM 判定 assess は廃止）
 
 決定論の床（コード側）:
+  - PdM が「目的は充足不能」と申告したら仕様を作らせず人間へ上げる（合意007。矛盾の独断解決を塞ぐ）
+  - 役割の権限（roles/*.md の宣言）はコードが適用する。QA は自分の判定書しか書けない（合意007）
   - プロセス末尾に QA タスクが無ければ**コードが必ず足す**（検証を飛ばして完遂に到達できない）
   - 部分再実行の依存伝播はコードが行い、**QA タスクは必ず再実行**（done を carry しない）
   - spec の criteria check（実行＋可視マーカー照合）は verdict とは独立に走る
@@ -27,10 +29,11 @@ from __future__ import annotations
 
 import json
 import re
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from .l1 import Tool
+from .l1 import Tool, ToolResult
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 
 # --- スキーマ -----------------------------------------------------------------
@@ -236,14 +239,94 @@ def _noop(_event: Any) -> None:
 
 
 def load_roles(path: str = "roles") -> dict:
-    """role 定義書（PjM のナレッジベース）をディレクトリから読む。{role名: 本文}。"""
+    """role 定義書（PjM のナレッジベース）をディレクトリから読む。
+
+    返り値は `{role名: {"prompt": 本文, "tools": [...]|None, "write_scope": "own"|"any"}}`。
+    合意007 B1: 役割の**権限**も役割定義に属するデータとし、frontmatter で宣言する:
+
+        ---
+        tools: read_file, list_dir, execute_command, write_file   # 省略＝全ツール
+        write_scope: own                                          # own＝自タスクの出力のみ
+        ---
+
+    権限を適用するのはコード（`_role_tools`）であり、PjM が出せるのは role 名だけ——
+    **PjM/LLM は自分の権限を書き換えられない**。人間は roles/*.md を直接直せる。
+    """
     p = Path(path)
     if not p.is_dir():
         return {}
-    return {
-        f.stem: f.read_text(encoding="utf-8")
-        for f in sorted(p.glob("*.md"))
-    }
+    return {f.stem: _parse_role_doc(f.read_text(encoding="utf-8")) for f in sorted(p.glob("*.md"))}
+
+
+def _parse_role_doc(text: str) -> dict:
+    """role 定義書を {prompt, tools, write_scope} に分解する（frontmatter は本文に混ぜない）。"""
+    tools, scope, body = None, "any", text
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            for line in text[3:end].splitlines():
+                key, _, value = line.partition(":")
+                key, value = key.strip().lower(), value.strip()
+                if key == "tools":
+                    tools = [t.strip() for t in value.split(",") if t.strip()]
+                elif key == "write_scope" and value:
+                    scope = value.lower()
+            body = text[end + 4:].lstrip("\n")
+    return {"prompt": body, "tools": tools, "write_scope": scope}
+
+
+def _role_prompt(doc: Any) -> str:
+    """role 定義の本文。旧形式（素の文字列）も受ける。"""
+    return doc if isinstance(doc, str) else str((doc or {}).get("prompt", ""))
+
+
+def _role_perms(doc: Any) -> tuple[list | None, str]:
+    """role 定義の権限（許可ツール, 書き込み範囲）。宣言が無ければ無制限。"""
+    if isinstance(doc, dict):
+        return doc.get("tools"), str(doc.get("write_scope") or "any").lower()
+    return None, "any"
+
+
+def _role_tools(
+    tools: Sequence[Tool], doc: Any, own_file: str, role: str, log: Callable
+) -> list:
+    """役割の権限でツール群を絞る（合意007 B1）。
+
+    f1×12b の観測: QA が成果物を自分で修正してから合格判定した（自己修正→自己承認）。
+    role プロンプトの「実装しない」は確率的にしか効かない。塞ぐのは**役割の職掌違反**であって
+    能力ではない（決めたこと4）——実装者は制限せず、QA だけが自分の判定書に閉じる。
+    拒否・非配布はログに出す（塞ぐが観測は殺さない）。
+    """
+    allow, scope = _role_perms(doc)
+    out = []
+    for func, usage in tools:
+        name = func.__name__
+        if allow is not None and name not in allow:
+            log(("tool_withheld", role, name))
+            continue
+        if scope == "own" and name in ("write_file", "edit_file"):
+            func = _own_file_only(func, own_file, role, log)
+            usage = f"{usage} ※このタスクで書き換えてよいのは {own_file} のみ"
+        out.append((func, usage))
+    return out
+
+
+def _own_file_only(func: Callable, own_file: str, role: str, log: Callable) -> Callable:
+    """書き込み系ツールを「自タスクの出力ファイルのみ」に閉じる包み（拒否は steering で返す）。"""
+    @wraps(func)
+    def guarded(path: str, *args, **kwargs):
+        if Path(path).resolve() != Path(own_file).resolve():
+            log(("permission_denied", role, func.__name__, path))
+            return ToolResult(
+                f"error: 役割 '{role}' が書き換えてよいのは {own_file} だけである"
+                f"（{path} への書き込みは権限で禁止）。成果物を自分で直してはならない——"
+                "問題は自分の出力ファイルに事実として記述すること。",
+                ok=False,
+                facts={"action": func.__name__, "path": path, "denied": True, "role": role},
+            )
+        return func(path, *args, **kwargs)
+
+    return guarded
 
 
 class Director:
@@ -387,11 +470,13 @@ class Director:
         for i, t in enumerate(tasks):
             if t.get("done"):
                 continue
-            task_system = "\n\n".join(s for s in (roles.get(t["role"], ""), system) if s)
+            doc = roles.get(t["role"], "")
+            task_system = "\n\n".join(s for s in (_role_prompt(doc), system) if s)
             task_model = t.get("model") if t.get("model") in pool else model
             prior = [p["file"] for p in tasks[:i] if p.get("done")]
+            task_tools = _role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
             result = self._l3.run(
-                task_model, _task_goal(t, spec_path, prior, purpose), tools,
+                task_model, _task_goal(t, spec_path, prior, purpose), task_tools,
                 log=log, system=task_system or None,
                 max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
                 l2_l1_max=limits["l2_l1_max"],
@@ -432,7 +517,9 @@ class Director:
         self, model: str, spec: dict, roles: dict, pool: list, log: Callable,
         system: str | None = None,
     ) -> list:
-        roles_s = "\n".join(f"- {name}: {_first_line(doc)}" for name, doc in roles.items()) or "(none)"
+        roles_s = "\n".join(
+            f"- {name}: {_first_line(_role_prompt(doc))}" for name, doc in roles.items()
+        ) or "(none)"
         user = (
             f"SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
             f"ROLES (your knowledge base):\n{roles_s}\n\n"

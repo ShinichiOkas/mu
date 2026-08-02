@@ -40,7 +40,7 @@ class FakeL3:
         self.calls = []
 
     def run(self, model, goal, tools, **kwargs):
-        self.calls.append({"model": model, "goal": goal, "kwargs": kwargs})
+        self.calls.append({"model": model, "goal": goal, "tools": tools, "kwargs": kwargs})
         r = self._results.pop(0) if self._results else {"done": True}
         for path, content in r.get("writes", []):
             from pathlib import Path
@@ -90,7 +90,8 @@ def run(agent, tmp_path, monkeypatch, **kw):
     monkeypatch.chdir(tmp_path)
     kw.setdefault("roles", ROLES)
     kw.setdefault("models", ["m", "qwen-x"])
-    return agent.run("m", "この売上表から不採算商品を特定してくれ", [], **kw)
+    tools = kw.pop("tools", [])
+    return agent.run("m", "この売上表から不採算商品を特定してくれ", tools, **kw)
 
 
 def test_happy_path_process_runs_and_verdict_accepts(tmp_path, monkeypatch):
@@ -327,8 +328,13 @@ def test_load_roles_reads_directory(tmp_path):
     d.mkdir()
     (d / "qa.md").write_text("QA-DOC", encoding="utf-8")
     (d / "architect.md").write_text("ARCH-DOC", encoding="utf-8")
+    # 合意007 B1 で返り値が {role名: 本文} → {role名: {prompt, tools, write_scope}} に変わった
+    # （権限も役割定義に属するデータだから）。frontmatter が無い定義書は無制限として読む。
     roles = load_roles(str(d))
-    assert roles == {"architect": "ARCH-DOC", "qa": "QA-DOC"}
+    assert roles == {
+        "architect": {"prompt": "ARCH-DOC", "tools": None, "write_scope": "any"},
+        "qa": {"prompt": "QA-DOC", "tools": None, "write_scope": "any"},
+    }
 
 
 def test_specify_and_process_prompts_carry_env(tmp_path, monkeypatch):
@@ -474,3 +480,128 @@ def test_grounding_is_empty_when_no_inputs(tmp_path, monkeypatch):
     specify_user = agent._l0.calls[0]["messages"][1]["content"]
     assert specify_user.startswith("PURPOSE:")
     assert "EXISTING" not in specify_user
+
+
+# --- B1（合意007）: 役割の職掌を権限で守る -------------------------------------
+#
+# f1×12b r2 の観測: QA が成果物を自分で修正してから合格判定した（自己修正→自己承認）。
+# role プロンプトの「実装しない」は確率的にしか効かない。権限はデータ（roles/*.md）に置き、
+# コードが適用する。PjM が出せるのは role 名だけなので、権限は PjM から書き換えられない。
+
+from mu.l1 import ToolResult
+
+
+def perm_tools():
+    """権限テスト用のツール群。呼ばれた実引数を記録する。"""
+    seen = []
+
+    def write_file(path: str, content: str) -> ToolResult:
+        """書く。"""
+        seen.append(("write_file", path))
+        return ToolResult("wrote", ok=True, facts={"path": path})
+
+    def edit_file(path: str, old: str, new: str) -> ToolResult:
+        """直す。"""
+        seen.append(("edit_file", path))
+        return ToolResult("edited", ok=True, facts={"path": path})
+
+    def read_file(path: str) -> ToolResult:
+        """読む。"""
+        seen.append(("read_file", path))
+        return ToolResult("content", ok=True, facts={"path": path})
+
+    return [(write_file, "write_file(path, content)"), (edit_file, "edit_file(path, old, new)"),
+            (read_file, "read_file(path)")], seen
+
+
+PERM_ROLES = {
+    "architect": {"prompt": "ARCH-ROLE-MARKER", "tools": None, "write_scope": "any"},
+    "implementer": {"prompt": "IMPL-ROLE-MARKER", "tools": None, "write_scope": "any"},
+    "qa": {"prompt": "QA-ROLE-MARKER", "tools": ["read_file", "write_file"], "write_scope": "own"},
+}
+
+
+def tools_of(agent, i):
+    return {f.__name__: f for f, _ in agent._l3.calls[i]["tools"]}
+
+
+def test_qa_cannot_write_files_other_than_its_own_output(tmp_path, monkeypatch):
+    tools, seen = perm_tools()
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=PERM_ROLES, tools=tools)
+    qa_write = tools_of(agent, 2)["write_file"]
+
+    denied = qa_write("result.csv", "勝手に直した成果物")
+    assert denied.ok is False
+    assert denied.facts.get("denied") is True
+    assert ("write_file", "result.csv") not in seen      # 実ツールに到達していない
+
+    allowed = qa_write("verdict.md", "ACHIEVED: no\n")
+    assert allowed.ok is True
+    assert ("write_file", "verdict.md") in seen          # 自分の出力ファイルは書ける
+
+
+def test_qa_does_not_receive_tools_outside_its_allowlist(tmp_path, monkeypatch):
+    tools, _ = perm_tools()
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=PERM_ROLES, tools=tools)
+    assert "edit_file" not in tools_of(agent, 2)          # QA には渡さない
+    assert "read_file" in tools_of(agent, 2)
+
+
+def test_other_roles_keep_full_tools(tmp_path, monkeypatch):
+    # 塞ぐのは役割の職掌違反であって能力ではない（合意007 決定4）。実装者は制限しない。
+    tools, seen = perm_tools()
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=PERM_ROLES, tools=tools)
+    impl = tools_of(agent, 1)
+    assert set(impl) == {"write_file", "edit_file", "read_file"}
+    assert impl["write_file"]("scratch.txt", "中間ファイル").ok is True
+    assert ("write_file", "scratch.txt") in seen
+
+
+def test_plain_string_roles_still_work(tmp_path, monkeypatch):
+    # 旧形式（role名→本文の dict）を渡す呼び出し側を壊さない。
+    tools, seen = perm_tools()
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=ROLES, tools=tools)
+    assert "QA-ROLE-MARKER" in (agent._l3.calls[2]["kwargs"].get("system") or "")
+    assert tools_of(agent, 2)["write_file"]("anything.txt", "x").ok is True
+
+
+def test_denied_write_is_logged(tmp_path, monkeypatch):
+    events = []
+    tools, _ = perm_tools()
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=PERM_ROLES, tools=tools, log=events.append)
+    tools_of(agent, 2)["write_file"]("result.csv", "x")
+    kinds = [e[0] for e in events if isinstance(e, tuple)]
+    assert "permission_denied" in kinds      # 塞いだことは見える（観測を殺さない）
+    assert "tool_withheld" in kinds
+
+
+def test_load_roles_parses_permission_frontmatter(tmp_path):
+    from mu.l4 import load_roles
+    d = tmp_path / "roles"
+    d.mkdir()
+    (d / "qa.md").write_text(
+        "---\ntools: read_file, execute_command\nwrite_scope: own\n---\n# role: qa\nQA-DOC\n",
+        encoding="utf-8",
+    )
+    (d / "architect.md").write_text("ARCH-DOC", encoding="utf-8")   # frontmatter 無しも受ける
+    roles = load_roles(str(d))
+    assert roles["qa"]["tools"] == ["read_file", "execute_command"]
+    assert roles["qa"]["write_scope"] == "own"
+    assert "QA-DOC" in roles["qa"]["prompt"]
+    assert "tools:" not in roles["qa"]["prompt"]        # frontmatter は本文に混ぜない
+    assert roles["architect"] == {"prompt": "ARCH-DOC", "tools": None, "write_scope": "any"}
+
+
+def test_repo_role_kb_declares_the_qa_guard():
+    # 実際のナレッジベース（roles/）が QA の権限を宣言していること。
+    from pathlib import Path as _P
+    from mu.l4 import load_roles
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    assert roles["qa"]["write_scope"] == "own"
+    assert "edit_file" not in (roles["qa"]["tools"] or [])
+    assert roles["implementer"]["write_scope"] == "any"

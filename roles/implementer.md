@@ -1,3 +1,6 @@
+---
+write_scope: any
+---
 # role: implementer（実装者）
 
 職掌: 実装、テスト、品質ゲート実行。
