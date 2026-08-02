@@ -205,6 +205,18 @@ def _log(event: tuple) -> None:
         _show_process(event[1], event[2])
     elif kind == "qa_appended":
         print(f"{_L4} [+] QA タスクをコードが補完: {event[1]}")
+    elif kind == "infeasible":            # 合意007 C1: 目的が充足不能と申告された
+        print(f"{_L4} [!] 目的が充足不能と申告された（仕様は作らず人間へ）:")
+        for c in event[1] or ["(申告なし)"]:
+            print(f"{_L4}     - {_short(c, 160)}")
+    elif kind == "inputs":                # 合意007 C2: PdM に前置した入力の実物
+        print(f"{_L4} 入力の実物を PdM に接地:")
+        for line in str(event[1]).splitlines()[:12]:
+            print(f"{_L4}   {_short(line, 120)}")
+    elif kind == "permission_denied":     # 合意007 B1: 役割の権限で書き込みを拒否した
+        print(f"{_L4} [!] 権限で拒否: ({event[1]}) {event[2]} -> {event[3]}")
+    elif kind == "tool_withheld":
+        print(f"{_L4} [-] ツール非配布: ({event[1]}) {event[2]}")
     elif kind == "role_fallback":
         print(f"{_L4} [?] 未知の役割 {event[1]} を implementer に置換")
     elif kind == "task_done":
