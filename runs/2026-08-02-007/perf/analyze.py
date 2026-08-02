@@ -1,50 +1,53 @@
 import time
+import sys
 
 def main():
     start_time = time.time()
     
     try:
         with open('data.txt', 'r') as f:
-            data = [float(line.strip()) for line in f if line.strip()]
+            data = [int(line.strip()) for line in f if line.strip()]
     except FileNotFoundError:
-        print("Error: data.txt not found")
+        print("data.txt not found")
         return
 
     if not data:
-        print("Error: data.txt is empty")
+        print("No data to analyze")
         return
 
-    # Compute top 10 values
+    # Top 10 values in descending order
     top_10 = sorted(data, reverse=True)[:10]
     print("Top 10 values:")
     for val in top_10:
         print(val)
 
-    # Create a 10-bin histogram
+    # 10-bin histogram
+    # Assuming bins are based on the range 0-1000 or min-max. 
+    # Usually, a 10-bin histogram over the actual data range:
     min_val = min(data)
     max_val = max(data)
-    bin_size = (max_val - min_val) / 10
+    bin_width = (max_val - min_val) / 10 if max_val != min_val else 1
+    
     bins = [0] * 10
-
     for val in data:
-        # Calculate bin index
-        if bin_size == 0:
+        # Find bin index
+        if max_val == min_val:
             idx = 0
         else:
-            idx = int((val - min_val) / bin_size)
-            if idx == 10: # Handle the maximum value
+            idx = int((val - min_val) / bin_width)
+            if idx == 10: # handle max value
                 idx = 9
         bins[idx] += 1
 
     print("\nHistogram:")
     for i in range(10):
-        lower = min_val + i * bin_size
-        upper = min_val + (i + 1) * bin_size
-        print(f"[{lower:7.2f}, {upper:7.2f}): {'#' * bins[i]}")
+        lower = min_val + i * bin_width
+        upper = min_val + (i + 1) * bin_width
+        print(f"[{lower:.2f}, {upper:.2f}): {bins[i]}")
 
-    elapsed_time = time.time() - start_time
-    print(f"\nElapsed time: {elapsed_time:.4f}s")
-    print("ANALYZE OK")
+    end_time = time.time()
+    duration = end_time - start_time
+    print(f"\nANALYZE OK {duration:.4f}")
 
 if __name__ == "__main__":
     main()

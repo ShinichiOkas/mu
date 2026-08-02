@@ -81,6 +81,13 @@ criterion 埋め込み check（コード側 verify）、L4 の実体ベース目
   コード（`_role_tools`）が適用する。PjM が出せるのは role 名だけなので権限は書き換えられない。
   QA は verdict.md しか書けず edit_file を持たない。実装者・アーキテクトは無制限
   （塞ぐのは職掌違反であって能力ではない）
+- [ ] **PjM が QA タスクを複数立てると「本命の判定書」が割れる** — 2026-08-03、f1×12b で観測
+  （[runs/2026-08-02-007/README.md](runs/2026-08-02-007/README.md)）。PjM が `verdict.md` と
+  `verdict_check.md` の2つの QA タスクを立て、2つ目が本命 `verdict.md` に書こうとして権限で
+  拒否された（意味論としては正しい）。L4 は `_read_verdict` で**最後の** QA タスクを読むため、
+  どちらが判定かが曖昧になる。対策候補: (a) 判定書のパスをコードが固定する
+  (b) 複数 QA タスクを正規化して1本にする (c) 最後ではなく「verdict.md を出力する QA」を読む。
+  PjM の staffing の穴（006 から継続）の一形態
 - [x] **check コマンドの環境接地** — 2026-07-31 完了。plan/replan/specify/respecify の
   プロンプトに呼び出し側の env preamble を写す（grep/ls など環境に無いコマンドの check が
   偽・不合格を生んだ）。expect マーカーは短い ASCII を要求（非ASCIIは化ける。[[llm-transcription-needs-short-ascii-ids]]）

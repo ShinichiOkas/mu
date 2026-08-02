@@ -8,7 +8,7 @@ gen_data.py で 0〜99999 のランダム整数 1,000,000 個を data.txt に書
 1. [ ] **architect** → `design.md`
    - task: Design the logic for data generation and high-performance analysis. Since 1 million integers are processed, design analyze.py to use efficient sorting or heap for top 10 and a simple frequency array for the histogram to ensure the 3-second time limit is met.
    - 成功条件: The design must specify the use of random.randint for gen_data.py and an efficient approach for analyzing 1 million entries in analyze.py.
-2. [ ] **implementer** → `gen_data.py`
+2. [x] **implementer** → `gen_data.py`
    - task: Implement gen_data.py to generate 1,000,000 random integers (0-99999) and write them to data.txt.
    - 成功条件: Must produce a file named data.txt with 1,000,000 lines.
    - 検査: `python gen_data.py; (Get-Content data.txt).Count` → 「1000000」

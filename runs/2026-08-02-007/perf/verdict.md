@@ -1,3 +1,3 @@
 ACHIEVED: yes
-REASON: SPECは目的の制約を弱めていない。data.txtは1,000,000行。analyze.pyは0.76秒で完了し、出力に'ANALYZE OK'を含む。
+REASON: 検証コマンド実行により、data.txt が1,000,000行であることを確認。analyze.py の出力に上位10件、10区間ヒストグラム、'ANALYZE OK' が含まれ、処理時間は0.71秒で3秒以内。仕様は目的の制約を弱めていない。
 GAP: 
