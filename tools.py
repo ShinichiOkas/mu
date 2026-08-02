@@ -12,6 +12,12 @@ system prompt に注入する「使い方」テキスト。`TOOLS` をそのま�
 
 注意: write_file / edit_file / execute_command は実ファイル・実シェルに触れる。
 検証用途で使うこと。execute_command は PowerShell で実行する。
+
+入力保護（合意006 → 007）: `protect(paths)` で宣言したファイルは write_file / edit_file が
+拒否する。守るのは**列挙したファイルの内容不変だけ**で、ディレクトリ不変ではない
+（新規ファイルの作成は防がない）。シェルリダイレクト経由の改変もこの層を通らない——
+どちらも塞ぐには実行者の正当な能力を削ることになるため、塞がずに
+`protection_violations()` で**破れを検出**できるようにしてある（呼び出し側が報告する）。
 """
 
 import hashlib
