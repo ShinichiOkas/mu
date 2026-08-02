@@ -138,3 +138,42 @@ def test_tools_list_is_l1_pairs():
     for func, usage in tools.TOOLS:
         assert callable(func)
         assert isinstance(usage, str) and usage
+
+
+# --- B2（合意007）: 保護の意味論と、破れの検出 ---------------------------------
+#
+# protect() が守るのは「列挙したファイルの内容不変」であって、ディレクトリの不変ではない。
+# 新規ファイルの作成（H4 のスコープ逸脱）も、execute_command のシェルリダイレクトも通る。
+# 塞ぐ（能力を削る）のではなく、破れたことが見えるようにする（合意007 決めたこと4）。
+
+def test_no_violations_when_protected_files_are_untouched(protected):
+    assert tools.protection_violations() == []
+
+
+def test_violation_is_detected_when_a_protected_file_changes_behind_the_tools(protected):
+    # write_file/edit_file を通らない改変（シェルリダイレクト等）は拒否できない。検出はできる。
+    protected.write_text("rewritten behind the tool layer", encoding="utf-8")
+    violations = tools.protection_violations()
+    assert [v["status"] for v in violations] == ["modified"]
+    assert str(protected) in violations[0]["path"]
+
+
+def test_violation_is_detected_when_a_protected_file_disappears(protected):
+    protected.unlink()
+    violations = tools.protection_violations()
+    assert [v["status"] for v in violations] == ["missing"]
+
+
+def test_restoring_the_original_content_clears_the_violation(protected):
+    original = protected.read_text(encoding="utf-8")
+    protected.write_text("broken", encoding="utf-8")
+    assert tools.protection_violations()
+    protected.write_text(original, encoding="utf-8")
+    assert tools.protection_violations() == []
+
+
+def test_new_files_are_not_prevented_by_protection(protected, tmp_path):
+    # 意味論の明示: ディレクトリ不変は保証しない（H4 の新規ファイル追加は防がない）。
+    r = tools.write_file(str(tmp_path / "extra.md"), "テスト用に足したファイル")
+    assert r.ok is True
+    assert tools.protection_violations() == []

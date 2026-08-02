@@ -14,6 +14,7 @@ system prompt に注入する「使い方」テキスト。`TOOLS` をそのま�
 検証用途で使うこと。execute_command は PowerShell で実行する。
 """
 
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -23,22 +24,61 @@ from mu.l1 import ToolResult
 # read_file / execute_command の出力上限（LLM 文脈の肥大を防ぐ）。
 _MAX_OUTPUT = 4000
 
-# 保護された入力ファイル（絶対パス）。呼び出し側が protect() で登録する。
+# 保護された入力ファイル（絶対パス → 登録時の内容ダイジェスト）。呼び出し側が protect() で登録する。
 # 合意006 決定④の解除条件（実走で設計規則が破られ QA/check も検出できない入力破壊を観測）
 # の発火により実装。プロンプトの「読み取り専用」規則は確率的にしか効かないため、
 # 決定的に守りたい不変条件としてコード側に置く。
-# 既知の限界: execute_command 内のシェルリダイレクト等はこの保護を通らない。
-_PROTECTED: set = set()
+#
+# 意味論（合意007 B2 で明文化）:
+#   守るのは「**列挙したファイルの内容が変わらないこと**」だけである。
+#   - ディレクトリの不変は保証しない。保護ディレクトリへの**新規ファイル作成は防がない**
+#     （H4 のスコープ逸脱はこの意味論の外側。防ぐには実行者の正当な能力を削ることになる）。
+#   - write_file / edit_file は拒否できるが、**execute_command 内のシェルリダイレクトは
+#     この層を通らない**。塞ぐには任意のコマンド文字列の解析が要り、能力を削る。
+#   だから「防ぐ」に加えて「破れたら見える」を用意する: 登録時にダイジェストを控え、
+#   protection_violations() で改変・消失を検出できるようにする（塞ぐが観測は殺さない）。
+_PROTECTED: dict = {}
 
 
 def protect(paths) -> None:
-    """指定パスを書き込み禁止（読み取り専用）として登録する。呼び出し側の責務で宣言する。"""
-    _PROTECTED.update(str(Path(p).resolve()) for p in paths)
+    """指定パスを書き込み禁止（読み取り専用）として登録する。呼び出し側の責務で宣言する。
+
+    登録時点の内容ダイジェストを控える（`protection_violations()` の基準になる）。
+    """
+    for p in paths:
+        resolved = Path(p).resolve()
+        _PROTECTED[str(resolved)] = _digest(resolved)
 
 
 def clear_protection() -> None:
     """保護登録をすべて解除する（テスト・セッション切替用）。"""
     _PROTECTED.clear()
+
+
+def _digest(path: Path) -> str | None:
+    """ファイル内容の SHA-256。存在しなければ None。"""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def protection_violations() -> list:
+    """保護ファイルのうち、登録時から**内容が変わった / 消えた**ものを返す。
+
+    tools 層を通らない改変（シェルリダイレクト等）は拒否できないが、検出はできる。
+    呼び出し側（probe / chat）が走行の最後に報告し、破れを人間に見せるために使う。
+    """
+    violations = []
+    for path, baseline in sorted(_PROTECTED.items()):
+        current = _digest(Path(path))
+        if current == baseline:
+            continue
+        violations.append({
+            "path": path,
+            "status": "missing" if current is None else "modified",
+        })
+    return violations
 
 
 def _protected_result(path: str, action: str) -> ToolResult:

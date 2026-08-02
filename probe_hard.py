@@ -293,6 +293,8 @@ def main() -> None:
         model_s = f" @{t['model']}" if t.get("model") else ""
         print(f"  {'[x]' if t.get('done') else '[ ]'} ({t['role']}{model_s}) {t.get('file')}")
     print(f"elapsed: {elapsed:.0f}s")
+    violations = tools_mod.protection_violations()   # 保護の破れ（合意007 B2。tools 層を通らない改変）
+    print(f"protection violations: {violations if violations else 'none'}")
     print("files in workdir:")
     for p in sorted(Path(".").rglob("*")):
         if p.is_file() and "__pycache__" not in p.parts:
