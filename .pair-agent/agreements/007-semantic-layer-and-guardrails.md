@@ -1,7 +1,7 @@
 # 合意ドキュメント 007 — 意味の層の穴とガードレール（プロンプト頼みの規律を機構に落とす）
 
 - **sprint**: 007-semantic-layer-and-guardrails
-- **status**: executing（2026-08-02 師匠「実行してください」）
+- **status**: completed（2026-08-04 振り返り完了。ビジョン記録・Skill 6件処理済み）
 - **version**: 4
 - **開始**: 2026-08-02
 - **前提**: スプリント006 完了（PjM プロセス／役割注釈付きタスク列の逐次実行、tools.protect()、テスト 115 green）。

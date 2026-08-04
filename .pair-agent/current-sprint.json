@@ -1,8 +1,10 @@
 {
   "sprint_id": "007-semantic-layer-and-guardrails",
-  "status": "executing",
+  "status": "completed",
   "goal": "意味の層（PdM）の穴とガードレール — プロンプト頼みの規律を機構に落とす。006 の持ち越しのうち並列実行を除く3件＋難課題 H1-H6 の新発見2件をまとめて処理する",
   "created_at": "2026-08-02T22:28:58+09:00",
   "agreed_at": "2026-08-02T22:50:00+09:00",
-  "agreement_path": ".pair-agent/agreements/007-semantic-layer-and-guardrails.md"
+  "agreement_path": ".pair-agent/agreements/007-semantic-layer-and-guardrails.md",
+  "completed_at": "2026-08-04T00:30:00+09:00",
+  "sprint_doc": ".pair-agent/sprints/007-semantic-layer-and-guardrails.md"
 }
