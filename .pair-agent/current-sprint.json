@@ -1,7 +1,8 @@
 {
   "sprint_id": "008-l4-core-minimize",
-  "status": "deliberating",
+  "status": "executing",
   "goal": "L4 のコアをミニマイズする。用途で変動する値（役割定義・プロンプト）を外へ出し、コードは「役割定義を読んで着せ、決定論の床を回すだけ」にする",
   "created_at": "2026-08-04T01:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/008-l4-core-minimize.md"
+  "agreement_path": ".pair-agent/agreements/008-l4-core-minimize.md",
+  "agreed_at": "2026-08-04T01:40:00+09:00"
 }

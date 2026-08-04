@@ -416,12 +416,18 @@ def test_qa_task_goal_carries_the_original_purpose(tmp_path, monkeypatch):
 
 
 def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
-    # (a) 規範: 制約を弱めた仕様を作るな、が specify の system に入っていること。
+    # (a) 規範: 制約を弱めた仕様を作るな。
+    # 合意008 以降、規範は**やり方**なので KB（roles/pdm.md）にあり、コードは形だけを供給する。
+    from pathlib import Path as _P
+    from mu.l4 import load_roles
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    assert "weaken" in roles["pdm"]["prompt"].lower()        # 規範は KB にある
+
     agent = make([SPEC, PROCESS3], ok3())
-    run(agent, tmp_path, monkeypatch)
+    run(agent, tmp_path, monkeypatch, roles=roles)
     specify_system = agent._l0.calls[0]["messages"][0]["content"]
-    assert "feasible" in specify_system
-    assert "weaken" in specify_system.lower()
+    assert "weaken" in specify_system.lower()                # そのまま system に届く
+    assert "feasible" in specify_system                      # 形はスキーマ由来で供給される
 
 
 # --- C2（合意007）: PdM を入力の実物に接地する ---------------------------------
@@ -605,3 +611,92 @@ def test_repo_role_kb_declares_the_qa_guard():
     assert roles["qa"]["write_scope"] == "own"
     assert "edit_file" not in (roles["qa"]["tools"] or [])
     assert roles["implementer"]["write_scope"] == "any"
+
+
+# --- 008: 役割定義は外、コアは「位置と契約と床」だけ ---------------------------
+#
+# 師匠のイメージ:「L4 のコードは役割定義を読んで着せ、決定論の床を回すだけ」。
+# 切り分けは「位置は不変・中身は変動」——そこに PdM が居ることは不変、どういう PdM かは変動。
+# ミニマムは「役割を認識しているが知識が無い状態」。
+
+PDM_DOC = """あなたは PdM である。PDM-PREAMBLE-MARKER
+
+## specify
+SPECIFY-BODY-MARKER 目的を仕様にせよ。
+
+## respecify
+RESPECIFY-BODY-MARKER 仕様を改訂せよ。
+"""
+
+PJM_DOC = """あなたは PjM である。PJM-PREAMBLE-MARKER
+
+## process
+PROCESS-BODY-MARKER プロセスを編め。
+
+## decide
+DECIDE-BODY-MARKER 次の一手を決めよ。
+"""
+
+ROLES5 = dict(ROLES, pdm=PDM_DOC, pjm=PJM_DOC)
+
+
+def test_pdm_prompt_comes_from_the_role_doc(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=ROLES5)
+    specify_system = agent._l0.calls[0]["messages"][0]["content"]
+    assert "PDM-PREAMBLE-MARKER" in specify_system      # 役割共通の前文
+    assert "SPECIFY-BODY-MARKER" in specify_system      # その仕事の節
+    assert "RESPECIFY-BODY-MARKER" not in specify_system  # 別の節は混ざらない
+
+
+def test_pjm_prompts_come_from_the_role_doc(tmp_path, monkeypatch):
+    decide = {"action": "escalate", "invalidate": [], "reason": "打ち切り"}
+    agent = make([SPEC, PROCESS3, decide], [
+        {"done": True}, {"done": True},
+        {"done": True, "writes": [("verdict.md", VERDICT_NO_IMPL)]},
+    ])
+    run(agent, tmp_path, monkeypatch, roles=ROLES5, max_rounds=1)
+    process_system = agent._l0.calls[1]["messages"][0]["content"]
+    decide_system = agent._l0.calls[2]["messages"][0]["content"]
+    assert "PROCESS-BODY-MARKER" in process_system
+    assert "DECIDE-BODY-MARKER" in decide_system
+    assert "PJM-PREAMBLE-MARKER" in process_system and "PJM-PREAMBLE-MARKER" in decide_system
+
+
+def test_missing_role_doc_runs_without_instruction_and_logs_it(tmp_path, monkeypatch):
+    # ミニマム＝「役割を認識しているが知識が無い状態」。既定プロンプトへフォールバックしない。
+    events = []
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles={}, log=events.append)
+    specify_system = agent._l0.calls[0]["messages"][0]["content"]
+    assert "PURPOSE" not in specify_system           # やり方の指示は無い
+    assert len(specify_system) < 400                 # 契約（返す形）だけが残る
+    kinds = [e[0] for e in events if isinstance(e, tuple)]
+    assert "role_doc_missing" in kinds               # 静かに劣化させない
+
+
+def test_output_shape_comes_from_the_schema_not_the_role_doc(tmp_path, monkeypatch):
+    # 契約はポジション側（コア）の持ち物。定義書に JSON の形を書かせない。
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=ROLES5)
+    specify_system = agent._l0.calls[0]["messages"][0]["content"]
+    for key in ("feasible", "conflicts", "definitions", "criteria", "spec"):
+        assert key in specify_system                 # スキーマ由来の1行が供給される
+    process_system = agent._l0.calls[1]["messages"][0]["content"]
+    assert "tasks" in process_system
+
+
+def test_role_docs_do_not_declare_the_json_shape():
+    # 実 KB の規律: 形はスキーマが唯一の出所。定義書が二重に宣言しない。
+    from pathlib import Path as _P
+    from mu.l4 import load_roles
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    assert {"pdm", "pjm", "architect", "implementer", "qa"} <= set(roles)
+    for name, doc in roles.items():
+        assert "Reply as JSON" not in doc["prompt"], name
+
+
+def test_core_has_no_lifeline_prompt_constants():
+    # コアから生命線プロンプトが消えていること（外に出た＝コード内定数として残っていない）。
+    import mu.l4 as l4
+    assert not [n for n in dir(l4) if n.endswith("_SYSTEM")]

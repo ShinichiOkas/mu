@@ -112,80 +112,38 @@ _DECIDE_SCHEMA = {
     "required": ["action", "invalidate", "reason"],
 }
 
-# --- プロンプト ---------------------------------------------------------------
+# --- 役割の位置（不変） -------------------------------------------------------
+#
+# L4 の内部ポジション。プロセスのタスクに割り当てる役割ではない（PjM が人選する対象は
+# この2つを除いた役割＝作業する役割）。「そこに PdM/PjM が居る」ことはコアが知っており、
+# **どういう PdM/PjM であるか**は roles/*.md（外）が決める（合意008）。
+_L4_ROLES = ("pdm", "pjm")
 
-_SPECIFY_SYSTEM = (
-    "You turn an abstract PURPOSE (why) into a concrete, checkable specification (what). "
-    "0) feasible: FIRST judge whether the purpose's constraints can all hold AT ONCE. "
-    "You must NEVER weaken, reinterpret, narrow or silently drop a constraint to make the "
-    "purpose satisfiable, and never adopt a degenerate solution (an empty or trivial output) "
-    "that technically satisfies the words. If two or more constraints cannot hold together "
-    "(e.g. 'remove all X from the copy' and 'the copy must be byte-identical'), set "
-    "feasible=false and list the clashing constraints in 'conflicts', quoting the purpose; "
-    "then it is NOT your job to solve it — a human decides, and the remaining fields may be "
-    "left minimal. Otherwise set feasible=true and conflicts=[]. "
-    "1) definitions: define every vague or domain term OPERATIONALLY — a definition must be "
-    "a measurement procedure (e.g. 'unprofitable = gross margin below 5%'), not a synonym. "
-    "If the purpose does not fix a threshold or boundary, choose a reasonable one and state "
-    "it explicitly; it is a visible, revisable assumption, not a hidden guess. "
-    "2) criteria: observable completion criteria on concrete artifacts (files, outputs), "
-    "checkable by a third party without asking you. Each criterion is {text, run, expect}: "
-    "text describes the condition; when it can be verified by running a command, run is a "
-    "command that works in the execution environment stated below (if any) and expect is a "
-    "substring that MUST appear in its output — a short ASCII marker the deliverables are "
-    "REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get "
-    "corrupted). Leave run/expect empty only when no command can verify it. "
-    "If EXISTING FILES are listed below, they are the REAL inputs read from disk: use their "
-    "actual names, headers, columns and value spellings — never invent, rename or 'clean up' "
-    "a format. If the purpose describes an input differently from the file, the FILE is right; "
-    "say so in the spec and require the work to adapt to the file, never the file to the spec. "
-    "3) spec: the detailed task specification, self-contained (repeat the definitions and "
-    "criteria inside it, including the required output markers), in the same language as "
-    "the purpose, naming concrete file deliverables. Do NOT add work the purpose does not "
-    "require. Reply as JSON "
-    "{feasible, conflicts:[...], definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
-)
-_RESPECIFY_SYSTEM = (
-    "You revise a specification. Given the PURPOSE, the CURRENT SPEC (JSON) and FEEDBACK "
-    "(a concrete gap found in the outcome, or an instruction from the human), produce a "
-    "revised full specification addressing the feedback. Keep definitions and criteria "
-    "that are still right; change only what the feedback requires. Criteria are "
-    "{text, run, expect} — run/expect embed an executable check (see the current spec). "
-    "The same rule as the initial specification applies: never weaken, reinterpret or drop "
-    "a constraint of the PURPOSE to make it satisfiable, and never adopt a degenerate "
-    "solution. If the purpose's constraints cannot all hold at once, set feasible=false and "
-    "list the clashing constraints in 'conflicts' — a human decides, not you. "
-    "Reply as JSON "
-    "{feasible, conflicts:[...], definitions:[{term,definition}], criteria:[{text,run,expect}], spec}."
-)
-_PROCESS_SYSTEM = (
-    "You are the project manager (PjM). Given a SPEC, your role knowledge base (ROLES) and "
-    "your staff pool (AVAILABLE MODELS), design the PROCESS: an ordered list of tasks that "
-    "will fulfil the spec. Each task = {role, task, file, criterion, check?, model?}. "
-    "Rules: use only the listed role names. Every task produces ONE concrete file — 'file' "
-    "must be non-empty and UNIQUE across tasks. Order tasks so dependencies (via files) come "
-    "first. Scale the process to the difficulty: a small job needs few tasks; add an "
-    "'architect' task producing a design document (design.md) when structure, quality "
-    "attributes or design rules matter. The FINAL task MUST be role 'qa' with file "
-    "'verdict.md' — it independently verifies the deliverables against the SPEC. "
-    "check = {run, expect}: run is a command that works in the execution environment stated "
-    "below (if any); expect is a short ASCII marker that MUST appear in its output. "
-    "Staffing: the FIRST model in AVAILABLE MODELS is the default and your strongest "
-    "general worker — use it (by omitting 'model') for architect and implementer tasks. "
-    "Assign a DIFFERENT model mainly to the final qa task, for decorrelated verification. "
-    "Do NOT add tasks the spec does not require. Reply as JSON {tasks:[...]}."
-)
-_DECIDE_SYSTEM = (
-    "You are the project manager (PjM) deciding how to proceed after a round of execution. "
-    "You are given the SPEC, the PROCESS with per-task done-status, and the ROUND RESULT "
-    "(a failed task, failed deterministic checks, and/or the QA verdict). Choose ONE action: "
-    "'rerun' — the process is right but some work must be redone: list in 'invalidate' the "
-    "FILES of ONLY the tasks that need redoing (smallest set; dependents and QA are re-run "
-    "automatically). 'replan' — the process itself is wrong; the task list will be rebuilt. "
-    "'respec' — the specification or its definitions are wrong; it will be revised using "
-    "your 'reason'. 'escalate' — human judgment is needed or no further progress is "
-    "possible. Reply as JSON {action, invalidate, reason}."
-)
+
+def _shape_line(schema: dict) -> str:
+    """スキーマから「返すべき JSON の形」の1行を作る（合意008）。
+
+    形は**ポジションの契約**でありコアの持ち物。役割定義書に二重に書かせない
+    （書かせるとスキーマとプロンプトが別々に腐る）。スキーマを唯一の出所にする。
+    """
+    def render(spec: dict) -> str:
+        kind = spec.get("type", "string")
+        if spec.get("enum"):
+            return "|".join(map(str, spec["enum"]))
+        if kind == "array":
+            return f"[{render(spec.get('items', {}))}]"
+        if kind == "object":
+            inner = ", ".join(f"{k}: {render(v)}" for k, v in spec.get("properties", {}).items())
+            return "{" + inner + "}"
+        return kind
+
+    required = set(schema.get("required", []))
+    body = ", ".join(
+        f"{name}{'' if name in required else '?'}: {render(spec)}"
+        for name, spec in schema.get("properties", {}).items()
+    )
+    return "Reply as JSON: {" + body + "}  ('?' = optional)."
+
 
 # QA タスクが欠けたプロセスへコードが足す既定タスク（検証を飛ばして完遂に到達させない）。
 _DEFAULT_QA_TASK = {
@@ -286,9 +244,27 @@ def _parse_role_doc(text: str) -> dict:
     return {"prompt": body, "tools": tools, "write_scope": scope}
 
 
-def _role_prompt(doc: Any) -> str:
-    """role 定義の本文。旧形式（素の文字列）も受ける。"""
-    return doc if isinstance(doc, str) else str((doc or {}).get("prompt", ""))
+def _task_roles(roles: dict) -> dict:
+    """人選・タスク割当の対象になる役割（＝作業する役割）。L4 のポジションは除く（合意008）。"""
+    return {name: doc for name, doc in roles.items() if name not in _L4_ROLES}
+
+
+def _role_prompt(doc: Any, section: str | None = None) -> str:
+    """role 定義の本文。旧形式（素の文字列）も受ける。
+
+    `section` を渡すと「前文＋`## <section>` の節」を返す（合意008）。1つの役割が複数の仕事を
+    持つとき（PdM の specify / respecify、PjM の process / decide）に、共通の前文を保ったまま
+    その仕事の指示だけを取り出すため。節が無ければ本文全体を返す。
+    """
+    text = doc if isinstance(doc, str) else str((doc or {}).get("prompt", ""))
+    if not section or not text:
+        return text
+    parts = re.split(r"^##\s+(\S+)\s*$", text, flags=re.M)
+    preamble = parts[0].strip()
+    for name, body in zip(parts[1::2], parts[2::2]):
+        if name.strip().lower() == section.lower():
+            return f"{preamble}\n\n{body.strip()}".strip()
+    return text
 
 
 def _role_perms(doc: Any) -> tuple[list | None, str]:
@@ -374,7 +350,7 @@ class Director:
         )
         if inputs:
             log(("inputs", inputs))
-        spec = self._specify(model, purpose, log, system, inputs)          # PdM
+        spec = self._specify(model, purpose, roles, log, system, inputs)  # PdM
         if _infeasible(spec):                                            # 充足不能なら人間へ（合意007）
             return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, log)
         tasks = self._pjm_process(model, spec, roles, pool, log, system)   # PjM: P（体制＝プロセス）
@@ -399,7 +375,7 @@ class Director:
 
             if not ok:
                 decision = self._pjm_decide(                               # PjM: A（部分再実行の判断）
-                    model, spec, tasks, failure, failed_checks, verdict, log, system
+                    model, spec, tasks, failure, failed_checks, verdict, roles, log, system
                 )
                 act = decision.get("action")
                 if rounds < max_rounds:
@@ -412,7 +388,8 @@ class Director:
                         continue
                     if act == "respec":
                         spec = self._respecify(
-                            model, purpose, spec, decision.get("reason", ""), log, system, inputs
+                            model, purpose, spec, decision.get("reason", ""),
+                            roles, log, system, inputs,
                         )
                         if _infeasible(spec):
                             return self._stop_infeasible(
@@ -435,7 +412,7 @@ class Director:
             feedback = str(decision.get("feedback") or "")
             if not feedback:
                 return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
-            spec = self._respecify(model, purpose, spec, feedback, log, system, inputs)
+            spec = self._respecify(model, purpose, spec, feedback, roles, log, system, inputs)
             if _infeasible(spec):
                 return self._stop_infeasible(purpose, spec, spec_path, process_path, tasks, rounds, log)
             tasks = self._pjm_process(model, spec, roles, pool, log, system)
@@ -499,18 +476,31 @@ class Director:
         return None
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
+    #
+    # やり方（プロンプト）は roles/*.md から来る。コアが供給するのはポジションの契約
+    # （スキーマ由来の形の1行）と呼び出し側の環境だけ（合意008）。
+    def _lifeline_system(
+        self, roles: dict, role: str, section: str, schema: dict,
+        env: str | None, log: Callable,
+    ) -> str:
+        doc = _role_prompt(roles.get(role, ""), section).strip()
+        if not doc:
+            # 「役割を認識しているが知識が無い状態」＝ミニマム。既定プロンプトで埋めない。
+            log(("role_doc_missing", role, section))
+        return _with_env("\n\n".join(s for s in (doc, _shape_line(schema)) if s), env)
+
     def _specify(
-        self, model: str, purpose: str, log: Callable, system: str | None = None,
-        inputs: str = "",
+        self, model: str, purpose: str, roles: dict, log: Callable,
+        system: str | None = None, inputs: str = "",
     ) -> dict:
         data = self._structured(
-            model, _with_env(_SPECIFY_SYSTEM, system),
+            model, self._lifeline_system(roles, "pdm", "specify", _SPECIFY_SCHEMA, system, log),
             f"PURPOSE:\n{purpose}{_inputs_block(inputs)}", _SPECIFY_SCHEMA,
         )
         return _normalize_spec(data, purpose, log)
 
     def _respecify(
-        self, model: str, purpose: str, spec: dict, feedback: str, log: Callable,
+        self, model: str, purpose: str, spec: dict, feedback: str, roles: dict, log: Callable,
         system: str | None = None, inputs: str = "",
     ) -> dict:
         user = (
@@ -518,7 +508,10 @@ class Director:
             f"CURRENT SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
             f"FEEDBACK:\n{feedback}"
         )
-        data = self._structured(model, _with_env(_RESPECIFY_SYSTEM, system), user, _SPECIFY_SCHEMA)
+        data = self._structured(
+            model, self._lifeline_system(roles, "pdm", "respecify", _SPECIFY_SCHEMA, system, log),
+            user, _SPECIFY_SCHEMA,
+        )
         new = _normalize_spec(data, purpose, log)
         if _infeasible(new):
             return new  # 充足不能の申告は spec 本文が空でも「壊れ」ではない（合意007）
@@ -536,12 +529,16 @@ class Director:
             f"ROLES (your knowledge base):\n{roles_s}\n\n"
             f"AVAILABLE MODELS (default first):\n{', '.join(pool)}"
         )
-        data = self._structured(model, _with_env(_PROCESS_SYSTEM, system), user, _PROCESS_SCHEMA)
-        return _normalize_tasks(data.get("tasks", []), roles, log)
+        data = self._structured(
+            model, self._lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log),
+            user, _PROCESS_SCHEMA,
+        )
+        return _normalize_tasks(data.get("tasks", []), _task_roles(roles), log)
 
     def _pjm_decide(
         self, model: str, spec: dict, tasks: list, failure: dict | None,
-        failed_checks: list, verdict: dict | None, log: Callable, system: str | None = None,
+        failed_checks: list, verdict: dict | None, roles: dict, log: Callable,
+        system: str | None = None,
     ) -> dict:
         result_parts = []
         if failure is not None:
@@ -557,7 +554,10 @@ class Director:
             f"PROCESS:\n{_process_summary(tasks)}\n\n"
             f"ROUND RESULT:\n" + ("\n".join(result_parts) or "(no info)")
         )
-        data = self._structured(model, _with_env(_DECIDE_SYSTEM, system), user, _DECIDE_SCHEMA)
+        data = self._structured(
+            model, self._lifeline_system(roles, "pjm", "decide", _DECIDE_SCHEMA, system, log),
+            user, _DECIDE_SCHEMA,
+        )
         if data.get("action") not in ("rerun", "replan", "respec", "escalate"):
             data = {"action": "escalate", "invalidate": [], "reason": "unparseable PjM decision"}
         log(("pjm", data))
