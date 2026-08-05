@@ -15,5 +15,5 @@ dev = ["pytest>=8"]
 pythonpath = ["."]
 testpaths = ["tests"]  # temp/（L3 実走の使い捨て場）の生成物テストを収集しない
 markers = [
-  "live: 実 Ollama への接続を要するテスト（サーバ未起動ならスキップ）",
+  "live: 外部への接続を要するテスト（実 Ollama / web。未接続・レート制限ならスキップ）",
 ]

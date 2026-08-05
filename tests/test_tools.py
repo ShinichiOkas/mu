@@ -136,7 +136,7 @@ def test_protected_file_is_still_readable(protected):
 
 def test_tools_list_is_l1_pairs():
     # L1 が使える形式: (callable, usage_text) のペアのリスト
-    assert len(tools.TOOLS) == 5
+    assert len(tools.TOOLS) == 7
     for func, usage in tools.TOOLS:
         assert callable(func)
         assert isinstance(usage, str) and usage
@@ -396,3 +396,140 @@ def test_list_dir_small_directory_is_listed_whole(tmp_path):
     r = tools.list_dir(str(tmp_path))
     assert r.facts["truncated"] is False
     assert r.facts["next_offset"] is None
+
+
+# --- 011: web 検索・取得 ------------------------------------------------------
+#
+# 3層で書く（合意011 C）。ここでは**純粋整形**（応答 → 文字列/構造）だけを固定サンプルで検証する。
+# 実 HTTP を叩く I/O ヘルパーは live マーカー側（下部）に置き、ネット未接続ならスキップする。
+
+# lite.duckduckgo.com の実応答から採った断片（2026-08-05 取得）。
+_DDG_SAMPLE = """
+<table>
+  <tr><td class="result-count">1.&nbsp;</td>
+      <td><a rel="nofollow" href="https://www.python.org/" class='result-link'>Welcome to Python.org</a></td></tr>
+  <tr><td>&nbsp;</td>
+      <td class='result-snippet'>The official home of the <b>Python</b> Programming Language.</td></tr>
+  <tr><td class="result-count">2.&nbsp;</td>
+      <td><a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.python.org%2F3%2F&amp;rut=abc" class='result-link'>3.14 Documentation</a></td></tr>
+  <tr><td>&nbsp;</td>
+      <td class='result-snippet'>The official <b>Python</b> docs &amp; tutorial.</td></tr>
+</table>
+"""
+
+
+def test_ddg_parser_extracts_title_url_and_snippet():
+    results = tools._ddg_results(_DDG_SAMPLE)
+    assert results[0]["title"] == "Welcome to Python.org"
+    assert results[0]["url"] == "https://www.python.org/"
+    assert "Programming Language" in results[0]["snippet"]
+
+
+def test_ddg_parser_unwraps_the_redirect_url():
+    # DDG がリダイレクト URL を挟む場合がある。実 URL に戻さないとモデルが fetch_url に渡せない。
+    results = tools._ddg_results(_DDG_SAMPLE)
+    assert results[1]["url"] == "https://docs.python.org/3/"
+
+
+def test_ddg_parser_unescapes_entities_in_text():
+    results = tools._ddg_results(_DDG_SAMPLE)
+    assert "docs & tutorial" in results[1]["snippet"]  # &amp; が戻っている
+    assert "<b>" not in results[1]["snippet"]  # 強調タグは落ちている
+
+
+def test_ddg_parser_returns_empty_list_for_unknown_markup():
+    # 構造が変わったら「0件」になる。ここでは落ちないことだけを担保し、
+    # 「0件＝取れなかったかもしれない」の判断は呼び出し側（web_search）が持つ。
+    assert tools._ddg_results("<html><body>no results here</body></html>") == []
+
+
+_HTML_SAMPLE = """
+<html><head><title>T</title><style>body{color:red}</style></head>
+<body><nav>Home | About</nav>
+<h1>Heading</h1>
+<p>Hello&nbsp;&amp; welcome.</p>
+<script>alert('x')</script>
+<footer>(c) 2026</footer></body></html>
+"""
+
+
+def test_html_to_text_drops_scripts_styles_and_chrome():
+    text = tools._html_to_text(_HTML_SAMPLE)
+    assert "alert" not in text
+    assert "color:red" not in text
+    assert "Home | About" not in text
+    assert "(c) 2026" not in text
+
+
+def test_html_to_text_keeps_the_body_and_unescapes_entities():
+    text = tools._html_to_text(_HTML_SAMPLE)
+    assert "Heading" in text
+    assert "Hello & welcome." in text
+    assert "<" not in text  # タグは残らない
+
+
+def test_html_to_text_collapses_blank_lines():
+    text = tools._html_to_text("<p>a</p>\n\n\n\n<p>b</p>")
+    assert text == "a\nb"
+
+
+def test_format_search_results_is_readable_and_carries_urls():
+    formatted = tools._format_results(
+        [{"title": "T1", "url": "https://a.example", "snippet": "s1"}]
+    )
+    assert "1." in formatted and "T1" in formatted
+    assert "https://a.example" in formatted
+    assert "s1" in formatted
+
+
+def test_web_tools_are_registered():
+    names = [func.__name__ for func, _ in tools.TOOLS]
+    assert "web_search" in names
+    assert "fetch_url" in names
+
+
+# --- I/O（実ネット。未接続・レート制限ならスキップ） ---
+
+live = pytest.mark.live
+
+
+@live
+def test_web_search_returns_real_results():
+    r = tools.web_search("Python programming language", limit=5)
+    if not r.ok:
+        pytest.skip(f"検索が取れない環境（レート制限等）: {r.content[:80]}")
+    assert r.facts["results"] > 0
+    assert "http" in r.content
+
+
+@live
+def test_fetch_url_returns_body_text():
+    r = tools.fetch_url("https://example.com/")
+    if not r.ok:
+        pytest.skip(f"取得できない環境: {r.content[:80]}")
+    assert r.facts["status"] == 200
+    assert "Example Domain" in r.content
+
+
+@live
+def test_fetch_url_reports_http_errors_honestly():
+    # 取れないサイトは実在する（Wikipedia は UA を変えても 403）。空文字で成功を装わない。
+    # 相手は「404 を返すことが安定している先」を選ぶ（外部サービスの一時障害でテストを揺らさない）。
+    r = tools.fetch_url("https://example.com/no-such-page-mu-011")
+    if r.facts.get("status") is None:
+        pytest.skip("外部サービスに到達できない")
+    assert r.ok is False
+    assert r.facts["status"] == 404
+    assert "404" in r.content  # モデルにも理由が見える
+
+
+@live
+def test_fetch_url_long_page_is_saved_whole_and_reachable():
+    r = tools.fetch_url("https://docs.python.org/3/whatsnew/3.13.html")
+    if not r.ok:
+        pytest.skip("取得できない環境")
+    assert r.facts["truncated"] is True
+    saved = Path(r.facts["output_path"])
+    assert saved.exists() and saved.stat().st_size > 10_000
+    assert tools.read_file(str(saved), offset=0).ok is True
+    saved.unlink()

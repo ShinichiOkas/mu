@@ -1,0 +1,100 @@
+# 合意ドキュメント 011 — web 検索・取得ツールの追加
+
+- **sprint**: 011-web-search-and-fetch
+- **status**: executing（2026-08-05 合意）
+- **version**: 1
+- **開始**: 2026-08-05
+- **前提**: スプリント010 完了（ファイルツールのサイズ無制限化。テスト 190 green）。
+  mu の依存は `ollama` と `httpx` の2つだけ。
+
+## 師匠の言葉（原文保持）
+
+> ツール修正次いでにweb 検索とフェッチツールも追加。
+
+（2026-08-05）
+
+---
+
+## 選択肢の成立性（提示前に実測。合意前の裏取り）
+
+| 確認したこと | 結果 |
+|---|---|
+| キーレス検索（DuckDuckGo lite）| **この環境から現に動く**。`httpx` ＋ `html.parser` の標準ライブラリだけで 10 件抽出できた |
+| 本文取得（`docs.python.org/3/whatsnew/3.13.html`）| 492KB の HTML → タグ剥がしで 113KB のテキスト。依存追加なしで成立 |
+| Brave Search API | **新規ユーザーの無料枠は廃止済み**（クレカ必須・$5 クレジット制）→ 選択肢から除外 |
+| Tavily API | 無料 1,000 credits/月・クレカ不要。ただしキー登録が前提 |
+| このマシンの検索 API キー | Brave / Tavily / Serper いずれも**未設定** |
+| 取得できないサイトの実在 | `ja.wikipedia.org` は UA を変えても **403**。「取れないものがある」前提で設計する |
+
+## 師匠の決定（2026-08-05 協議）
+
+| 論点 | 決定 |
+|---|---|
+| ① 検索バックエンド | **キーレス（DuckDuckGo）**。依存追加もキー登録もなしで動く |
+| ② 本文抽出 | **標準ライブラリでタグ剥がし**（本文抽出ライブラリは入れない＝依存は 2 つのまま） |
+| ③ 長いページ本文 | **全文をファイルに落とす**（`execute_command` と同じ形。続きは `read_file` で辿る） |
+| ④ 登録範囲 | **既定 `TOOLS` に入れる**（全走行で使える） |
+
+## 設計
+
+### A. `web_search(query, limit=10)`
+
+- `https://lite.duckduckgo.com/lite/` に POST。`<a class='result-link'>`（タイトル・URL）と
+  `<td class='result-snippet'>`（抜粋）を `html.parser` で拾う。
+  DDG が挟むリダイレクト URL（`/l/?uddg=...`）は**実 URL に戻してから**返す——モデルがそのまま
+  `fetch_url` に渡せる形にする。
+- 出力は「順位・タイトル・URL・抜粋」の素直な列。`facts` に `results` 件数と `engine` を入れる。
+- **0 件は「無い」ではなく「取れなかった」可能性がある**（レート制限・構造変化）。
+  ok=False にして理由を明示する。黙って空を返さない。
+
+### B. `fetch_url(url)`
+
+- `httpx` で GET（UA 明示・リダイレクト追従・タイムアウト）。
+- **HTTP ステータスを正直に返す**。403/404 は ok=False にして status を `facts` に残す
+  （Wikipedia のように取れないサイトは実在する。「取れた風の空文字」を返さない）。
+- `text/html` はタグ剥がし（script / style / nav / header / footer を落として実体参照を戻す）、
+  `text/*` はそのまま、それ以外（バイナリ・PDF）は ok=False ＋ content-type とバイト数を返す。
+- 長い本文は ③ に従い**全文を一時ファイルへ保存してパスを案内**する（切り詰めたときだけ作る。
+  010 の `execute_command` と同じ規則・同じ語彙）。続きは `read_file(path, offset=)` で辿る。
+
+### C. 構造（3層で書く。既存の規約どおり）
+
+| 層 | 実体 | 検証 |
+|---|---|---|
+| 純粋整形 | `_ddg_results(html)` / `_html_to_text(html)` / 結果の整形 | **固定サンプル**でユニットテスト（CI・ネット不要） |
+| I/O | `web_search` / `fetch_url` | `@pytest.mark.live` で実ネット検証（未接続ならスキップ） |
+| 登録 | `WEB_SEARCH` / `FETCH_URL` を `TOOLS` に追加（5 → 7） | — |
+
+### D. 役割権限への波及（④の帰結。設計判断ではなく既存機構の性質）
+
+`roles/*.md` の `tools:` は**省略＝全ツール許可**。したがって既定 `TOOLS` に足すと:
+
+- **architect / implementer / pdm / pjm** — 自動的に使えるようになる（`tools:` 省略のため）
+- **QA だけは自動的に除外される**（明示リスト `read_file, list_dir, execute_command, write_file`）。
+  検証役が外部情報を持ち込まないという規律は**触らなくても保たれる**
+
+`roles/*.md` は本スプリントでは変更しない。QA に web を許すかは別の判断（必要になったら協議）。
+
+## やらないこと
+
+- API キーを要する検索バックエンド（Tavily 等）の実装 — ①の決定。将来必要になれば差し替え口として足す
+- 本文抽出ライブラリの導入 — ②の決定。依存は `ollama` ＋ `httpx` のままにする
+- robots.txt の尊重・クロール制御 — 単発取得の検証用ツールであり、巡回はしない
+- `roles/*.md` の権限変更 — D のとおり触らない
+
+## 進め方（TDD）
+
+| Phase | 内容 | 完了条件 |
+|---|---|---|
+| 1 | 純粋整形関数のテストを固定サンプル HTML で先に書く | 新テストが失敗する |
+| 2 | `_ddg_results` / `_html_to_text` 実装 | 1 が green |
+| 3 | `web_search` / `fetch_url`（I/O）＋ `TOOLS` 登録 ＋ live テスト | 実ネットで検索・取得が通る |
+| 4 | usage_text・docstring・README・pyproject の markers 同期 | 全テスト green・文書が実装と一致 |
+
+## 完了条件
+
+- `web_search("...")` が実際の検索結果（タイトル・URL・抜粋）を返す
+- `fetch_url(url)` が本文テキストを返し、長いページは全文がファイル経由で辿れる
+- 取得失敗（403 等）が **ok=False ＋ status** として正直に出る
+- 純粋整形はネット無しで CI 検証でき、I/O は live マーカーでスキップ可能
+- 既存 190 テスト＋新テストが green

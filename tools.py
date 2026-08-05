@@ -11,7 +11,8 @@ system prompt に注入する「使い方」テキスト。`TOOLS` をそのま�
 判定を「表象」でなく「実体」に寄せるため（合意005）。
 
 注意: write_file / edit_file / execute_command は実ファイル・実シェルに触れる。
-検証用途で使うこと。execute_command は PowerShell で実行する。
+検証用途で使うこと。execute_command は PowerShell で実行する。web_search / fetch_url は
+外部ネットワークへ出る（キー不要・依存追加なし。取れないサイトは status を正直に返す）。
 
 サイズ無制限（合意010）: 1回の出力は既定窓（`_MAX_OUTPUT`）で守るが、**見えない部分は残さない**。
 read_file / list_dir は行単位の窓（offset=読み飛ばす行数・0 始まり / limit=最大行数）を持ち、
@@ -29,10 +30,16 @@ mode="append" で末尾追加でき、1回の生成に収まらない成果物�
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+import httpx
 
 from mu.l1 import ToolResult
 
@@ -320,6 +327,197 @@ def execute_command(command: str) -> ToolResult:
     )
 
 
+# --- web（検索・取得。合意011） -----------------------------------------------
+#
+# 3層で書く: 純粋整形（_ddg_results / _html_to_text / _format_results）→ I/O（web_search /
+# fetch_url）→ 登録。整形は固定サンプルで CI 検証でき、実 HTTP は live マーカーで検証する。
+#
+# 検索はキーレス（DuckDuckGo lite）。API キーも依存追加も要らない代わりに、レート制限や
+# HTML 構造の変化で**取れなくなる**。だから 0 件は「無い」ではなく「取れなかったかもしれない」
+# として ok=False で返す（黙って空を返さない）。
+
+_USER_AGENT = "mu-agent/0.1 (+minimal verification agent)"
+_HTTP_TIMEOUT = 20.0
+_DDG_ENDPOINT = "https://lite.duckduckgo.com/lite/"
+
+# 本文に要らない塊（丸ごと落とす）。
+_STRIP_BLOCKS = re.compile(
+    r"(?is)<(script|style|nav|header|footer|noscript|form|svg)\b[^>]*>.*?</\1\s*>"
+)
+_TAGS = re.compile(r"(?s)<[^>]+>")
+
+
+class _DdgParser(HTMLParser):
+    """lite.duckduckgo.com の結果表から (タイトル, URL, 抜粋) を拾う。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list = []
+        self._href = None
+        self._buf: list = []
+        self._in_snippet = False
+
+    def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        classes = (d.get("class") or "").split()
+        if tag == "a" and "result-link" in classes:
+            self._href, self._buf = d.get("href", ""), []
+        elif tag == "td" and "result-snippet" in classes:
+            self._in_snippet, self._buf = True, []
+
+    def handle_data(self, data):
+        if self._href is not None or self._in_snippet:
+            self._buf.append(data)
+
+    def handle_endtag(self, tag):
+        text = " ".join("".join(self._buf).split())
+        if tag == "a" and self._href is not None:
+            self.results.append({"title": text, "url": _unwrap_ddg(self._href), "snippet": ""})
+            self._href, self._buf = None, []
+        elif tag == "td" and self._in_snippet:
+            if self.results:  # 抜粋は直前の結果に属する
+                self.results[-1]["snippet"] = text
+            self._in_snippet, self._buf = False, []
+
+
+def _unwrap_ddg(href: str) -> str:
+    """DDG が挟むリダイレクト URL（/l/?uddg=...）を実 URL に戻す。素の URL はそのまま。"""
+    if "uddg=" not in href:
+        return href
+    target = parse_qs(urlparse(href).query).get("uddg")
+    return unquote(target[0]) if target else href
+
+
+def _ddg_results(html_text: str) -> list:
+    """検索応答 HTML → [{title, url, snippet}]。純粋関数（副作用なし・ネット不要）。"""
+    parser = _DdgParser()
+    parser.feed(html_text)
+    return [r for r in parser.results if r["url"]]
+
+
+def _html_to_text(html_text: str) -> str:
+    """HTML → 素のテキスト。本文抽出はしない（タグとナビ塊を落とすだけ）。純粋関数。"""
+    text = _STRIP_BLOCKS.sub(" ", html_text)
+    text = _TAGS.sub("\n", text)
+    text = unescape(text).replace("\xa0", " ")
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _format_results(results) -> str:
+    """検索結果 → モデル向けの列。純粋関数。"""
+    lines = []
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. {r['title']}\n   {r['url']}")
+        if r["snippet"]:
+            lines.append(f"   {r['snippet']}")
+    return "\n".join(lines)
+
+
+def _save_full_output(text: str, prefix: str) -> str:
+    """切り詰める出力の全文を一時ファイルへ落とし、パスを返す（続きは read_file で辿る）。"""
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
+def web_search(query: str, limit: int = 10) -> ToolResult:
+    """web を検索し、上位の結果（タイトル・URL・抜粋）を返す。"""
+    limit = max(1, _as_int(limit, 10))
+    try:
+        resp = httpx.post(
+            _DDG_ENDPOINT,
+            data={"q": query},
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError as e:
+        return ToolResult(
+            f"error: web search failed ({type(e).__name__}: {e})",
+            ok=False,
+            facts={"action": "search", "query": query, "results": 0, "error": type(e).__name__},
+        )
+    results = _ddg_results(resp.text)[:limit]
+    facts = {
+        "action": "search",
+        "query": query,
+        "engine": "duckduckgo",
+        "status": resp.status_code,
+        "results": len(results),
+    }
+    if not results:
+        # 0 件は「無い」とは限らない。レート制限・構造変化の可能性を明示して判断を渡す。
+        return ToolResult(
+            f"error: no results for {query!r} (status={resp.status_code})。"
+            "レート制限・一時的な遮断・結果構造の変化の可能性がある。"
+            "語を変えて再試行するか、URL が分かっているなら fetch_url を使うこと。",
+            ok=False,
+            facts=facts,
+        )
+    return ToolResult(f"{len(results)} results for {query!r}:\n" + _format_results(results), facts=facts)
+
+
+def fetch_url(url: str) -> ToolResult:
+    """URL を取得し、本文をテキストで返す（HTML はタグを剥がす）。"""
+    try:
+        resp = httpx.get(
+            url,
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_HTTP_TIMEOUT,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError as e:
+        return ToolResult(
+            f"error: fetch failed ({type(e).__name__}: {e})",
+            ok=False,
+            facts={"action": "fetch", "url": url, "status": None, "error": type(e).__name__},
+        )
+    content_type = resp.headers.get("content-type", "")
+    facts = {
+        "action": "fetch",
+        "url": url,
+        "final_url": str(resp.url),
+        "status": resp.status_code,
+        "content_type": content_type,
+    }
+    if resp.status_code >= 400:
+        # 取れないサイトは実在する（UA を変えても 403 を返す先がある）。
+        # 空文字を返して「取れた風」にしない——判断できるよう status をそのまま渡す。
+        return ToolResult(
+            f"error: HTTP {resp.status_code} for {url}. "
+            "取得できないサイトがある（アクセス拒否・存在しない）。別の URL を試すこと。",
+            ok=False,
+            facts=facts,
+        )
+    if "html" in content_type:
+        text = _html_to_text(resp.text)
+    elif content_type.startswith("text/") or "json" in content_type or "xml" in content_type:
+        text = resp.text
+    else:
+        return ToolResult(
+            f"error: not text content ({content_type or 'unknown'}, {len(resp.content)} bytes) at {url}",
+            ok=False,
+            facts={**facts, "bytes": len(resp.content)},
+        )
+    chars = len(text)
+    truncated = chars > _MAX_OUTPUT
+    output_path = None
+    shown = text
+    if truncated:
+        output_path = _save_full_output(text, "mu-fetch-")
+        shown = (
+            text[:_MAX_OUTPUT]
+            + f"\n...(truncated, {chars} chars total. "
+            + f'全文: read_file("{output_path}", offset=0))'
+        )
+    return ToolResult(
+        shown,
+        facts={**facts, "chars": chars, "truncated": truncated, "output_path": output_path},
+    )
+
+
 # --- L1 用の (func, usage_text) ペア ---
 READ_FILE = (
     read_file,
@@ -345,4 +543,15 @@ EXECUTE_COMMAND = (
     "出力が長いときは全文をファイルに保存し、そのパスを示す（read_file で続きを読める）。",
 )
 
-TOOLS = [READ_FILE, WRITE_FILE, EDIT_FILE, LIST_DIR, EXECUTE_COMMAND]
+WEB_SEARCH = (
+    web_search,
+    "web_search(query, limit=10): web を検索し、上位の結果（タイトル・URL・抜粋）を返す。"
+    "知らないこと・最新の情報はここで調べる。URL が分かったら fetch_url で中身を読む。",
+)
+FETCH_URL = (
+    fetch_url,
+    "fetch_url(url): URL のページを取得し、本文をテキストで返す。"
+    "長いページは先頭だけ返し、全文はファイルに保存してパスを示す（read_file で続きを読める）。",
+)
+
+TOOLS = [READ_FILE, WRITE_FILE, EDIT_FILE, LIST_DIR, EXECUTE_COMMAND, WEB_SEARCH, FETCH_URL]

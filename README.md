@@ -261,7 +261,9 @@ mu の中にあるが、**エージェントのループ・自律性の層（L0�
 .\.venv\Scripts\python.exe l1_chat.py [model]
 ```
 
-`l1_chat.py` は L1（ツールコールのループ）を使う（既定 `qwen3.5:9b`、tool 対応モデルが必要）。検証用ツール `read_file` / `write_file` / `edit_file` / `list_dir` / `execute_command`（PowerShell 実行）を登録済み。起動時に OS・作業ディレクトリ・シェルの環境情報を渡すので、「このフォルダのファイルを見て README を要約して」のような実タスクが回る。ツール実行は `[tool] ...` と表示。
+`l1_chat.py` は L1（ツールコールのループ）を使う（既定 `qwen3.5:9b`、tool 対応モデルが必要）。検証用ツール `read_file` / `write_file` / `edit_file` / `list_dir` / `execute_command`（PowerShell 実行）／ `web_search` / `fetch_url`（web 検索・取得）を登録済み。起動時に OS・作業ディレクトリ・シェルの環境情報を渡すので、「このフォルダのファイルを見て README を要約して」のような実タスクが回る。ツール実行は `[tool] ...` と表示。
+
+web にも出られる（合意011）。`web_search(query, limit)` は**キーレス**（DuckDuckGo lite を叩き、標準ライブラリで結果を抽出）で、API キーも依存追加も要らない。`fetch_url(url)` はページを取得して本文をテキスト化する（script / style / nav などを落とすだけの素朴な変換）。**取れないサイトは実在する**ので、HTTP ステータスは `ok=False` ＋ `facts.status` で正直に返し、検索結果 0 件も「無い」ではなく「取れなかったかもしれない」（レート制限・構造変化）として `ok=False` にする。役割権限（`roles/*.md` の `tools:`）は**省略＝全ツール許可**なので、QA だけは明示リストによりこの2つが自動的に渡らない。
 
 ツールは**扱えるサイズに上限を持たない**（合意010）。1回の出力は既定窓（4000 文字）で守りつつ、見えない部分が残らないようにしてある — `read_file(path, offset, limit)` / `list_dir(path, offset, limit)` は行単位の窓を持ち、切り詰めたら「続きの offset」を散文と `facts.next_offset` の両方に出す（`offset` は読み飛ばす行数＝0 が先頭）。`write_file(path, content, mode="append")` は末尾追加で、1回の生成に収まらない成果物を積み上げられる。`execute_command` の長い出力は全文を一時ファイルに保存してパスを返し、続きは `read_file` で辿る。読み出しは全文をメモリに載せない（行のストリーム読み）。窓より長い1行は**割らずに丸ごと返す** — 割ると行番号ではその続きを指せず、辿る手段が消えるため。
 
@@ -295,7 +297,7 @@ mu の中にあるが、**エージェントのループ・自律性の層（L0�
 
 - **決定**: 基本 LLM = Ollama ／ L0 のスコープ（上記）／ **L0 のエラー方針（接続を理想化・4型・リトライ）** ／ L1 = ツールコールのループ ／ **L2 = Reflect ループ（再帰同一構造）** ／ **L3 = 大域 Plan（P・A は HITL 承認スロット、D・C は自律、ファイル・グラウンディング）** ／ **L4 = 進行の層（PjM。プロセスと人選、rerun/replan は自分で・respec/escalate は上へ）** ／ **L5 = 目的の層（PdM。目的→仕様、充足可能性の判断、accept/respec/escalate）** ／ 設定系の位置づけ
 - **L0 は実装・テスト済み** — `mu/l0.py`（言語 Python／依存 公式 `ollama` クライアント）。接続の理想化に connect タイムアウト・pull リトライを含む
-- **L1 は実装・テスト済み** — `mu/l1.py`（無状態 `step()`／`(func, usage_text)` ペア／system注入＋構造化tools／dispatch はシグネチャ束縛＝幻覚 kwarg を落として注記）。検証用ツール `tools.py`（read_file / write_file / edit_file / list_dir / execute_command＝PowerShell。**扱えるサイズに上限なし**＝行単位の窓＋続きの offset・末尾追加・出力全文の保存）＋環境グラウンディング（呼び出し側が OS/cwd/shell を注入）
+- **L1 は実装・テスト済み** — `mu/l1.py`（無状態 `step()`／`(func, usage_text)` ペア／system注入＋構造化tools／dispatch はシグネチャ束縛＝幻覚 kwarg を落として注記）。検証用ツール `tools.py`（read_file / write_file / edit_file / list_dir / execute_command＝PowerShell / web_search / fetch_url＝キーレス web 検索・取得。**扱えるサイズに上限なし**＝行単位の窓＋続きの offset・末尾追加・出力全文の保存）＋環境グラウンディング（呼び出し側が OS/cwd/shell を注入）
 - **L2 は実装・検証済み** — `mu/l2.py`（`Agent`, `step`/`run`）。D=L1 を Reflect(C+A) で包む再帰同一構造。実タスク T1〜T4（網羅性・制約＋修正・正確性・実行照合）を**参照モデル qwen3.5:9b / gemma4:12b で検証**
 - **L3 は実装・検証済み** — `mu/l3.py`（`Orchestrator`）。Plan／失敗分析／再計画／全体判定の生命線プロンプトを実タスクで調整。**北極星「GUI を持つアプリの自走完遂」到達**（2026-07-19）。既定モデルは gemma4:12b（qwen3.5:9b は参照として残し、構造限界とモデル限界を切り分ける）
 - **L4 / L5 は実装・検証済み** — `mu/l4.py`（`Manager`＝進行の層）・`mu/l5.py`（`Director`＝目的の層）＋ `roles/`（役割定義書＝ナレッジベース兼権限宣言）＋ facility（`role_kb.py` / `process.py`）。充足可能性の申告・入力の実物への接地・役割注釈付きプロセス・部分再実行・独立 QA・役割別ツール権限。難課題6件で実走し**偽・完遂ゼロ**
