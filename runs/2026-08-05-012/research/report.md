@@ -1,0 +1,48 @@
+# Local LLM Runtime Comparison Report for mu Agent Base
+
+## Comparison Table
+
+| Dimension | Ollama | llama.cpp | vLLM | LM Studio |
+| :--- | :--- | :--- | :--- | :--- |
+| **Setup Simplicity** | Very Easy (One-click/CLI) | Moderate (Compilation/Manual) | Hard (Complex dependencies) | Very Easy (GUI App) |
+| **API Compatibility** | OpenAI compatible | Basic/Custom (Server mode exists) | High (OpenAI compatible) | High (OpenAI compatible) |
+| **Resource Usage** | Efficient (Wraps llama.cpp/MLX) | Lowest (Maximum control) | High (Optimized for GPU throughput) | Efficient (Wraps llama.cpp/MLX) |
+| **Model Deployment** | Low (Library-based `ollama pull`) | Moderate (Manual GGUF download) | Moderate (HuggingFace integration) | Low (GUI-based discovery/download) |
+
+*Sources:*
+- [Convly AI: Ollama vs LM Studio vs vLLM vs llama.cpp](https://convly.ai/ollama-vs-lm-studio-vs-vllm-vs-llama-cpp-2026/)
+- [MachineLearningMastery: Ollama vs. LM Studio vs. llama.cpp](https://machinelearningmastery.com/ollama-vs-lm-studio-vs-llama-cpp-which-local-ai-runtime-should-you-use-in-2026/)
+
+## Detailed Analysis
+
+### Ollama
+- **Pros**: Lowest friction for developers. Provides a background daemon and a simple CLI for model management. Recently integrated MLX for significant speedups on Apple Silicon (up to 93% faster decode) [Convly AI].
+- **Cons**: Lower throughput under concurrent load compared to serving-specialized systems like vLLM.
+- **Suitability for mu**: Highly suitable. mu requires "minimalism" and "simplicity," and Ollama's `ollama run` and API approach minimize infrastructure overhead.
+
+### llama.cpp
+- **Pros**: The core engine for many other tools. Offers the most granular control over parameters like GPU layer offloading (`-ngl`) and context window size [MachineLearningMastery].
+- **Cons**: Requires manual management of model files and more complex command-line arguments.
+- **Suitability for mu**: Overkill for a general agent unless specific hardware constraints or extreme performance tuning are required.
+
+### vLLM
+- **Pros**: Engineered for high-throughput production serving using PagedAttention. Can achieve 16–20× the throughput of Ollama under heavy concurrent load [Convly AI].
+- **Cons**: High setup complexity and significant resource requirements; not designed for local prototyping.
+- **Suitability for mu**: Not suitable. mu is a minimal agent, not a high-concurrency production API service.
+
+### LM Studio
+- **Pros**: Best GUI experience for model discovery and chatting. Provides a local server compatible with OpenAI API [MachineLearningMastery].
+- **Cons**: GUI-centric nature makes it less ideal for headless automation or scripted agent workflows compared to a CLI-first tool.
+- **Suitability for mu**: Good for exploration, but less "minimal" for an automated agent base than Ollama.
+
+## Conclusion
+
+**Ollama should be continued as the base for mu.**
+
+The decision is based on the alignment with mu's requirements:
+1. **Setup Simplicity**: Ollama provides the "lowest regret" default with very easy installation.
+2. **API Compatibility**: It offers an OpenAI-compatible API, ensuring easy integration.
+3. **Resource Usage**: It is efficient and leverages the best underlying engines (llama.cpp/MLX).
+4. **Model Deployment**: The library-based pull system makes updating and switching models trivial.
+
+While vLLM is superior for high-concurrency production and llama.cpp offers more control, neither matches the balance of simplicity and power that Ollama provides for a minimal agent framework.

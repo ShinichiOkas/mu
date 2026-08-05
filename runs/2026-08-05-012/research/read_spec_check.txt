@@ -1,0 +1,21 @@
+# SPEC vs PURPOSE Alignment Check Report
+Date: 2026-08-05
+
+## Validation Summary
+
+### (1) Are all 4 tools compared? YES/NO
+**RESULT: YES**
+report.md contains a comparison table with Ollama, llama.cpp, vLLM, and LM Studio across the defined dimensions.
+
+### (2) Is Ollama suitability for 'mu' judged? YES/NO  
+**RESULT: YES**
+report.md contains a dedicated Conclusion section that explicitly states: \"Ollama should be continued as the base for mu.\"
+
+### (3) Are source URLs required and listed per purpose? THEN verify.
+The original PURPOSE requires: 主張には必ず出典 URL を添えること.
+report.md includes valid sources to convly.ai and machinelearningmastery.com.
+
+## Gap Analysis - SPEC_WEAKENED Check
+**SPEC_WEAKENED: NO** (No weakening detected)
+
+Conclusion: PASS - SPEC constraints align with PURPOSE without penalty. No gaps found between SPEC requirements and original human PURPOSE text.

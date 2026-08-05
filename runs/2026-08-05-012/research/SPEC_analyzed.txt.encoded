@@ -1,0 +1,10 @@
+# SPEC_analyzed.txt - Extracted Constraints from SPEC and Design Documents
+
+## 【Purposes Section Summary】
+
+### HUMAN INPUT (Purpose Original Text):
+\"ローカルで LLM を動かす実行基盤について、Ollama / llama.cpp/vLLM/LM Studioを比較し、「mu（きわめてミニマルな汎用エージェント）」の基盤として Olla ma を使い続けるべきかを判断できる材料を報告書にまとめてほしい。
+- 主張には必ず出典 URL を添えること
+
+### PURPOSES (Purpose): 
+\"mu( ミニマ ルな汎用 エージェント） の基 礎としての現状Ollama を使う か、あるいは llamacpp/vLLM/L M Studioへの移行を検討すべきかを判断するための比較報告書を作成する。"
