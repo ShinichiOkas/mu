@@ -1,8 +1,10 @@
 {
   "sprint_id": "009-l4-responsibility-analysis",
-  "status": "executing",
+  "status": "completed",
   "goal": "l4.py の責務過剰を解消する。PdM を L5 へ分割し、L4=進行の層（PjM）／L5=目的の層（PdM）にする",
   "created_at": "2026-08-05T14:30:00+09:00",
   "agreement_path": ".pair-agent/agreements/009-l4-responsibility-analysis.md",
-  "agreed_at": "2026-08-05T14:45:00+09:00"
+  "agreed_at": "2026-08-05T14:45:00+09:00",
+  "completed_at": "2026-08-05T18:30:00+09:00",
+  "sprint_doc": ".pair-agent/sprints/009-l4-responsibility-analysis.md"
 }
