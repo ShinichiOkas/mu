@@ -8,9 +8,13 @@ L4 = 目的（なぜ作るか）を受け取り、
   末尾の QA タスク（独立文脈。SPEC・実物・**目的の原文**を見る）が書く verdict.md を
   機械的に読んで判定する層。
 
-役割定義書はリポジトリの roles/ から読む。これは PjM のナレッジベースであると同時に
+役割定義書はリポジトリの roles/ から読む（`mu.role_kb`。**出所は差し替え可能**で、
+同じ形の dict を返せば L4 は無変更）。定義書は PjM のナレッジベースであると同時に
 **役割の権限の宣言**（frontmatter の tools / write_scope）でもあり、権限はコードが適用する
 ——PjM が出せるのは役割名だけなので、権限は LLM 側から書き換えられない。
+**5役割（pdm / pjm / architect / implementer / qa）すべてのやり方が定義書にあり**、
+コード内に生命線プロンプトは無い。定義書が欠けた役割は「知識が無い状態」で動く
+（その事実は `role_doc_missing` として実況に出る）。
 失敗や verdict 不合格は PjM が部分再実行（rerun/replan/respec）を判断し、
 判断できないときは人間に上がる。最終判定のプロンプトで
     y      = 目的達成として受理
@@ -218,6 +222,8 @@ def _log(event: tuple) -> None:
         print(f"{_L4} 入力の実物を PdM に接地:")
         for line in str(event[1]).splitlines()[:12]:
             print(f"{_L4}   {_short(line, 120)}")
+    elif kind == "role_doc_missing":      # 合意008: 役割は認識しているが知識が無い状態
+        print(f"{_L4} [!] 役割定義が無い（{event[1]} / {event[2]}）— 指示なしで実行する")
     elif kind == "permission_denied":     # 合意007 B1: 役割の権限で書き込みを拒否した
         print(f"{_L4} [!] 権限で拒否: ({event[1]}) {event[2]} -> {event[3]}")
     elif kind == "tool_withheld":
