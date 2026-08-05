@@ -1,8 +1,8 @@
 # 合意ドキュメント 010 — ファイルツールのサイズ無制限化
 
 - **sprint**: 010-tools-unbounded-file-io
-- **status**: executing（2026-08-05 合意）
-- **version**: 2
+- **status**: completed（2026-08-05 振り返り完了。ビジョン記録・Skill 3件処理済み）
+- **version**: 3
 - **開始**: 2026-08-05
 - **前提**: スプリント009 完了（L4=進行の層／L5=目的の層に分割、テスト green）。
   `tools.py` は 007 以降、保護（protect）以外は手つかず。
