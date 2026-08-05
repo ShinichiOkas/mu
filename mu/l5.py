@@ -1,0 +1,348 @@
+"""L5 — 目的の層（PdM / Director）。
+
+人間が自然に言えるのは**目的**であり、詳細な仕様ではない。その落差を埋めるのがこの層。
+L4（進行の層）を D として使い、返ってきた検証結果を見て「仕様を直すか・人間に上げるか」を
+判断する——L2→L3 と同じ再帰同一構造であり、判断が1段外へ出た形（合意009）。
+
+  P: 目的 → **充足可能性の判断** → 操作的定義＋受入基準＋仕様（SPEC.md）      ← PdM（LLM）
+  D: SPEC を L4（PjM）に渡し、プロセスを編ませて完遂させる                    ← 内側の層
+  C: L4 が返す verdict（QA の判定）と checks（決定論の受入検査）を読む         ← コード
+  A: accept / respec（仕様を直して再実行）/ escalate（人間へ）                ← レビュー担当
+
+決定論の床（この層）:
+  - PdM が「充足不能」と申告したら**仕様を作らせず人間へ上げる**（合意007。矛盾の独断解決を塞ぐ）
+  - 入力の実物（一覧＋先頭抜粋）はコードが読んで PdM に前置する（形式を発明させない）
+  - 壊れた specify 応答は目的の原文を仕様として使う（劣化を可視化して進む）
+  - L4 が「自分の職掌では直せない（respec / escalate）」と返したときだけ、この層が動く
+
+やり方（PdM のプロンプト）は roles/pdm.md にあり、コードには無い。返すべき形はスキーマが
+唯一の出所（合意008）。**無状態** — 上限・レビュー担当・役割 KB・モデルプールは呼び出し側が規定する。
+人間はモデルプールの外にいる（escalate で依頼する相手。再帰の底）。
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+from .l1 import Tool
+from .l4 import Manager, lifeline_system, structured
+from .role_kb import role_section
+
+# --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
+
+_SPECIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "definitions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"term": {"type": "string"}, "definition": {"type": "string"}},
+                "required": ["term", "definition"],
+            },
+        },
+        "criteria": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "run": {"type": "string"},
+                    "expect": {"type": "string"},
+                },
+                "required": ["text"],
+            },
+        },
+        "spec": {"type": "string"},
+        "feasible": {"type": "boolean"},
+        "conflicts": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["definitions", "criteria", "spec", "feasible", "conflicts"],
+}
+
+_SPEC_NOTE = "（L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）"
+
+
+
+_NO_VERDICT = {"achieved": "uncertain", "reason": "no verdict (QA task not completed)", "gap": ""}
+
+
+def _noop(_event: Any) -> None:
+    pass
+
+
+def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds,
+          l4_rounds: int = 0) -> dict:
+    """呼び出し側への返り値。`rounds` は**この層の**周回（respec サイクル）、
+    `l4_rounds` は最後に回した L4（PjM サイクル）の周回——予算は各層が自分で持つ（合意009）。"""
+    return {
+        "achieved": achieved, "escalated": escalated, "assessment": assessment,
+        "spec": spec, "spec_path": spec_path, "tasks": tasks,
+        "process_path": process_path, "rounds": rounds, "l4_rounds": l4_rounds,
+    }
+
+
+def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300) -> str:
+    """作業ディレクトリの**実在する入力**を一覧＋先頭抜粋にして返す（合意007 C2）。
+
+    PdM は目的の文章だけからは入力の形式を知りえず、実測すると形式を発明する
+    （sales×12b: ヘッダーを2度発明 → 不一致 → respec → 入力破壊）。仕様を作る前に
+    実物を前置する。005 の assess 証拠グラウンディング・006 の env preamble と同型で、
+    「事実は呼び出し側（コード）が渡し、LLM に想像させない」形。
+    """
+    p = Path(workdir or ".")
+    if not p.is_dir():
+        return ""
+    entries = [f for f in sorted(p.iterdir()) if f.name not in exclude and not f.name.startswith(".")]
+    lines = []
+    for f in entries[:max_files]:
+        if f.is_dir():
+            lines.append(f"- {f.name}/ (directory)")
+            continue
+        try:
+            size = f.stat().st_size
+            text = f.read_text(encoding="utf-8", errors="strict")[:head]
+        except (OSError, UnicodeDecodeError):
+            lines.append(f"- {f.name} (binary or unreadable)")
+            continue
+        lines.append(f"- {f.name} ({size} bytes) — 先頭:")
+        lines.extend(f"    {line}" for line in text.splitlines()[:5])
+    if len(entries) > max_files:
+        lines.append(f"- （他 {len(entries) - max_files} 件）")
+    return "\n".join(lines)
+
+
+def _inputs_block(inputs: str) -> str:
+    if not inputs:
+        return ""
+    return (
+        "\n\nEXISTING FILES IN THE WORK DIRECTORY (the real inputs, read from disk):\n"
+        f"{inputs}"
+    )
+
+
+def _infeasible(spec: dict) -> bool:
+    """PdM が明示的に「充足不能」と申告したか。欠落・True はどちらも「進める」（合意007 決定4）。"""
+    return spec.get("feasible") is False
+
+
+def _auto_review(report: dict) -> dict:
+    """既定のレビュー: ラウンドが完全に ok（全タスク done・check 全通過・verdict yes）のときだけ受理。"""
+    return {"accept": bool(report.get("ok")), "feedback": ""}
+
+
+def _spec_note(roles: dict) -> str:
+    """SPEC.md の注記。定義書の `## spec-artifact` があればそれ、無ければコードのミニマム。"""
+    return role_section(roles.get("pdm"), "spec-artifact") or _SPEC_NOTE
+
+
+def _normalize_spec(data: dict, purpose: str, log: Callable) -> dict:
+    """specify 応答を仕様 dict に正規化。壊れていたら目的の原文を仕様として使う（劣化を可視化）。
+
+    合意007: `feasible` / `conflicts`（PdM の充足可能性の申告）も持ち回る。
+    **欠落は feasible=True 扱い**——申告できないモデルで常に止まると自律の到達距離を
+    測れなくなるため、明示的な false だけを escalate の分岐条件にする。
+    """
+    feasible = False if data.get("feasible") is False else True
+    conflicts = [str(c).strip() for c in (data.get("conflicts") or []) if str(c).strip()]
+    if not data.get("spec"):
+        if feasible:  # 充足不能の申告時は spec が空でも壊れではない（仕様を作らないのが正しい）
+            log(("spec_fallback", "specify が壊れたため目的の原文を仕様として使う"))
+        return {
+            "definitions": [], "criteria": [], "spec": "" if not feasible else purpose,
+            "feasible": feasible, "conflicts": conflicts,
+        }
+    return {
+        "definitions": [
+            d for d in data.get("definitions", [])
+            if isinstance(d, dict) and d.get("term") and d.get("definition")
+        ],
+        "criteria": [c for c in map(_normalize_criterion, data.get("criteria", [])) if c],
+        "spec": str(data["spec"]),
+        "feasible": feasible,
+        "conflicts": conflicts,
+    }
+
+
+def _normalize_criterion(c: Any) -> dict | None:
+    """criterion を {text, run, expect} に正規化。旧形式（素の文字列）も受ける。"""
+    if isinstance(c, str):
+        return {"text": c, "run": "", "expect": ""} if c.strip() else None
+    if isinstance(c, dict) and str(c.get("text", "")).strip():
+        return {
+            "text": str(c["text"]),
+            "run": str(c.get("run", "") or ""),
+            "expect": str(c.get("expect", "") or ""),
+        }
+    return None
+
+
+def _criterion_line(c: dict) -> str:
+    line = c["text"]
+    if c.get("run"):
+        line += f"（検査: `{c['run']}`"
+        if c.get("expect"):
+            line += f" → 出力に「{c['expect']}」を含むこと"
+        line += "）"
+    return line
+
+
+def _write_spec(spec_path: str, purpose: str, spec: dict, note: str = "") -> None:
+    """仕様を artifact に書く。全タスクが参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
+    defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
+    crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
+    infeasible = ""
+    if _infeasible(spec):
+        conflicts = "\n".join(f"- {c}" for c in spec.get("conflicts", [])) or "- （申告なし）"
+        infeasible = (
+            "## 充足不能の申告（PdM）\n"
+            "この目的は制約が同時に満たせないと判断された。**仕様は作られていない**——"
+            "制約を弱めた仕様や退化解を独断で採らず、人間の判断を待つ（合意007）。\n"
+            f"{conflicts}\n\n"
+        )
+    text = (
+        "# SPEC — L5（PdM）が目的から定めた仕様\n"
+        f"{note or _SPEC_NOTE}\n\n"
+        f"## 目的（人間の入力・原文）\n{purpose}\n\n"
+        f"{infeasible}"
+        f"## 操作的定義\n{defs or '(なし)'}\n\n"
+        f"## 受入基準\n{crits or '(なし)'}\n\n"
+        f"## 仕様\n{spec.get('spec', '')}\n"
+    )
+    p = Path(spec_path)
+    if p.parent != Path("."):
+        p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+
+
+class Director:
+    """L5。目的を仕様に翻訳し、L4（進行の層）を回し、結果を見て次の一手を決める。"""
+
+    def __init__(self, l0: Any, l4: Any = None) -> None:
+        self._l0 = l0
+        self._l4 = l4 if l4 is not None else Manager(l0)
+
+    def run(
+        self,
+        model: str,
+        purpose: str,
+        tools: Sequence[Tool],
+        *,
+        roles: dict | None = None,
+        models: Sequence[str] | None = None,
+        spec_path: str = "SPEC.md",
+        process_path: str = "PROCESS.md",
+        review: Callable[[dict], dict] = _auto_review,
+        log: Callable[[Any], None] = _noop,
+        system: str | None = None,
+        max_rounds: int = 2,
+        l4_max: int = 3,
+        l3_max: int = 8,
+        l2_max: int = 6,
+        l2_l1_max: int = 10,
+    ) -> dict:
+        roles = roles or {}
+        inputs = _input_grounding(                                    # 入力の実物（合意007 C2）
+            str(Path(spec_path).parent), {Path(spec_path).name, Path(process_path).name}
+        )
+        if inputs:
+            log(("inputs", inputs))
+        spec = self._specify(model, purpose, roles, log, system, inputs)
+        if _infeasible(spec):                                         # 充足不能なら人間へ（合意007）
+            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log)
+
+        rounds, l4_rounds, tasks, assessment = 0, 0, [], _NO_VERDICT
+        for _ in range(max_rounds):
+            rounds += 1
+            _write_spec(spec_path, purpose, spec, _spec_note(roles))
+            log(("spec", spec, spec_path))
+
+            outcome = self._l4.run(                                   # D: 進行の層に任せる
+                model, spec, tools, roles=roles, models=models, purpose=purpose,
+                spec_path=spec_path, process_path=process_path, log=log, system=system,
+                max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
+            )
+            tasks = outcome["tasks"]
+            l4_rounds = outcome["rounds"]
+            assessment = outcome["verdict"] or _NO_VERDICT
+            report = {
+                "purpose": purpose, "spec": spec, "spec_path": spec_path,
+                "tasks": tasks, "process_path": process_path,
+                "assessment": assessment, "checks": outcome["checks"], "ok": outcome["ok"],
+            }
+            # PjM が「自分の職掌では直せない」と言い、まだ予算があるなら仕様を直して再実行する。
+            if outcome["outcome"] == "respec" and rounds < max_rounds:
+                spec = self._respecify(model, purpose, spec, outcome["reason"], roles, log, system, inputs)
+                if _infeasible(spec):
+                    return self._stop_infeasible(
+                        purpose, spec, spec_path, process_path, tasks, rounds, roles, log
+                    )
+                continue
+
+            decision = review(report)                                  # A: 判断は外へ（既定は自動）
+            if decision.get("accept"):
+                return _done(True, False, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+            feedback = str(decision.get("feedback") or "")
+            if not feedback:
+                return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+            spec = self._respecify(model, purpose, spec, feedback, roles, log, system, inputs)
+            if _infeasible(spec):
+                return self._stop_infeasible(
+                    purpose, spec, spec_path, process_path, tasks, rounds, roles, log
+                )
+
+        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+
+    def _stop_infeasible(
+        self, purpose: str, spec: dict, spec_path: str, process_path: str,
+        tasks: list, rounds: int, roles: dict, log: Callable,
+    ) -> dict:
+        """PdM が「目的は充足不能」と申告したとき、仕様を作らせず人間へ上げる（合意007 C1-(d)）。
+
+        H3 の観測（矛盾を検出しながら退化解を独断採用し全層が忠実に「達成」した）への対処。
+        判断（矛盾か否か）は LLM、**握り潰させない分岐はここ（コードの決定論）**。
+        申告は SPEC.md にも残す——観測を殺さないガードにするため（合意007 決定4）。
+        """
+        _write_spec(spec_path, purpose, spec, _spec_note(roles))
+        conflicts = spec.get("conflicts") or []
+        log(("infeasible", conflicts))
+        assessment = {
+            "achieved": "uncertain",
+            "reason": "PdM が目的を充足不能と申告した（制約が同時に満たせない）。人間の判断が要る",
+            "gap": "; ".join(conflicts),
+        }
+        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
+
+    # --- 生命線の LLM 呼び出し（やり方は roles/pdm.md、形はスキーマ） ---
+    def _specify(
+        self, model: str, purpose: str, roles: dict, log: Callable,
+        system: str | None = None, inputs: str = "",
+    ) -> dict:
+        data = structured(
+            self._l0, model,
+            lifeline_system(roles, "pdm", "specify", _SPECIFY_SCHEMA, system, log),
+            f"PURPOSE:\n{purpose}{_inputs_block(inputs)}", _SPECIFY_SCHEMA,
+        )
+        return _normalize_spec(data, purpose, log)
+
+    def _respecify(
+        self, model: str, purpose: str, spec: dict, feedback: str, roles: dict, log: Callable,
+        system: str | None = None, inputs: str = "",
+    ) -> dict:
+        user = (
+            f"PURPOSE:\n{purpose}{_inputs_block(inputs)}\n\n"
+            f"CURRENT SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
+            f"FEEDBACK:\n{feedback}"
+        )
+        log(("respec", feedback))
+        data = structured(
+            self._l0, model,
+            lifeline_system(roles, "pdm", "respecify", _SPECIFY_SCHEMA, system, log),
+            user, _SPECIFY_SCHEMA,
+        )
+        new = _normalize_spec(data, purpose, log)
+        if _infeasible(new):
+            return new  # 充足不能の申告は spec 本文が空でも「壊れ」ではない（合意007）
+        return new if data.get("spec") else spec  # 壊れた改訂で現仕様を失わない

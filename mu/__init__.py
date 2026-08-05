@@ -14,7 +14,8 @@ from .l0 import (
 from .l1 import ToolLoop, ToolResult
 from .l2 import Agent
 from .l3 import Orchestrator
-from .l4 import Director
+from .l4 import Manager
+from .l5 import Director
 
 __all__ = [
     "OllamaInterface",
@@ -27,5 +28,6 @@ __all__ = [
     "ToolResult",
     "Agent",
     "Orchestrator",
+    "Manager",
     "Director",
 ]
