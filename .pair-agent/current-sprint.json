@@ -1,10 +1,7 @@
 {
-  "sprint_id": "009-l4-responsibility-analysis",
-  "status": "completed",
-  "goal": "l4.py の責務過剰を解消する。PdM を L5 へ分割し、L4=進行の層（PjM）／L5=目的の層（PdM）にする",
-  "created_at": "2026-08-05T14:30:00+09:00",
-  "agreement_path": ".pair-agent/agreements/009-l4-responsibility-analysis.md",
-  "agreed_at": "2026-08-05T14:45:00+09:00",
-  "completed_at": "2026-08-05T18:30:00+09:00",
-  "sprint_doc": ".pair-agent/sprints/009-l4-responsibility-analysis.md"
+  "sprint_id": "010-tools-unbounded-file-io",
+  "status": "executing",
+  "goal": "tools.py のファイルツールを拡張し、扱うファイルサイズ・出力長に制限が無いようにする（read_file の行オフセット、write_file の末尾追加、execute_command の全文保持）",
+  "created_at": "2026-08-05T22:14:25+09:00",
+  "agreement_path": ".pair-agent/agreements/010-tools-unbounded-file-io.md"
 }
