@@ -733,7 +733,9 @@ def test_default_qa_task_is_overridable_by_the_role_doc(tmp_path, monkeypatch):
     assert qa_task["role"] == "qa"
     assert qa_task["file"] == "judgement.md"                 # 上書きが効く
     assert "OVERRIDDEN-QA-TASK" in qa_task["task"]
-    assert qa_task["criterion"] == "OVERRIDDEN-CRITERION"
+    # 上書きは効くが、判定書の契約（床）はコードが必ず足す（008 Phase4 の劣化への対処）
+    assert qa_task["criterion"].startswith("OVERRIDDEN-CRITERION")
+    assert "REASON" in qa_task["criterion"]
     assert result["achieved"] is True                        # 判定書の場所も追随する
 
 
@@ -787,3 +789,68 @@ def test_artifact_note_falls_back_to_the_code_minimum(tmp_path, monkeypatch):
     text = (tmp_path / "SPEC.md").read_text(encoding="utf-8")
     assert "直接編集して直してよい" in text                    # コードのミニマム
     assert "## 受入基準" in text
+
+
+# --- 008 Phase4 の実走で見つかった劣化への対処: 判定書の読み手を頑健にする -------
+#
+# 契約をコード供給に移した結果、QA が Markdown 見出しで書くようになり
+# （`## ACHIEVED: yes` / `## REASON` ＋本文）、REASON/GAP が機械読みで空になった。
+# 判定語（yes|no|uncertain）の厳格さは保ったまま、装飾と複数行を許して読む。
+
+VERDICT_MARKDOWN = """# 検証結果（verdict）
+
+## ACHIEVED: yes
+
+## REASON
+
+### 1. ファイルの存在確認
+`Get-ChildItem report.txt` により report.txt の存在を確認した。
+テストは 9 件すべて成功した。
+
+## GAP
+
+なし
+"""
+
+
+def test_verdict_reader_accepts_markdown_decorated_format(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], [
+        {"done": True}, {"done": True},
+        {"done": True, "writes": [("verdict.md", VERDICT_MARKDOWN)]},
+    ])
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["achieved"] is True
+    reason = result["assessment"]["reason"]
+    assert "report.txt の存在を確認" in reason        # 見出しブロックの本文を拾う
+    assert "9 件すべて成功" in reason                  # 複数行をつなぐ
+
+
+def test_verdict_without_a_verdict_word_stays_uncertain(tmp_path, monkeypatch):
+    # 対照走で実際に起きた形: 「ACHIEVED: <散文>」。判定語が無ければ合格にしない。
+    bad = "ACHIEVED: The script correctly implements the required logic.\n\nREASON:\n- ok\n"
+    decide = {"action": "escalate", "invalidate": [], "reason": "判定書が読めない"}
+    agent = make([SPEC, PROCESS3, decide], [
+        {"done": True}, {"done": True},
+        {"done": True, "writes": [("verdict.md", bad)]},
+    ])
+    result = run(agent, tmp_path, monkeypatch, max_rounds=1)
+    assert result["achieved"] is False
+    assert result["assessment"]["achieved"] == "uncertain"
+
+
+def test_verdict_reader_still_reads_the_plain_contract_format(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["assessment"]["reason"] == "確認した"
+
+
+def test_qa_task_criterion_carries_the_contract(tmp_path, monkeypatch):
+    # 契約はコードの持ち物。PjM が書いた QA タスクの成功条件にも3項目を足し、
+    # L2 Reflect が欠落を落とせるようにする（読み手を頑健にするだけでは書き手が痩せる）。
+    agent = make([SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch)
+    qa_task = result["tasks"][-1]
+    assert "ACHIEVED" in qa_task["criterion"]
+    assert "REASON" in qa_task["criterion"] and "GAP" in qa_task["criterion"]
+    assert "ACHIEVED 行を含む" in qa_task["criterion"]      # PjM が書いた分は残る
+    assert "REASON" not in result["tasks"][0]["criterion"]  # 他役割には足さない

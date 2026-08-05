@@ -253,7 +253,10 @@ def main() -> None:
     case, model, workdir = sys.argv[1], sys.argv[2], Path(sys.argv[3])
     pool = [model, *sys.argv[4:]]
     spec = CASES[case]
-    roles = load_roles(ROLES_DIR)
+    # 役割定義書の出所は差し替え可能（合意008）。空ディレクトリを指せば
+    # 「役割は認識しているが知識が無い」状態の対照走になる。
+    roles_dir = os.environ.get("MU_ROLES_DIR", ROLES_DIR)
+    roles = load_roles(roles_dir)
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     for rel, content in spec["files"].items():
@@ -270,6 +273,7 @@ def main() -> None:
     director = Director(_VerboseL0(l0, _L4), l3)
 
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
+    print(f"roles: {sorted(roles) or '(none — 知識なしの対照走)'} from {roles_dir}")
     print(f"purpose: {spec['purpose']}")
     print(f"protected: {spec['protect']}")
     t0 = time.monotonic()

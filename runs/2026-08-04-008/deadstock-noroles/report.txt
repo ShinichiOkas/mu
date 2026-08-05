@@ -1,0 +1,4 @@
+Item: 消しゴム, Net Sales: 10
+Item: はさみ, Net Sales: 9
+Item: ホッチキス, Net Sales: 0
+Item: 蛍光ペン, Net Sales: 0

@@ -158,6 +158,7 @@ _DEFAULT_QA_TASK = {
 
 # 判定書の書式＝**コードが正規表現で読む契約**（`_read_verdict` と対になる）。
 # ポジション側の持ち物なのでコードが供給する。役割定義書に二重に書かせない（合意008）。
+_VERDICT_REQUIREMENT = "判定書が ACHIEVED（yes|no|uncertain）・REASON・GAP の3項目を含む"
 _VERDICT_CONTRACT = (
     "判定書の書式（機械的に読まれる。厳守）:\n"
     "ACHIEVED: yes|no|uncertain\n"
@@ -527,6 +528,9 @@ def _normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
         qa = _default_qa_task(roles)          # ミニマム＋定義書の宣言（存在自体は上書き不可）
         log(("qa_appended", qa["file"]))
         tasks.append(dict(qa, done=False))
+    for t in tasks:                           # 判定書の契約は成功条件にも入れる（床）
+        if t["role"] == "qa" and "REASON" not in t["criterion"]:
+            t["criterion"] = (t["criterion"] + " / " if t["criterion"] else "") + _VERDICT_REQUIREMENT
     return tasks
 
 
@@ -622,16 +626,31 @@ def _read_verdict(tasks: list) -> dict | None:
     if not p.is_file():
         return {"achieved": "uncertain", "reason": f"verdict file missing: {qa[-1]['file']}", "gap": ""}
     text = p.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r"ACHIEVED:\s*(yes|no|uncertain)", text, re.IGNORECASE)
+    m = re.search(r"ACHIEVED\s*:?\s*\**\s*(yes|no|uncertain)\b", text, re.IGNORECASE)
     if not m:
         return {"achieved": "uncertain", "reason": "verdict unparseable (no ACHIEVED line)", "gap": ""}
-    reason = re.search(r"REASON:\s*(.+)", text)
-    gap = re.search(r"GAP:\s*(.+)", text)
     return {
         "achieved": m.group(1).lower(),
-        "reason": reason.group(1).strip() if reason else "",
-        "gap": gap.group(1).strip() if gap else "",
+        "reason": _verdict_field(text, "REASON"),
+        "gap": _verdict_field(text, "GAP"),
     }
+
+
+def _verdict_field(text: str, name: str, limit: int = 600) -> str:
+    """判定書の REASON / GAP を読む。1行形式でも Markdown 見出しブロックでも拾う。
+
+    契約はコードが供給するが、書き手は LLM であり装飾（`## REASON` ＋本文）へ流れる
+    （008 Phase4 の実走で観測）。**判定語 yes|no|uncertain の厳格さは保ったまま**、
+    根拠の文面だけは実体に合わせて頑健に読む——読めないと人間に渡る情報が消えるため。
+    """
+    inline = re.search(rf"^\W{{0,4}}{name}\s*:\s*(\S.*)$", text, re.M | re.I)
+    if inline:
+        return inline.group(1).strip()[:limit]
+    block = re.search(rf"^#+\s*{name}\s*:?\s*$\n(.+?)(?=^#|\Z)", text, re.M | re.S | re.I)
+    if block:
+        body = " ".join(line for line in block.group(1).split() if line)
+        return body[:limit]
+    return ""
 
 
 def _first_line(text: str) -> str:

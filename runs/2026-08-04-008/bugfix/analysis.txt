@@ -1,0 +1,25 @@
+# Analysis of buggy_stats.py
+
+BUG_LIST:
+
+## 1. `mean(xs)`
+- **Bug**: Returns `0` for an empty list.
+- **Expected**: Should raise `ValueError` (as per `test_mean_empty_raises`).
+
+## 2. `median(xs)`
+- **Bug 1**: Returns `0` for an empty list.
+- **Expected 1**: Should raise `ValueError` (as per `test_median_empty_raises`).
+- **Bug 2**: For an even number of elements, it returns the element at index `len(s) // 2` (the upper middle).
+- **Expected 2**: Should return the average of the two middle elements (as per `test_median_even_is_average_of_middle_two`).
+
+## 3. `variance(xs)`
+- **Bug 1**: Calculates population variance (divides by `n`).
+- **Expected 1**: Should calculate sample variance (divide by `n - 1`) (as per `test_variance_is_sample_variance`).
+- **Bug 2**: Does not handle cases where `len(xs) <= 1`, leading to `ZeroDivisionError` or incorrect result when `n=1`.
+- **Expected 2**: Should raise `ValueError` when the list has only one element (as per `test_variance_single_raises`).
+
+## 4. `value_range(xs)`
+- **Bug 1**: Only returns `max(xs)`.
+- **Expected 1**: Should return the difference between max and min (`max(xs) - min(xs)`) (as per `test_value_range`).
+- **Bug 2**: `max()` on an empty list raises `ValueError` by default, but the test explicitly expects a `ValueError` (this is technically correct in behavior but the logic is incomplete).
+- **Expected 2**: Ensure it raises `ValueError` for empty lists (as per `test_value_range_empty_raises`).
