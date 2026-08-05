@@ -25,7 +25,8 @@ from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
 from mu.l3 import Orchestrator
-from mu.l4 import Director, load_roles
+from mu.l4 import Director
+from mu.role_kb import load_roles
 from tools import TOOLS
 from l4_chat import _VerboseL0, _verbose_tools, _log, _env_preamble, _L4, _L3, _L2, _L1, ROLES_DIR
 

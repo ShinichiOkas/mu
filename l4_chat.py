@@ -40,7 +40,8 @@ from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
 from mu.l3 import Orchestrator
-from mu.l4 import Director, load_roles
+from mu.l4 import Director
+from mu.role_kb import load_roles
 from tools import TOOLS
 
 # Windows コンソール等でも日本語・記号で落ちないよう UTF-8 にそろえる。

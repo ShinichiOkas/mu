@@ -40,12 +40,12 @@ from __future__ import annotations
 
 import json
 import re
-from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from .l1 import Tool, ToolResult
+from .l1 import Tool
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
+from .role_kb import role_prompt, role_section, role_tools, task_roles
 
 # --- スキーマ -----------------------------------------------------------------
 
@@ -112,13 +112,6 @@ _DECIDE_SCHEMA = {
     "required": ["action", "invalidate", "reason"],
 }
 
-# --- 役割の位置（不変） -------------------------------------------------------
-#
-# L4 の内部ポジション。プロセスのタスクに割り当てる役割ではない（PjM が人選する対象は
-# この2つを除いた役割＝作業する役割）。「そこに PdM/PjM が居る」ことはコアが知っており、
-# **どういう PdM/PjM であるか**は roles/*.md（外）が決める（合意008）。
-_L4_ROLES = ("pdm", "pjm")
-
 
 def _shape_line(schema: dict) -> str:
     """スキーマから「返すべき JSON の形」の1行を作る（合意008）。
@@ -145,13 +138,50 @@ def _shape_line(schema: dict) -> str:
     return "Reply as JSON: {" + body + "}  ('?' = optional)."
 
 
-# QA タスクが欠けたプロセスへコードが足す既定タスク（検証を飛ばして完遂に到達させない）。
+# QA タスクのミニマム定義（検証を飛ばして完遂に到達させないための床）。
+# 文面・出力ファイル・成功条件は roles/qa.md の frontmatter で上書きできるが、
+# **「QA タスクが存在すること」自体は上書きできない**（合意008。データ側から検証を消せると
+# 偽・完遂の経路が再び開く）。
 _DEFAULT_QA_TASK = {
     "role": "qa",
     "task": "受け入れ基準に照らして成果物を独立に検証し、判定書を書く",
     "file": "verdict.md",
-    "criterion": "verdict.md が『ACHIEVED: yes|no|uncertain』の1行目を含む",
+    "criterion": "判定書の1行目が『ACHIEVED: 』で始まる",
 }
+
+# 判定書の書式＝**コードが正規表現で読む契約**（`_read_verdict` と対になる）。
+# ポジション側の持ち物なのでコードが供給する。役割定義書に二重に書かせない（合意008）。
+_VERDICT_CONTRACT = (
+    "判定書の書式（機械的に読まれる。厳守）:\n"
+    "ACHIEVED: yes|no|uncertain\n"
+    "REASON: <1〜3行。確認した証拠を挙げる>\n"
+    "GAP: <no のとき何が欠けているか。yes/uncertain のときは空でよい>"
+)
+
+# artifact の注記のミニマム（定義書の `## spec-artifact` / `## process-artifact` で上書き可能）。
+_SPEC_NOTE = "（L4 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）"
+_PROCESS_NOTE = "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）"
+
+
+def _spec_note(roles: dict) -> str:
+    """SPEC.md の注記。定義書の `## spec-artifact` があればそれ、無ければコードのミニマム。"""
+    return role_section(roles.get("pdm"), "spec-artifact") or _SPEC_NOTE
+
+
+def _process_note(roles: dict) -> str:
+    """PROCESS.md の注記。定義書の `## process-artifact` があればそれ、無ければミニマム。"""
+    return role_section(roles.get("pjm"), "process-artifact") or _PROCESS_NOTE
+
+
+def _default_qa_task(roles: dict) -> dict:
+    """コードのミニマム定義に、役割定義書の宣言を重ねた QA タスクを作る（合意008）。"""
+    doc = roles.get("qa") if isinstance(roles.get("qa"), dict) else {}
+    task = dict(_DEFAULT_QA_TASK)
+    for key in ("task", "file", "criterion"):
+        value = str((doc or {}).get(key, "") or "").strip()
+        if value:
+            task[key] = value
+    return task
 
 
 def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300) -> str:
@@ -207,115 +237,6 @@ def _noop(_event: Any) -> None:
     pass
 
 
-def load_roles(path: str = "roles") -> dict:
-    """role 定義書（PjM のナレッジベース）をディレクトリから読む。
-
-    返り値は `{role名: {"prompt": 本文, "tools": [...]|None, "write_scope": "own"|"any"}}`。
-    合意007 B1: 役割の**権限**も役割定義に属するデータとし、frontmatter で宣言する:
-
-        ---
-        tools: read_file, list_dir, execute_command, write_file   # 省略＝全ツール
-        write_scope: own                                          # own＝自タスクの出力のみ
-        ---
-
-    権限を適用するのはコード（`_role_tools`）であり、PjM が出せるのは role 名だけ——
-    **PjM/LLM は自分の権限を書き換えられない**。人間は roles/*.md を直接直せる。
-    """
-    p = Path(path)
-    if not p.is_dir():
-        return {}
-    return {f.stem: _parse_role_doc(f.read_text(encoding="utf-8")) for f in sorted(p.glob("*.md"))}
-
-
-def _parse_role_doc(text: str) -> dict:
-    """role 定義書を {prompt, tools, write_scope} に分解する（frontmatter は本文に混ぜない）。"""
-    tools, scope, body = None, "any", text
-    if text.startswith("---"):
-        end = text.find("\n---", 3)
-        if end != -1:
-            for line in text[3:end].splitlines():
-                key, _, value = line.partition(":")
-                key, value = key.strip().lower(), value.strip()
-                if key == "tools":
-                    tools = [t.strip() for t in value.split(",") if t.strip()]
-                elif key == "write_scope" and value:
-                    scope = value.lower()
-            body = text[end + 4:].lstrip("\n")
-    return {"prompt": body, "tools": tools, "write_scope": scope}
-
-
-def _task_roles(roles: dict) -> dict:
-    """人選・タスク割当の対象になる役割（＝作業する役割）。L4 のポジションは除く（合意008）。"""
-    return {name: doc for name, doc in roles.items() if name not in _L4_ROLES}
-
-
-def _role_prompt(doc: Any, section: str | None = None) -> str:
-    """role 定義の本文。旧形式（素の文字列）も受ける。
-
-    `section` を渡すと「前文＋`## <section>` の節」を返す（合意008）。1つの役割が複数の仕事を
-    持つとき（PdM の specify / respecify、PjM の process / decide）に、共通の前文を保ったまま
-    その仕事の指示だけを取り出すため。節が無ければ本文全体を返す。
-    """
-    text = doc if isinstance(doc, str) else str((doc or {}).get("prompt", ""))
-    if not section or not text:
-        return text
-    parts = re.split(r"^##\s+(\S+)\s*$", text, flags=re.M)
-    preamble = parts[0].strip()
-    for name, body in zip(parts[1::2], parts[2::2]):
-        if name.strip().lower() == section.lower():
-            return f"{preamble}\n\n{body.strip()}".strip()
-    return text
-
-
-def _role_perms(doc: Any) -> tuple[list | None, str]:
-    """role 定義の権限（許可ツール, 書き込み範囲）。宣言が無ければ無制限。"""
-    if isinstance(doc, dict):
-        return doc.get("tools"), str(doc.get("write_scope") or "any").lower()
-    return None, "any"
-
-
-def _role_tools(
-    tools: Sequence[Tool], doc: Any, own_file: str, role: str, log: Callable
-) -> list:
-    """役割の権限でツール群を絞る（合意007 B1）。
-
-    f1×12b の観測: QA が成果物を自分で修正してから合格判定した（自己修正→自己承認）。
-    role プロンプトの「実装しない」は確率的にしか効かない。塞ぐのは**役割の職掌違反**であって
-    能力ではない（決めたこと4）——実装者は制限せず、QA だけが自分の判定書に閉じる。
-    拒否・非配布はログに出す（塞ぐが観測は殺さない）。
-    """
-    allow, scope = _role_perms(doc)
-    out = []
-    for func, usage in tools:
-        name = func.__name__
-        if allow is not None and name not in allow:
-            log(("tool_withheld", role, name))
-            continue
-        if scope == "own" and name in ("write_file", "edit_file"):
-            func = _own_file_only(func, own_file, role, log)
-            usage = f"{usage} ※このタスクで書き換えてよいのは {own_file} のみ"
-        out.append((func, usage))
-    return out
-
-
-def _own_file_only(func: Callable, own_file: str, role: str, log: Callable) -> Callable:
-    """書き込み系ツールを「自タスクの出力ファイルのみ」に閉じる包み（拒否は steering で返す）。"""
-    @wraps(func)
-    def guarded(path: str, *args, **kwargs):
-        if Path(path).resolve() != Path(own_file).resolve():
-            log(("permission_denied", role, func.__name__, path))
-            return ToolResult(
-                f"error: 役割 '{role}' が書き換えてよいのは {own_file} だけである"
-                f"（{path} への書き込みは権限で禁止）。成果物を自分で直してはならない——"
-                "問題は自分の出力ファイルに事実として記述すること。",
-                ok=False,
-                facts={"action": func.__name__, "path": path, "denied": True, "role": role},
-            )
-        return func(path, *args, **kwargs)
-
-    return guarded
-
-
 class Director:
     """L4。PdM が仕様を定め、PjM がプロセスを編み、役割を着た L3 に1タスクずつ完遂させる。"""
 
@@ -352,14 +273,14 @@ class Director:
             log(("inputs", inputs))
         spec = self._specify(model, purpose, roles, log, system, inputs)  # PdM
         if _infeasible(spec):                                            # 充足不能なら人間へ（合意007）
-            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, log)
+            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log)
         tasks = self._pjm_process(model, spec, roles, pool, log, system)   # PjM: P（体制＝プロセス）
         rounds = 0
         verdict: dict | None = None
         for _ in range(max_rounds):
             rounds += 1
-            _write_spec(spec_path, purpose, spec)
-            _write_process(process_path, purpose, tasks)
+            _write_spec(spec_path, purpose, spec, _spec_note(roles))
+            _write_process(process_path, purpose, tasks, _process_note(roles))
             log(("process", tasks, process_path))
 
             failure = self._execute(model, tasks, tools, roles, pool,      # 役割を着た L3 の逐次ループ
@@ -393,7 +314,7 @@ class Director:
                         )
                         if _infeasible(spec):
                             return self._stop_infeasible(
-                                purpose, spec, spec_path, process_path, tasks, rounds, log
+                                purpose, spec, spec_path, process_path, tasks, rounds, roles, log
                             )
                         tasks = self._pjm_process(model, spec, roles, pool, log, system)
                         continue
@@ -414,7 +335,7 @@ class Director:
                 return self._done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
             spec = self._respecify(model, purpose, spec, feedback, roles, log, system, inputs)
             if _infeasible(spec):
-                return self._stop_infeasible(purpose, spec, spec_path, process_path, tasks, rounds, log)
+                return self._stop_infeasible(purpose, spec, spec_path, process_path, tasks, rounds, roles, log)
             tasks = self._pjm_process(model, spec, roles, pool, log, system)
 
         assessment = verdict or {"achieved": "uncertain", "reason": "rounds exhausted", "gap": ""}
@@ -422,7 +343,7 @@ class Director:
 
     def _stop_infeasible(
         self, purpose: str, spec: dict, spec_path: str, process_path: str,
-        tasks: list, rounds: int, log: Callable,
+        tasks: list, rounds: int, roles: dict, log: Callable,
     ) -> dict:
         """PdM が「目的は充足不能」と申告したとき、仕様を作らせず人間へ上げる（合意007 C1-(d)）。
 
@@ -430,7 +351,7 @@ class Director:
         判断（矛盾か否か）は LLM、**握り潰させない分岐はここ（コードの決定論）**。
         申告は SPEC.md にも残す——観測を殺さないガードにするため（合意007 決定4）。
         """
-        _write_spec(spec_path, purpose, spec)
+        _write_spec(spec_path, purpose, spec, _spec_note(roles))
         conflicts = spec.get("conflicts") or []
         log(("infeasible", conflicts))
         assessment = {
@@ -459,10 +380,10 @@ class Director:
             if t.get("done"):
                 continue
             doc = roles.get(t["role"], "")
-            task_system = "\n\n".join(s for s in (_role_prompt(doc), system) if s)
+            task_system = "\n\n".join(s for s in (role_prompt(doc), system) if s)
             task_model = t.get("model") if t.get("model") in pool else model
             prior = [p["file"] for p in tasks[:i] if p.get("done")]
-            task_tools = _role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
+            task_tools = role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
             result = self._l3.run(
                 task_model, _task_goal(t, spec_path, prior, purpose), task_tools,
                 log=log, system=task_system or None,
@@ -483,7 +404,7 @@ class Director:
         self, roles: dict, role: str, section: str, schema: dict,
         env: str | None, log: Callable,
     ) -> str:
-        doc = _role_prompt(roles.get(role, ""), section).strip()
+        doc = role_prompt(roles.get(role, ""), section).strip()
         if not doc:
             # 「役割を認識しているが知識が無い状態」＝ミニマム。既定プロンプトで埋めない。
             log(("role_doc_missing", role, section))
@@ -522,7 +443,7 @@ class Director:
         system: str | None = None,
     ) -> list:
         roles_s = "\n".join(
-            f"- {name}: {_first_line(_role_prompt(doc))}" for name, doc in roles.items()
+            f"- {name}: {_first_line(role_prompt(doc))}" for name, doc in roles.items()
         ) or "(none)"
         user = (
             f"SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
@@ -533,7 +454,7 @@ class Director:
             model, self._lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log),
             user, _PROCESS_SCHEMA,
         )
-        return _normalize_tasks(data.get("tasks", []), _task_roles(roles), log)
+        return _normalize_tasks(data.get("tasks", []), task_roles(roles), log)
 
     def _pjm_decide(
         self, model: str, spec: dict, tasks: list, failure: dict | None,
@@ -596,8 +517,9 @@ def _normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
             task["model"] = str(t["model"])
         tasks.append(task)
     if not any(t["role"] == "qa" for t in tasks):
-        log(("qa_appended", _DEFAULT_QA_TASK["file"]))
-        tasks.append(dict(_DEFAULT_QA_TASK, done=False))
+        qa = _default_qa_task(roles)          # ミニマム＋定義書の宣言（存在自体は上書き不可）
+        log(("qa_appended", qa["file"]))
+        tasks.append(dict(qa, done=False))
     return tasks
 
 
@@ -615,6 +537,8 @@ def _task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "")
             goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
     refs = [spec_path, *prior_files]
     goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
+    if task["role"] == "qa":
+        goal += f"\n\n{_VERDICT_CONTRACT}"       # 契約はコードが供給する（合意008）
     if task["role"] == "qa" and purpose:
         # QA だけは目的の原文も見る（合意007 C1-(b)）。SPEC は PdM の生成物であり、
         # 目的の制約を弱めた仕様が下りてくる経路（H3）が実在する。仕様に忠実であることと
@@ -774,7 +698,7 @@ def _criterion_line(c: dict) -> str:
     return line
 
 
-def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
+def _write_spec(spec_path: str, purpose: str, spec: dict, note: str = "") -> None:
     """仕様を artifact に書く。全タスクが参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
     defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
     crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
@@ -789,7 +713,7 @@ def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
         )
     text = (
         "# SPEC — L4（PdM）が目的から定めた仕様\n"
-        "（L4 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）\n\n"
+        f"{note or _SPEC_NOTE}\n\n"
         f"## 目的（人間の入力・原文）\n{purpose}\n\n"
         f"{infeasible}"
         f"## 操作的定義\n{defs or '(なし)'}\n\n"
@@ -802,7 +726,7 @@ def _write_spec(spec_path: str, purpose: str, spec: dict) -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def _write_process(process_path: str, purpose: str, tasks: list) -> None:
+def _write_process(process_path: str, purpose: str, tasks: list, note: str = "") -> None:
     """プロセス（体制表）を artifact に書く。誰が・どの役割で・どのモデルで・何を作るか。"""
     lines = []
     for i, t in enumerate(tasks, 1):
@@ -817,7 +741,7 @@ def _write_process(process_path: str, purpose: str, tasks: list) -> None:
             lines.append(f"   - 検査: `{check['run']}`{expect}")
     text = (
         "# PROCESS — L4（PjM）が編んだプロセス（体制表）\n"
-        "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）\n\n"
+        f"{note or _PROCESS_NOTE}\n\n"
         f"## 目的\n{purpose}\n\n"
         f"## タスク列\n" + "\n".join(lines) + "\n"
     )

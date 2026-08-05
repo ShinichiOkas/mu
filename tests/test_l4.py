@@ -323,7 +323,7 @@ def test_review_feedback_triggers_respec_cycle(tmp_path, monkeypatch):
 
 
 def test_load_roles_reads_directory(tmp_path):
-    from mu.l4 import load_roles
+    from mu.role_kb import load_roles
     d = tmp_path / "roles"
     d.mkdir()
     (d / "qa.md").write_text("QA-DOC", encoding="utf-8")
@@ -419,7 +419,7 @@ def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
     # (a) 規範: 制約を弱めた仕様を作るな。
     # 合意008 以降、規範は**やり方**なので KB（roles/pdm.md）にあり、コードは形だけを供給する。
     from pathlib import Path as _P
-    from mu.l4 import load_roles
+    from mu.role_kb import load_roles
     roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
     assert "weaken" in roles["pdm"]["prompt"].lower()        # 規範は KB にある
 
@@ -587,7 +587,7 @@ def test_denied_write_is_logged(tmp_path, monkeypatch):
 
 
 def test_load_roles_parses_permission_frontmatter(tmp_path):
-    from mu.l4 import load_roles
+    from mu.role_kb import load_roles
     d = tmp_path / "roles"
     d.mkdir()
     (d / "qa.md").write_text(
@@ -606,7 +606,7 @@ def test_load_roles_parses_permission_frontmatter(tmp_path):
 def test_repo_role_kb_declares_the_qa_guard():
     # 実際のナレッジベース（roles/）が QA の権限を宣言していること。
     from pathlib import Path as _P
-    from mu.l4 import load_roles
+    from mu.role_kb import load_roles
     roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
     assert roles["qa"]["write_scope"] == "own"
     assert "edit_file" not in (roles["qa"]["tools"] or [])
@@ -689,7 +689,7 @@ def test_output_shape_comes_from_the_schema_not_the_role_doc(tmp_path, monkeypat
 def test_role_docs_do_not_declare_the_json_shape():
     # 実 KB の規律: 形はスキーマが唯一の出所。定義書が二重に宣言しない。
     from pathlib import Path as _P
-    from mu.l4 import load_roles
+    from mu.role_kb import load_roles
     roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
     assert {"pdm", "pjm", "architect", "implementer", "qa"} <= set(roles)
     for name, doc in roles.items():
@@ -700,3 +700,90 @@ def test_core_has_no_lifeline_prompt_constants():
     # コアから生命線プロンプトが消えていること（外に出た＝コード内定数として残っていない）。
     import mu.l4 as l4
     assert not [n for n in dir(l4) if n.endswith("_SYSTEM")]
+
+
+# --- 008 Phase2: ミニマム定義はコード、拡張・上書きは定義書 ---------------------
+#
+# 師匠:「ミニマム定義をコード中に残し、定義書で拡張または上書き可能とする」
+#      「役割を認識しているが知識が無い状態がミニマム」
+# ただし床は上書き不可 — 定義書から検証を消せると、偽・完遂の経路がデータ側から開く。
+
+QA_DOC_OVERRIDE = {
+    "prompt": "QA-ROLE-MARKER",
+    "tools": None,
+    "write_scope": "own",
+    "task": "OVERRIDDEN-QA-TASK 受入基準を独立に検証する",
+    "file": "judgement.md",
+    "criterion": "OVERRIDDEN-CRITERION",
+}
+
+
+def qa_less_process():
+    return {"tasks": [{"role": "implementer", "task": "実装", "file": "a.py", "criterion": "動く"}]}
+
+
+def test_default_qa_task_is_overridable_by_the_role_doc(tmp_path, monkeypatch):
+    roles = dict(ROLES, qa=QA_DOC_OVERRIDE)
+    agent = make([SPEC, qa_less_process()], [
+        {"done": True},
+        {"done": True, "writes": [("judgement.md", VERDICT_YES)]},
+    ])
+    result = run(agent, tmp_path, monkeypatch, roles=roles)
+    qa_task = result["tasks"][-1]
+    assert qa_task["role"] == "qa"
+    assert qa_task["file"] == "judgement.md"                 # 上書きが効く
+    assert "OVERRIDDEN-QA-TASK" in qa_task["task"]
+    assert qa_task["criterion"] == "OVERRIDDEN-CRITERION"
+    assert result["achieved"] is True                        # 判定書の場所も追随する
+
+
+def test_qa_task_presence_is_not_overridable(tmp_path, monkeypatch):
+    # 床: 定義書が何を言っても「QA タスクが存在すること」は消せない。
+    roles = dict(ROLES, qa={"prompt": "", "tools": None, "write_scope": "own",
+                            "task": "", "file": "", "criterion": ""})
+    agent = make([SPEC, qa_less_process()], [
+        {"done": True},
+        {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    result = run(agent, tmp_path, monkeypatch, roles=roles)
+    assert result["tasks"][-1]["role"] == "qa"
+    assert result["tasks"][-1]["file"] == "verdict.md"       # コードのミニマムに落ちる
+
+
+def test_verdict_format_contract_is_supplied_by_code(tmp_path, monkeypatch):
+    # 判定書の書式はコードが正規表現で読む「契約」＝ポジション側の持ち物。
+    # 役割定義書が空でも QA には書式が届く。
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles={})
+    qa_goal = agent._l3.calls[2]["goal"]
+    assert "ACHIEVED: yes|no|uncertain" in qa_goal
+    assert "REASON" in qa_goal and "GAP" in qa_goal
+    impl_goal = agent._l3.calls[1]["goal"]
+    assert "ACHIEVED:" not in impl_goal                      # 契約は QA のポジションにだけ届く
+
+
+def test_role_kb_does_not_restate_the_verdict_contract():
+    # 実 KB の規律: 契約はコードが唯一の出所。qa.md に書式を二重に書かない。
+    from pathlib import Path as _P
+    from mu.role_kb import load_roles
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    assert "ACHIEVED: yes | no | uncertain" not in roles["qa"]["prompt"]
+
+
+def test_artifact_note_is_overridable_by_the_role_doc(tmp_path, monkeypatch):
+    pdm = {"prompt": "あなたは PdM である。\n\n## specify\nSPECIFY-BODY\n\n"
+                     "## spec-artifact\nSPEC-NOTE-OVERRIDE この仕様書は実験用である。",
+           "tools": None, "write_scope": "any"}
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=dict(ROLES, pdm=pdm))
+    text = (tmp_path / "SPEC.md").read_text(encoding="utf-8")
+    assert "SPEC-NOTE-OVERRIDE" in text
+    assert "## 操作的定義" in text                            # 構造（床）は残る
+
+
+def test_artifact_note_falls_back_to_the_code_minimum(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles={})
+    text = (tmp_path / "SPEC.md").read_text(encoding="utf-8")
+    assert "直接編集して直してよい" in text                    # コードのミニマム
+    assert "## 受入基準" in text
