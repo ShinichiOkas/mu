@@ -20,12 +20,16 @@ from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
 from mu.l3 import Orchestrator
-from mu.l4 import Director
+from mu.l4 import Manager
+from mu.l5 import Director
 from mu.role_kb import load_roles
 from tools import TOOLS
-from l4_chat import _VerboseL0, _verbose_tools, _log, _env_preamble, _L4, _L3, _L2, _L1, ROLES_DIR
+from l5_chat import (
+    _VerboseL0, _verbose_tools, _log, _env_preamble, _L5, _L4, _L3, _L2, _L1, ROLES_DIR,
+)
 
-L4_MAX = 3
+L5_MAX = 2      # respec サイクル
+L4_MAX = 3      # PjM 判断サイクル
 L3_MAX = 8
 L2_MAX = 6
 L2_L1_MAX = 10
@@ -270,7 +274,8 @@ def main() -> None:
     l1 = ToolLoop(_VerboseL0(l0, _L1))
     l2 = Agent(_VerboseL0(l0, _L2), l1)
     l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
-    director = Director(_VerboseL0(l0, _L4), l3)
+    l4 = Manager(_VerboseL0(l0, _L4), l3)
+    director = Director(_VerboseL0(l0, _L5), l4)
 
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
     print(f"roles: {sorted(roles) or '(none — 知識なしの対照走)'} from {roles_dir}")
@@ -282,7 +287,8 @@ def main() -> None:
             model, spec["purpose"], _verbose_tools(TOOLS),
             roles=roles, models=pool,
             log=_log, system=_env_preamble(),
-            max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
+            max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
+            l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
     except L0Error as e:
         print(f"[L0:{type(e).__name__}] {e}")
@@ -291,7 +297,7 @@ def main() -> None:
 
     print("=== RESULT ===")
     print(json.dumps(
-        {k: result[k] for k in ("achieved", "escalated", "assessment", "rounds")},
+        {k: result[k] for k in ("achieved", "escalated", "assessment", "rounds", "l4_rounds")},
         ensure_ascii=False, indent=2,
     ))
     for t in result.get("tasks", []):
