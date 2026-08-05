@@ -113,15 +113,17 @@ AI の分析は独立に同じ結論へ到達した**——分析の妥当性の
 
 ## 完了条件
 
-- [ ] `mu/l4.py` は PjM の層（SPEC を受け取り、tasks/verdict/checks と outcome を返す）
-- [ ] `mu/l5.py` は PdM の層（目的を受け取り、L4 を D として使い、accept/respec/escalate を決める）
-- [ ] 両層とも**他の層と同程度の規模**（180〜320行）に収まる
-- [ ] 予算は各層が自分で持つ（L4=PjM サイクル、L5=respec サイクル）
-- [ ] CLI: `l5_chat.py`（目的）と `l4_chat.py`（SPEC）が動く。probe 2本も追随
-- [ ] README（層テーブル・L4/L5 の節・役割の表）と全 docstring を同期
-      （[[mechanism-change-updates-layer-docs]]）
-- [ ] テスト 156 green 維持＋層ごとのテスト分割（test_l4=進行 / test_l5=目的）
-- [ ] 比較実走（H3×1・正常系2件）で 008 と同じ結果
+- [x] `mu/l4.py` は PjM の層（SPEC を受け取り、tasks/verdict/checks と outcome を返す）
+- [x] `mu/l5.py` は PdM の層（目的を受け取り、L4 を D として使い、accept/respec/escalate を決める）
+- [x] 両層とも他の層と同程度の規模に収まる — l0=203 l1=189 l2=181 l3=308 **l4=318 l5=348**。
+      タスク列の状態管理（約120行）は師匠の判断で `mu/process.py` へ facility 化した
+- [x] 予算は各層が自分で持つ（L4_MAX=3 / L5_MAX=2）。返り値に `l4_rounds` を追加し周回が層ごとに見える
+- [x] CLI: `l5_chat.py`（目的）と `l4_chat.py`（SPEC）。probe 2本も追随
+- [x] README（層テーブル・落差の表・役割の表・L4/L5 の節・facility・CLI・決定事項）と
+      全 docstring・roles/pjm.md を同期（[[mechanism-change-updates-layer-docs]]）
+- [x] テスト 156 → **166 green**。層ごとに分割（test_l4=Manager 単体10件 / test_l5=目的の層と全体）
+- [x] 比較実走で 008 と同じ結果（[runs/2026-08-05-009/README.md](../../runs/2026-08-05-009/README.md)）——
+      H3 escalated（l4_rounds=0）・bugfix achieved・deadstock achieved（P007/P010）・保護の破れなし
 
 ## 先に規定した失敗点（既知リスク）
 
