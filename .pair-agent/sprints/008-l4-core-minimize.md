@@ -59,7 +59,12 @@ Phase1 でプロンプトを外に出しても**行数は減らなかった**（
 - Phase2: ミニマム＋上書き（QA タスク・artifact 注記）。判定書の書式はコードが供給。
   役割 KB を `mu/role_kb.py` へ facility 化（**出所は差し替え可能**）
 - Phase3: docstring（l4.py / l4_chat.py）・README（構造規約／L4 節／役割の表）を同期、本仕分け一覧
-- Phase4: 比較実走（H3×1・正常系2件・`roles/` 空の対照走1本）← 未実施
+- Phase4: 比較実走（[runs/2026-08-04-008/README.md](../../runs/2026-08-04-008/README.md)）——
+  H3 escalate・bugfix/deadstock achieved で**移行は挙動を変えていない**。
+  `roles/` 空の対照走は escalate で終わり、**知識が効いていることを実証**
+  （知識なしの PjM は `developer` を1人発明しただけ／PowerShell を選択／設計書なし／
+  架空の入力 sales_data.csv を生成／判定は契約違反で uncertain）。
+  実走で自分の劣化（判定書の REASON が機械読みで空になる）を発見し対処（d4b1a13）
 
 ## 持ち越し（このスプリントでは触れない）
 
