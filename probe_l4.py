@@ -1,6 +1,6 @@
-r"""probe_l4.py — L4（Director）の受入検証を非対話で実走する probe。
+r"""probe_l4.py — L5（目的の層）から全層を通した受入検証を非対話で実走する probe。
 
-review は既定の自動レビュー（L4 の判定が yes のときだけ受理）。したがって
+review は既定の自動レビュー（QA の判定が yes のときだけ受理）。したがって
 uncertain / no は escalated=True で終わる — 合意005 の受入条件
 「黙って 完遂 ✓ を返さない（検出されるか、人間に上がる）」をそのまま検証する。
 
