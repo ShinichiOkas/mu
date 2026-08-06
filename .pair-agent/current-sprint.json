@@ -1,10 +1,8 @@
 {
-  "sprint_id": "012-deep-research-run",
-  "status": "completed",
-  "goal": "ディープリサーチのタスクを1本実走し、コーディング用に育てた層構造が非コーディング領域で通用するか／どこで噛み合わないかを観測する",
-  "created_at": "2026-08-05T23:05:00+09:00",
-  "agreed_at": "2026-08-05T23:20:00+09:00",
-  "completed_at": "2026-08-06T01:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/012-deep-research-run.md",
-  "sprint_doc": ".pair-agent/sprints/012-deep-research-run.md"
+  "sprint_id": "013-roles-verifier-first",
+  "status": "executing",
+  "goal": "ロール定義だけで「検査器を先に作って凍結する」が成立するかを測る。効かなかった点だけを機構要件として言語化する",
+  "created_at": "2026-08-06T01:10:00+09:00",
+  "agreed_at": "2026-08-06T01:20:00+09:00",
+  "agreement_path": ".pair-agent/agreements/013-roles-verifier-first.md"
 }

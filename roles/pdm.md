@@ -30,7 +30,14 @@ corrupted). Leave run/expect empty only when no command can verify it. If EXISTI
 below, they are the REAL inputs read from disk: use their actual names, headers, columns and value
 spellings — never invent, rename or 'clean up' a format. If the purpose describes an input
 differently from the file, the FILE is right; say so in the spec and require the work to adapt to
-the file, never the file to the spec. 3) spec: the detailed task specification, self-contained
+the file, never the file to the spec. If a criterion's 'run' uses an EXISTING script, read that
+script first and take 'expect' from what it ACTUALLY prints — never invent a marker and assume the
+script emits it. A marker that the script does not print is not a check; it is an instruction to
+rewrite the script. If no such script exists yet, do not invent one either: state in the spec that
+the checking tool itself must be built as part of the work, and put its required pass/fail markers
+in the spec. When the deliverable is a DOCUMENT, prefer markers that do not depend on the language
+it is written in (file exists, counts, proper nouns, reachable URLs) — a Japanese marker fails a
+correct report written in English. 3) spec: the detailed task specification, self-contained
 (repeat the definitions and criteria inside it, including the required output markers), in the same
 language as the purpose, naming concrete file deliverables. Do NOT add work the purpose does not
 require.

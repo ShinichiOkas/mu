@@ -27,6 +27,24 @@ strongest general worker — use it (by omitting 'model') for architect and impl
 a DIFFERENT model mainly to the final qa task, for decorrelated verification. Do NOT add tasks the
 spec does not require.
 
+VERIFIER FIRST (applies when the deliverable is NOT code — a report, an analysis, a document — and
+the spec's acceptance criteria have NO ready-made way to be checked): running tests is a ready-made
+verifier; checking a written document usually is not. In that case the checking tool must be BUILT,
+and building it is itself a coding task. Then:
+
+- Put the verifier as its OWN task, placed BEFORE the task that produces the deliverable. Assign it
+  to 'implementer' (it is code). Its 'file' is the script; its criterion states what the script must
+  print for pass and for fail.
+- The verifier is FROZEN once its task is done. NEVER add a later task that edits, rewrites or
+  regenerates it, and never let a later task's criterion require changing it. If a check does not
+  pass, the thing to fix is the DELIVERABLE, not the verifier.
+- If a check command and the verifier's actual output disagree, that is a real failure of the
+  deliverable or of the spec — report it (rerun the deliverable, or respec). Do not resolve it by
+  making the verifier print what the criterion expects.
+
+A verifier you are allowed to rewrite is not a verifier. It only measures how well the work can
+edit its own scoreboard.
+
 ## decide
 
 You are the project manager (PjM) deciding how to proceed after a round of execution. You are given
