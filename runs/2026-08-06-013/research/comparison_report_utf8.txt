@@ -1,0 +1,30 @@
+﻿# LLM Execution Runtime Comparison Report
+
+## 1. Comparison Analysis
+This report evaluates four local LLM execution runtimes窶念llama, llama.cpp, vLLM, and LM Studio窶杯o determine the optimal foundation for the "mu" minimal agent.
+
+| Perspective | Ollama | llama.cpp | vLLM | LM Studio |
+| :--- | :--- | :--- | :--- | :--- |
+| **Low resource** | High efficiency (wraps llama.cpp/MLX). Optimized for single-user laptops. [1] | Maximum efficiency. Lowest overhead, supports CPU/GPU/Metal. [1] | High VRAM requirement. Optimized for server GPUs (A100/H100). [1] | High efficiency (wraps llama.cpp/MLX). GUI adds slight overhead. [1] |
+| **API compatibility** | Built-in OpenAI-compatible REST API. Industry standard for agents. [1] | Provides a basic server with OpenAI-compatible API. [1] | High-performance OpenAI-compatible API server. [1] | Local server mode with OpenAI-compatible API. [1] |
+| **Setup ease** | Extremely Easy. One-line install, `ollama run` for model setup. [1] | Moderate. Requires compilation or downloading binaries + manual GGUF. [1] | Difficult. Complex Python env, CUDA/Linux dependencies. [1] | Very Easy. GUI-based installer and one-click model downloads. [1] |
+| **Update frequency** | High. Curated library with rapid updates for popular models. [1] | Highest. The engine that most others wrap; supports new models first. [1] | High. Fast adoption of new architectures for production. [1] | High. Rapidly integrates GGUF models from Hugging Face. [1] |
+
+**Sources:**
+- [1] Codersera: Ollama vs LM Studio vs vLLM vs llama.cpp vs MLX 2026 (https://codersera.com/blog/ollama-vs-lm-studio-vs-vllm-vs-llama-cpp-vs-mlx-2026/)
+
+## 2. Synthesis for 'mu'
+The project "mu" is defined by a **minimalism principle**, requiring a foundation that balances low resource usage with extremely low operational friction.
+
+- **Feature Analysis**: 
+    - **Ollama** provides an "experience layer" that eliminates the manual toil of model quantization and configuration while maintaining the performance of the underlying engines (llama.cpp/MLX).
+    - **llama.cpp** offers the absolute minimum overhead but increases the "setup tax" (manual model management).
+    - **vLLM** is designed for high-throughput production and is over-engineered for a minimal personal agent.
+    - **LM Studio** is GUI-centric, which contradicts the headless/minimalist nature of an agent framework.
+
+- **Gap Analysis**: While llama.cpp is technically "more minimal" in terms of binary size and dependency, Ollama is "more minimal" in terms of **developer cognitive load** and **integration effort**.
+
+## 3. 邨占ｫ・(Conclusion)
+**蛻､螳・ Ollama 繧剃ｽｿ縺・ｶ壹￠繧九・*
+
+繝溘ル繝槭Μ繧ｺ繝縺ｮ蜴溷援縺ｫ蝓ｺ縺･縺上→縲＾llama 縺・"mu" 縺ｫ縺ｨ縺｣縺ｦ譛驕ｩ縺ｪ驕ｸ謚槭〒縺ゅｋ縲Ｍlama.cpp 縺ｮ諤ｧ閭ｽ繧偵ぞ繝ｭ讒区・縺ｮ API 縺ｧ繝ｩ繝・・縺吶ｋ縺薙→縺ｧ縲√御ｽ弱Μ繧ｽ繝ｼ繧ｹ蜍穂ｽ懊阪→縲後そ繝・ヨ繧｢繝・・縺ｮ螳ｹ譏薙＆縲阪・譛濶ｯ縺ｮ繝医Ξ繝ｼ繝峨が繝輔ｒ謠蝉ｾ帙＠縺ｦ縺・ｋ縲ょ腰荳繧ｳ繝槭Φ繝・(`ollama run`) 縺ｧ繝｢繝・Ν繧偵ョ繝励Ο繧､縺ｧ縺阪ｋ閭ｽ蜉帙・縲、PI 莠呈鋤諤ｧ繧・ヱ繝輔か繝ｼ繝槭Φ繧ｹ繧堤刈迚ｲ縺ｫ縺吶ｋ縺薙→縺ｪ縺上∬ｻｽ驥上↑繧ｨ繝ｼ繧ｸ繧ｧ繝ｳ繝医→縺・≧逶ｮ讓吶ｒ逶ｴ謗･逧・↓繧ｵ繝昴・繝医☆繧九・

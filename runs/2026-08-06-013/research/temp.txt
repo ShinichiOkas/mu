@@ -1,0 +1,32 @@
+﻿# Local LLM Runtime Comparison Report for Project 'mu'
+
+## 1. Executive Summary
+This report evaluates four local LLM runtimes窶念llama, llama.cpp, vLLM, and LM Studio窶杯o determine the optimal foundation for 'mu', a minimal general-purpose agent. The evaluation focuses on low resource operation, API compatibility, setup ease, and update frequency.
+
+## 2. Comparison Analysis
+
+| Perspective | Ollama | llama.cpp | vLLM | LM Studio | Verdict for 'mu' |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Low resource** | **High**: Wraps llama.cpp/MLX; supports GGUF quantization for low VRAM. [1] | **Highest**: The core engine; provides maximum control over memory/hardware. [1] | **Low**: Optimized for high-throughput GPU serving (A100/H100); high overhead. [1] | **High**: Integrated GPU friendly; uses GGUF/MLX. [1] | **Ollama/llama.cpp** |
+| **API compatibility** | **Excellent**: Native OpenAI-compatible REST API. [1] | **Good**: Provides an OpenAI-compatible server binary. [1] | **Excellent**: Built for OpenAI-compatible production serving. [1] | **Good**: Provides a local server with OpenAI compatibility. [1] | **Ollama** |
+| **Setup ease** | **Highest**: One-line install, `ollama pull`, `ollama run`. [1] | **Low**: Requires compilation or manual binary management. [1] | **Medium**: Python-based; requires specific CUDA/Linux environments. [1] | **High**: GUI-first installer; search and download via app. [1] | **Ollama** |
+| **Update frequency** | **High**: Rapidly integrates new models and MLX acceleration (v0.19+). [1] | **Highest**: The baseline for GGUF; usually supports new architectures first. [1] | **High**: Fast updates for production-grade models. [1] | **Medium**: Dependent on the underlying engine updates. [1] | **llama.cpp/Ollama** |
+
+**Sources:**
+[1] Codersera: "Ollama vs LM Studio vs vLLM vs llama.cpp vs MLX 2026" - https://codersera.com/blog/ollama-vs-lm-studio-vs-vllm-vs-llama-cpp-vs-mlx-2026/
+
+## 3. Synthesis for 'mu' (Minimalist Agent)
+
+Project 'mu' prioritizes minimalism in its operation and deployment. 
+
+- **Resource Usage**: While `llama.cpp` is the most lean, `Ollama` provides a negligible overhead while maintaining the ability to run quantized models on consumer hardware.
+- **Integration**: `Ollama` provides the most seamless OpenAI-compatible API experience, which is critical for agentic frameworks.
+- **Operational Overhead**: `Ollama`'s "Docker-style" model management (`pull`/`run`) drastically reduces the complexity of updating or switching models compared to manual GGUF handling in `llama.cpp`.
+- **Performance**: For a single-user agent like 'mu', the massive throughput of `vLLM` is unnecessary overhead.
+
+## 4. 邨占ｫ・(Conclusion)
+
+Based on the requirement for a "minimalist" foundation:
+**Ollama should be continued as the foundation for project 'mu'.**
+
+It offers the best balance of "Setup ease" and "API compatibility" without sacrificing the "Low resource" capabilities provided by its underlying `llama.cpp` engine. The operational simplicity of Ollama aligns perfectly with the minimalist philosophy of 'mu'.

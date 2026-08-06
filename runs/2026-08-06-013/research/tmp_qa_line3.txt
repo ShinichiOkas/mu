@@ -1,0 +1,1 @@
+if (-not (Test-Path $reportPath)) { throw "ERROR: Report file does not exist." }

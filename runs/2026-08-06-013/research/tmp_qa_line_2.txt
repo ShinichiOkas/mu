@@ -1,0 +1,1 @@
+$reportContent = Get-Content -Path "$PWD/$ReportPath" `-Raw`nWrite-QAResult "[QA_RESULT]"

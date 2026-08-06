@@ -1,0 +1,38 @@
+# Analysis of verify_report.ps1 and SPEC.md
+
+## Structural and Content Requirements for 'PASS'
+
+The script `verify_report.ps1` performs a simple pattern-matching check on the file `comparison_report.md`. To receive a 'PASS' output, the following conditions must be met:
+
+### 1. File Existence
+- **Filename**: `comparison_report.md`
+- The file must exist in the working directory.
+
+### 2. Required String Patterns (Keywords)
+The script uses the `-like` operator with wildcards (`*keyword*`), meaning the following strings must appear anywhere within the file content (case-insensitive by default in PowerShell):
+
+- **Target Tools**: All four of the following must be present:
+    - `Ollama`
+    - `llama.cpp`
+    - `vLLM`
+    - `LM Studio`
+- **出典 (Sources)**:
+    - `http` (Any occurrence of "http" is sufficient to satisfy the URL requirement)
+- **判定 (Conclusion)**:
+    - `結論` (The Japanese word for "Conclusion" must be present)
+
+### 3. Encoding and Format
+- **Format**: While `SPEC.md` specifies Markdown, `verify_report.ps1` reads the file as raw text using `Get-Content -Raw`. It does not validate Markdown syntax (e.g., tables, headers), only the presence of the keywords listed above.
+- **Encoding**: The script does not specify an encoding. It relies on the system default.
+
+## Summary Table for Implementation
+
+| Requirement | Keyword/Pattern | Constraint |
+| :--- | :--- | :--- |
+| File Name | `comparison_report.md` | Must exist |
+| Tool 1 | `Ollama` | Must be present |
+| Tool 2 | `llama.cpp` | Must be present |
+| Tool 3 | `vLLM` | Must be present |
+| Tool 4 | `LM Studio` | Must be present |
+| URL Proof | `http` | Must be present |
+| Conclusion | `結論` | Must be present |

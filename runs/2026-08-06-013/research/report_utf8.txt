@@ -1,0 +1,32 @@
+# Local LLM Runtime Comparison Report
+
+This report evaluates four local LLM execution frameworks (Ollama, llama.cpp, vLLM, and LM Studio) to determine the most suitable foundation for the "mu" project, which prioritizes a "minimalist" approach.
+
+## Comparison Matrix
+
+The following table compares the frameworks across the four perspectives defined in the project specifications.
+
+| Perspective | Ollama | llama.cpp | vLLM | LM Studio |
+| :--- | :--- | :--- | :--- | :--- |
+| **Low resource** | **Good**. Optimized for consumer hardware; uses GGUF. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Best**. Lowest overhead; maximum control over quantization and memory. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Poor**. High VRAM overhead due to PagedAttention; requires high-end NVIDIA GPUs. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Good**. Similar to Ollama as it often utilizes llama.cpp internals. (Source: [lmstudio.ai](https://lmstudio.ai/docs)) |
+| **API compatibility** | **Excellent**. Provides an OpenAI-compatible REST API out-of-the-box. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Fair**. Has server mode, but less polished than dedicated API wrappers. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Excellent**. Designed for production with high-performance OpenAI-compatible endpoints. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Excellent**. Offers OpenAI-compatible REST API for local apps. (Source: [lmstudio.ai](https://lmstudio.ai/docs)) |
+| **Setup ease** | **Best**. "One command" installation and model pull. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Fair**. May require compilation or manual binary/model management. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Poor**. Requires Python environment and specific CUDA drivers. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Good**. GUI-based installation is easy for users. (Source: [lmstudio.ai](https://lmstudio.ai/docs)) |
+| **Update frequency** | **Excellent**. Fast integration of new models via the Ollama registry. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Excellent**. The core engine that most others depend on; fastest raw support. (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Good**. Fast updates for production-grade models (HF/GPTQ/AWQ). (Source: [dev.to](https://dev.to/thurmon_demich/ollama-vs-llamacpp-vs-vllm-which-should-you-use-in-2026-10gp)) | **Good**. Regularly updated GUI and backend support. (Source: [lmstudio.ai](https://lmstudio.ai/docs)) |
+
+## Analysis for 'mu'
+
+The 'mu' project is defined by the principle of **minimalism**. This implies:
+- **Operational Simplicity**: Minimal steps between installation and utility.
+- **Resource Efficiency**: Ability to run on modest hardware without complex tuning.
+- **Integration Ease**: Standardization via OpenAI-compatible APIs to avoid proprietary lock-in or complex glue code.
+
+While `llama.cpp` offers the absolute best resource efficiency, it requires manual model management and more complex configuration. `vLLM` is overkill for a minimalist agent and demands excessive hardware. `LM Studio` provides a great GUI, but for a headless agent like `mu`, a CLI-first approach is more appropriate.
+
+Ollama strikes the optimal balance. It wraps the power of `llama.cpp` into a streamlined experience with a robust API, making it the most "minimal" choice for the developer and the end-user.
+
+## 結論
+
+Based on the minimalism principle of the mu project, **we should continue using Ollama**. 
+
+Ollama provides the best trade-off between setup ease, API compatibility, and resource efficiency. It eliminates the friction of model management while maintaining high performance, which perfectly aligns with the goal of creating a "minimalist universal agent."
+

@@ -1,0 +1,1 @@
+param([string]$ReportPath="comparison_report.md",$SpecPath="SPEC.md", `$DesignPath`design_md")
