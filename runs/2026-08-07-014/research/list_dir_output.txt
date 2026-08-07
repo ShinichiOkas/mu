@@ -1,0 +1,2 @@
+Existing files confirmed:
+design.md, SPEC.md, report.md all exist.
