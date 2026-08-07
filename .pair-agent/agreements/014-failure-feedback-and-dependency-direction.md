@@ -1,7 +1,7 @@
 # 合意ドキュメント 014 — NG 理由を実行者へ届ける／依存伝播の逆流を止める
 
 - **sprint**: 014-failure-feedback-and-dependency-direction
-- **status**: deliberating
+- **status**: completed（2026-08-07 振り返り完了。013-016 まとめ）
 - **version**: 1
 - **開始**: 2026-08-07
 - **前提**: スプリント013（実作業完了・振り返り先送り）。ロール定義だけでは検査器の凍結が守れず、
