@@ -33,6 +33,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from html import unescape
@@ -65,19 +66,47 @@ _MAX_OUTPUT = 4000
 #   protection_violations() で改変・消失を検出できるようにする（塞ぐが観測は殺さない）。
 _PROTECTED: dict = {}
 
+# 保護前のファイル属性（解除時の復元用）。元々 read-only だったものを書けるようにして返さない。
+_ORIGINAL_MODE: dict = {}
+
 
 def protect(paths) -> None:
-    """指定パスを書き込み禁止（読み取り専用）として登録する。呼び出し側の責務で宣言する。
+    """指定パスを読み取り専用として登録し、**OS レベルでも書けなくする**。
 
-    登録時点の内容ダイジェストを控える（`protection_violations()` の基準になる）。
+    二層構造（合意016）: tools 層の拒否（理由を言葉で返せる）に加え、OS の読み取り専用属性を
+    かける。`execute_command` 経由の書き込み——015 で実際に入力を壊した経路——はこちらで止まる。
+    ただし `attrib -R` や `Remove-Item -Force` による**意図的な回避は止められない**（実測）。
+    だから `protection_violations()` の検出層を残す。原本は金庫に入れる。それでも監査はする。
+
+    登録時点の内容ダイジェストと**保護前の属性**を控える（後者は解除時の復元に使う）。
     """
     for p in paths:
         resolved = Path(p).resolve()
         _PROTECTED[str(resolved)] = _digest(resolved)
+        _freeze(resolved)
+
+
+def _freeze(path: Path) -> None:
+    """OS の読み取り専用属性をかける。元の属性は復元用に控える。"""
+    try:
+        _ORIGINAL_MODE[str(path)] = path.stat().st_mode
+        os.chmod(path, stat.S_IREAD)
+    except OSError:
+        _ORIGINAL_MODE.pop(str(path), None)  # 存在しない等。検出層が missing で拾う
 
 
 def clear_protection() -> None:
-    """保護登録をすべて解除する（テスト・セッション切替用）。"""
+    """保護登録を解除し、**保護前の属性へ戻す**（テスト・セッション切替・走行の終了時）。
+
+    走行の器が `finally` で必ず呼ぶこと。呼ばれないとリポジトリのファイルが
+    読み取り専用のまま残る（合意016 ①）。
+    """
+    for path, mode in _ORIGINAL_MODE.items():
+        try:
+            os.chmod(path, mode)   # 元が read-only ならその状態に戻る
+        except OSError:
+            pass
+    _ORIGINAL_MODE.clear()
     _PROTECTED.clear()
 
 

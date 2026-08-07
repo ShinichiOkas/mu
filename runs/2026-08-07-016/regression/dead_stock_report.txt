@@ -1,0 +1,18 @@
+Product Code: P001
+Reason: High inventory level (Net Sales Quantity: 97, Inventory: 120)
+-------------------------------------------
+Product Code: P003
+Reason: High inventory level (Net Sales Quantity: 10, Inventory: 200)
+-------------------------------------------
+Product Code: P005
+Reason: High inventory level (Net Sales Quantity: 242, Inventory: 500)
+-------------------------------------------
+Product Code: P007
+Reason: Low sales volume (Net Sales Quantity: 0, Inventory: 60)
+-------------------------------------------
+Product Code: P008
+Reason: High inventory level (Net Sales Quantity: 64, Inventory: 150)
+-------------------------------------------
+Product Code: P010
+Reason: Low sales volume (Net Sales Quantity: 0, Inventory: 75)
+-------------------------------------------

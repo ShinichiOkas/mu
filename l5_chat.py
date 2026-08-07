@@ -47,6 +47,7 @@ from mu.l3 import Orchestrator
 from mu.l4 import Manager
 from mu.l5 import Director
 from mu.role_kb import load_roles
+import tools as tools_mod
 from tools import TOOLS
 
 # Windows コンソール等でも日本語・記号で落ちないよう UTF-8 にそろえる。
@@ -345,6 +346,7 @@ def main() -> None:
                 model, purpose, tools,
                 roles=roles, models=pool,
                 review=_review, log=_log, system=_env_preamble(),
+                guard=tools_mod.protection_violations,  # 守られるべき入力の破れで即停止（合意016）
                 max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
                 l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
             )

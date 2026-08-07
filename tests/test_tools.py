@@ -153,26 +153,92 @@ def test_no_violations_when_protected_files_are_untouched(protected):
     assert tools.protection_violations() == []
 
 
+def _bypass(path, write):
+    """防ぐ層を意図的に回避する（attrib -R 相当）。二層構造の外側を外してから触る。"""
+    import os
+    import stat
+    os.chmod(path, stat.S_IWRITE)
+    write()
+
+
 def test_violation_is_detected_when_a_protected_file_changes_behind_the_tools(protected):
-    # write_file/edit_file を通らない改変（シェルリダイレクト等）は拒否できない。検出はできる。
-    protected.write_text("rewritten behind the tool layer", encoding="utf-8")
+    # 016 以降、単なる書き込みは OS 層で止まる（上のテスト群）。だが属性を外せば回避できる——
+    # 実測で attrib -R / Remove-Item -Force は通る。**防げないものは検出する**（二層構造の外側）。
+    _bypass(protected, lambda: protected.write_text("rewritten behind the tool layer", encoding="utf-8"))
     violations = tools.protection_violations()
     assert [v["status"] for v in violations] == ["modified"]
     assert str(protected) in violations[0]["path"]
 
 
 def test_violation_is_detected_when_a_protected_file_disappears(protected):
-    protected.unlink()
+    _bypass(protected, protected.unlink)
     violations = tools.protection_violations()
     assert [v["status"] for v in violations] == ["missing"]
 
 
 def test_restoring_the_original_content_clears_the_violation(protected):
     original = protected.read_text(encoding="utf-8")
-    protected.write_text("broken", encoding="utf-8")
+    _bypass(protected, lambda: protected.write_text("broken", encoding="utf-8"))
     assert tools.protection_violations()
     protected.write_text(original, encoding="utf-8")
+    assert tools.protection_violations() == []   # 検出は内容の一致で決まる（属性ではない）
+
+
+# --- 016: 防ぐ層（OS の read-only）。tools 層を通らない改変も止める ---------------
+#
+# 二層構造（師匠）: 原本は金庫に入れる（防ぐ）。それでも監査はする（検出）。
+# 防ぐ層は偶発的・無自覚な改変を確実に止めるが、意図的な回避（attrib -R）は止められない。
+# だから検出層（protection_violations）を残す。合意007 の否定ではなく、その上に足す。
+
+def test_protected_file_cannot_be_written_outside_the_tools_layer(protected):
+    # 015 の実害: 実装者が test_inventory.py を書いて python で実行し、入力を上書きした。
+    # tools 層を通らないので write_file の拒否では止まらない。OS 側で止める。
+    with pytest.raises(OSError):
+        with open(protected, "w", encoding="utf-8") as f:
+            f.write("破壊")
+    assert protected.read_text(encoding="utf-8") == "original"
+
+
+def test_protected_file_cannot_be_deleted_outside_the_tools_layer(protected):
+    with pytest.raises(OSError):
+        protected.unlink()
+    assert protected.exists()
+
+
+def test_protected_file_cannot_be_written_by_a_shell_command(protected):
+    # execute_command 経由（合意007 で「防げない」とした経路）が実際に防がれること。
+    r = tools.execute_command(f'Set-Content -Path "{protected}" -Value broken')
+    assert r.ok is False
+    assert protected.read_text(encoding="utf-8") == "original"
+
+
+def test_clear_protection_restores_writability(tmp_path):
+    p = tmp_path / "input.csv"
+    p.write_text("original", encoding="utf-8")
+    tools.protect([str(p)])
+    tools.clear_protection()
+    p.write_text("編集できる", encoding="utf-8")   # 例外が出ないこと
+    assert p.read_text(encoding="utf-8") == "編集できる"
+
+
+def test_clear_protection_keeps_a_file_that_was_already_read_only(tmp_path):
+    # 保護前の状態へ戻す。元々 read-only だったものを書けるようにして返さない。
+    import os
+    import stat
+    p = tmp_path / "frozen.csv"
+    p.write_text("original", encoding="utf-8")
+    os.chmod(p, stat.S_IREAD)
+    tools.protect([str(p)])
+    tools.clear_protection()
+    with pytest.raises(OSError):
+        p.write_text("x", encoding="utf-8")
+    os.chmod(p, stat.S_IWRITE)   # 後始末
+
+
+def test_protecting_a_missing_path_does_not_raise(tmp_path):
+    tools.protect([str(tmp_path / "no_such_input.csv")])   # 登録だけ。検出層が missing で拾う
     assert tools.protection_violations() == []
+    tools.clear_protection()
 
 
 def test_new_files_are_not_prevented_by_protection(protected, tmp_path):

@@ -251,6 +251,7 @@ class Director:
         l3_max: int = 8,
         l2_max: int = 6,
         l2_l1_max: int = 10,
+        guard: Any = None,
     ) -> dict:
         roles = roles or {}
         inputs = _input_grounding(                                    # 入力の実物（合意007 C2）
@@ -271,6 +272,7 @@ class Director:
             outcome = self._l4.run(                                   # D: 進行の層に任せる
                 model, spec, tools, roles=roles, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
+                guard=guard,   # 守られるべき入力の破れ検査（呼び出し側が注入・素通し）
                 max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
             )
             tasks = outcome["tasks"]

@@ -147,6 +147,41 @@ def test_unverified_criteria_do_not_block_completion(tmp_path, monkeypatch):
     assert [c["kind"] for c in out["checks"]] == ["unverified"]
 
 
+def test_guard_stops_the_round_when_a_protected_input_is_broken(tmp_path, monkeypatch):
+    # 016: 入力が壊れた後の作業はすべて偽の前提の上に乗る。015 では壊れたまま進み、
+    # 実データでない「Widget B」の報告書ができた（完走していたら偽・完遂）。
+    broken = [{"path": "inventory.csv", "status": "modified"}]
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, guard=lambda: broken)
+    assert out["outcome"] == "escalate"
+    assert "inventory.csv" in out["reason"]
+    assert mgr._l3.calls == []      # 壊れた前提の上で1タスクも走らせない
+
+
+def test_guard_that_reports_nothing_does_not_interfere(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, guard=lambda: [])
+    assert out["outcome"] == "done"
+
+
+def test_guard_is_checked_every_round_not_only_at_the_end(tmp_path, monkeypatch):
+    # 015 で判明: 走り切らないと検出報告が出ない。周ごとに見る。
+    seen = {"n": 0}
+
+    def guard():
+        seen["n"] += 1
+        return [{"path": "input.csv", "status": "missing"}] if seen["n"] > 1 else []
+
+    decide = {"action": "rerun", "invalidate": ["result.csv"], "reason": "やり直し"}
+    mgr = make([PROCESS2, decide], [
+        {"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_NO)]},
+        {"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = run(mgr, tmp_path, monkeypatch, guard=guard)
+    assert out["outcome"] == "escalate"      # 2周目の頭で止まる
+    assert seen["n"] == 2
+
+
 def test_replan_is_handled_inside_this_layer(tmp_path, monkeypatch):
     decide = {"action": "replan", "invalidate": [], "reason": "プロセスが違う"}
     mgr = make([PROCESS2, decide, PROCESS2], [

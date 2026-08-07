@@ -131,6 +131,7 @@ class Manager:
         process_path: str = "PROCESS.md",
         log: Callable[[Any], None] = _noop,
         system: str | None = None,
+        guard: Callable[[], list] | None = None,
         max_rounds: int = 3,
         l3_max: int = 8,
         l2_max: int = 6,
@@ -150,6 +151,18 @@ class Manager:
         rounds = 0
         for _ in range(max_rounds):
             rounds += 1
+            # 守られるべき入力（原本）が壊れていないかを**周の頭で**見る。壊れた後の作業は
+            # すべて偽の前提の上に乗るため、進める意味がない（合意016 ②。015 で実発火）。
+            # 保護機構そのものは持たない——呼び出し側が注入する（環境接地は caller の責務）。
+            broken = guard() if guard else []
+            if broken:
+                detail = ", ".join(f"{b.get('path')}({b.get('status')})" for b in broken)
+                log(("protection_broken", broken))
+                return _outcome(
+                    "escalate", f"保護された入力が壊れている: {detail}。"
+                    "壊れた入力の上で作業を続けても結果は意味を持たない。人間の確認が要る。",
+                    tasks, None, [], False, rounds, process_path,
+                )
             write_process(process_path, purpose, tasks, process_note(roles))
             log(("process", tasks, process_path))
 

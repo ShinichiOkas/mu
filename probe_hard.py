@@ -11,6 +11,7 @@ case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf
 
 import json
 import os
+import stat
 import sys
 import time
 from pathlib import Path
@@ -266,6 +267,10 @@ def main() -> None:
     for rel, content in spec["files"].items():
         p = Path(rel)
         p.parent.mkdir(parents=True, exist_ok=True)
+        if p.exists():
+            # 前回の走行が強制終了されると read-only が残る（finally も走らない）。
+            # 入力の配置はそれを解いてから行う——さもないと次の走行が始められない。
+            os.chmod(p, stat.S_IWRITE)
         p.write_text(content, encoding="utf-8")
     if spec["protect"]:
         tools_mod.protect(spec["protect"])
@@ -287,12 +292,20 @@ def main() -> None:
             model, spec["purpose"], _verbose_tools(TOOLS),
             roles=roles, models=pool,
             log=_log, system=_env_preamble(),
+            guard=tools_mod.protection_violations,   # 破れたら周の頭で止める（合意016 ②）
             max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
             l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
     except L0Error as e:
         print(f"[L0:{type(e).__name__}] {e}")
         sys.exit(2)
+    finally:
+        # 破れの記録を取ってから解除する（解除後は登録が消えて検出できない）。
+        # OS レベルの保護は必ず外す（合意016 ①）。外し漏れるとリポジトリのファイルが
+        # 読み取り専用のまま残る。※プロセスを強制終了された場合はここも走らない——
+        # そのため走行の入力配置（_place_inputs）が read-only を解いてから書く。
+        violations = tools_mod.protection_violations()
+        tools_mod.clear_protection()
     elapsed = time.monotonic() - t0
 
     print("=== RESULT ===")
@@ -304,7 +317,6 @@ def main() -> None:
         model_s = f" @{t['model']}" if t.get("model") else ""
         print(f"  {'[x]' if t.get('done') else '[ ]'} ({t['role']}{model_s}) {t.get('file')}")
     print(f"elapsed: {elapsed:.0f}s")
-    violations = tools_mod.protection_violations()   # 保護の破れ（合意007 B2。tools 層を通らない改変）
     print(f"protection violations: {violations if violations else 'none'}")
     print("files in workdir:")
     for p in sorted(Path(".").rglob("*")):

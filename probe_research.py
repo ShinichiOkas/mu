@@ -103,6 +103,7 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
         model, _RUNTIME_PURPOSE, _verbose_tools([*TOOLS, judge_tool]),
         roles=roles, models=[model, qa_model],
         log=_log, system=_env_preamble(),
+        guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016）
         max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
         l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
     )
@@ -133,6 +134,8 @@ def main() -> None:
     except L0Error as e:
         print(f"[L0Error] {e}", flush=True)
         raise
+    finally:
+        tools_mod.clear_protection()   # OS レベルの保護を必ず外す（合意016 ①）
     elapsed = time.time() - started
 
     print(f"=== RESULT ({case}) in {elapsed:.0f}s ===", flush=True)
