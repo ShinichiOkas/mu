@@ -33,7 +33,7 @@ from typing import Any, Callable, Sequence
 from .l1 import Tool
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 from .process import (
-    carry_done_tasks, invalidate, normalize_tasks, read_verdict, summarize,
+    carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
     task_goal, write_process, process_note,
 )
 from .role_kb import role_prompt, role_tools, task_roles
@@ -172,7 +172,10 @@ class Manager:
             act, reason = decision.get("action"), str(decision.get("reason", ""))
             if rounds < max_rounds:
                 if act == "rerun":
-                    invalidate(tasks, decision.get("invalidate", []))
+                    # 無効化と同時に「なぜ落ちたか」をタスクへ載せる。理由を添えずに再実行させると、
+                    # 実行者は成果物でなく検査器の方を直しにいく（013 実走・合意014 A）。
+                    # 載せるのはコードが実行した事実だけ——PjM の解釈は混ぜない（合意014 ①）。
+                    invalidate(tasks, decision.get("invalidate", []), failure=_failure_facts(failed_checks))
                     continue
                 if act == "replan":
                     new = self._process(model, spec, roles, pool, log, system)
@@ -208,6 +211,8 @@ class Manager:
                 l2_l1_max=limits["l2_l1_max"],
             )
             t["done"] = bool(result.get("done"))
+            if t["done"]:
+                clear_failure(t)   # 通ったら前回の失敗は捨てる（持つのは直近1回だけ）
             log(("task_done", t) if t["done"] else ("task_failed", t))
             if not t["done"]:
                 return t
@@ -303,6 +308,15 @@ def _first_line(text: str) -> str:
         if line.strip():
             return line.strip().lstrip("# ")
     return ""
+
+
+def _failure_facts(failed_checks: list) -> str:
+    """落ちた検査を「コードが実行した事実」だけの文面にする（解釈を混ぜない。合意014 ①）。"""
+    lines = []
+    for c in failed_checks:
+        lines.append(f"  検査: {c['run']}")
+        lines.append(f"  実際: {c['detail']}")
+    return "\n".join(lines)
 
 
 def _run_criteria_checks(spec: dict, tools: Sequence[Tool]) -> list:

@@ -1,8 +1,12 @@
 {
-  "sprint_id": "013-roles-verifier-first",
-  "status": "executing",
-  "goal": "ロール定義だけで「検査器を先に作って凍結する」が成立するかを測る。効かなかった点だけを機構要件として言語化する",
-  "created_at": "2026-08-06T01:10:00+09:00",
-  "agreed_at": "2026-08-06T01:20:00+09:00",
-  "agreement_path": ".pair-agent/agreements/013-roles-verifier-first.md"
+  "sprint_id": "014-failure-feedback-and-dependency-direction",
+  "status": "deliberating",
+  "goal": "検査 NG の理由を再実行されるタスクに届ける（各層）／依存伝播の逆流を止める。両者を入れて再走し、検査器の凍結機構が要るかを判断する",
+  "created_at": "2026-08-07T01:30:00+09:00",
+  "agreement_path": ".pair-agent/agreements/014-failure-feedback-and-dependency-direction.md",
+  "deferred": {
+    "sprint_id": "013-roles-verifier-first",
+    "status": "実作業完了（記録・回帰確認まで済み）。振り返りのみ先送り",
+    "trigger": "014 完了時にまとめて振り返る"
+  }
 }

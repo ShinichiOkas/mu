@@ -160,6 +160,7 @@ class Orchestrator:
                     log(("unit_check_skipped", unit, detail))  # 劣化は黙らせない
                 if ok is not False:
                     unit["done"] = True
+                    unit.pop("last_failure", None)   # 通ったら前回の失敗は捨てる
                     log(("unit_done", unit))
                     continue
                 log(("unit_check_failed", unit, detail))
@@ -169,10 +170,19 @@ class Orchestrator:
                     "suggestion": "make the deliverable actually satisfy the check command "
                                   "(including its expected visible output)",
                 }
+                # 事実を単位に持たせ、再計画後の**同じファイル**の単位へ引き継ぐ。
+                # 再計画プロンプトに理由が入るだけでは、新しい単位の task 文に残るかは
+                # LLM 次第で決定論的な保証がない（合意014 A）。
+                failure = f"  検査: {(unit.get('check') or {}).get('run', '')}\n  実際: {detail}"
             else:
                 analysis = self._analyze(model, unit, msgs)   # C: 失敗分析
+                failure = ""
             log(("unit_failed", unit, analysis))
             units = approve(self._replan(model, goal, units, analysis, system))  # A（承認スロット）
+            if failure:
+                for u in units:
+                    if u.get("file") == unit.get("file"):
+                        u["last_failure"] = failure
             log(("replan", units))
 
         # C: 完了は機械的照合 — 全単位が done か（空の計画は「全部 done」に化けさせない）。
@@ -197,6 +207,13 @@ class Orchestrator:
             goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
             if check.get("expect"):
                 goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
+        if unit.get("last_failure"):
+            # 理由を添えずに再実行させると、実行者は成果物でなく検査器を直しにいく（合意014 A）。
+            goal += (
+                f"\n\n前回の失敗（コードが実行した事実）:\n{unit['last_failure']}\n"
+                "※ 直すのは成果物の側である。検査コマンドや検査スクリプトを書き換えて"
+                "通そうとしてはならない。"
+            )
         return goal
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---

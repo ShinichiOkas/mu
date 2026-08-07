@@ -104,6 +104,15 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
         goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
         if check.get("expect"):
             goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
+    if task.get("last_failure"):
+        # 理由を添えずに再実行させると、実行者は成果物でなく**検査器の方**を直しにいく
+        # （013 実走で観測）。載せるのはコードが実行した事実だけ（合意014 ①）。
+        goal += (
+            f"\n\n前回の失敗（コードが実行した事実。あなたの前回の試みはこれで落ちた）:\n"
+            f"{task['last_failure']}\n"
+            "※ 直すのは**成果物の側**である。検査コマンドや検査スクリプトを書き換えて"
+            "通そうとしてはならない。"
+        )
     refs = [spec_path, *prior_files]
     goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
     if task["role"] == "qa":
@@ -121,33 +130,55 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
     return goal
 
 
-def invalidate(tasks: list, files: list) -> None:
-    """指定ファイルのタスクを無効化し、依存（後続タスクの記述に現れるファイル）へ伝播する。
+def invalidate(tasks: list, files: list, failure: str = "") -> None:
+    """指定ファイルのタスクを無効化し、依存（**後続**タスクの記述に現れるファイル）へ伝播する。
 
     QA タスクは必ず無効化する（部分再実行の経路から「検証を飛ばして完遂」に到達させない）。
     判断（どこを無効化するか）は PjM、伝播はここ（コードの決定論）。
+
+    伝播は**後続方向だけ**（合意014 B）。言及だけを根拠にすると依存が逆流する——013 の実走で、
+    検査器タスク（前段）が成果物名に言及していたために巻き込まれ、**PjM が凍結を守る判断を
+    していたのにコードが検査器を再生成させた**。プロセスは依存順に並ぶ契約（PjM プロンプト
+    「依存が先に来るよう並べよ」）なので、**前段は後段に依存しない**。これが限定の根拠。
+
+    `failure` を渡すと、無効化したタスクに「前回の失敗（コードが実行した事実）」として載せる。
+    実行者は理由を知らされないと成果物でなく検査器を直しにいく（013 の実害・合意014 A）。
     """
     invalid = {str(f).strip() for f in files if str(f).strip()}
+    producer = {t["file"]: i for i, t in enumerate(tasks)}   # そのファイルを産むタスクの位置
+    touched = set()
     changed = True
     while changed:  # 固定点まで伝播（invalid 集合は単調増加なので停止する）
         changed = False
-        for t in tasks:
+        for idx, t in enumerate(tasks):
             if t["file"] in invalid:
                 if t.get("done"):
                     t["done"] = False
                     changed = True
+                touched.add(idx)
                 continue
             texts = " ".join([
                 t.get("task", ""), t.get("criterion", ""),
                 (t.get("check") or {}).get("run", ""), (t.get("check") or {}).get("expect", ""),
             ])
-            if any(f in texts for f in invalid):  # 無効化されたファイルに言及＝依存とみなす
+            # 言及＝依存とみなすのは、そのファイルを産むタスクが**自分より前**にいるときだけ。
+            # 産出タスクがタスク列に無いファイル（外部入力等）は保守的に依存とみなす。
+            if any(f in texts and producer.get(f, -1) < idx for f in invalid):
                 invalid.add(t["file"])
                 t["done"] = False
+                touched.add(idx)
                 changed = True
+    if failure:
+        for idx in touched:
+            tasks[idx]["last_failure"] = failure
     for t in tasks:
         if t["role"] == "qa":
             t["done"] = False
+
+
+def clear_failure(task: dict) -> None:
+    """タスクが通ったら前回の失敗を捨てる（持つのは直近1回だけ。合意014 ②）。"""
+    task.pop("last_failure", None)
 
 
 def carry_done_tasks(old: list, new: list) -> list:

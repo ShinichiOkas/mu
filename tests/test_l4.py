@@ -10,6 +10,7 @@ L5 を通さず **Manager 単体**の契約を検証する（合意009 で L4 �
 import json
 import types
 
+import tools
 from mu.l4 import Manager
 
 
@@ -89,6 +90,29 @@ def test_rerun_is_handled_inside_this_layer(tmp_path, monkeypatch):
     assert out["outcome"] == "done"
     assert out["rounds"] == 2
     assert len(mgr._l3.calls) == 4
+
+
+def test_rerun_hands_the_failed_check_facts_to_the_re_executed_task(tmp_path, monkeypatch):
+    # 014: 理由を添えずに再実行させると、実行者は成果物でなく検査器を直しにいく（013 実走）。
+    # 再実行されるタスクの goal に「コードが実行した事実」が載ることを検査する。
+    spec = {
+        "definitions": [], "spec": "result.csv を作る", "feasible": True, "conflicts": [],
+        "criteria": [{"text": "マーカーが出る", "run": "echo NOPE", "expect": "MARKER"}],
+    }
+    decide = {"action": "rerun", "invalidate": ["result.csv"], "reason": "出力不良"}
+    give_up = {"action": "escalate", "invalidate": [], "reason": "直らない"}
+    # 検査（echo NOPE）は毎周落ちるので、2周目のあと escalate で終える。
+    mgr = make([PROCESS2, decide, give_up], [
+        {"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
+        {"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    monkeypatch.chdir(tmp_path)
+    mgr.run("m", spec, list(tools.TOOLS), roles=ROLES)
+    first_goal, rerun_goal = mgr._l3.calls[0]["goal"], mgr._l3.calls[2]["goal"]
+    assert "前回の失敗" not in first_goal          # 初回は失敗が無い
+    assert "前回の失敗" in rerun_goal              # 再実行では事実が届く
+    assert "echo NOPE" in rerun_goal               # 実行された検査コマンド
+    assert "検査スクリプトを書き換えて" in rerun_goal  # 検査器を直す方向への流出を止める
 
 
 def test_replan_is_handled_inside_this_layer(tmp_path, monkeypatch):

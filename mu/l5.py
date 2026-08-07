@@ -69,6 +69,15 @@ _SPEC_NOTE = "（L5 の生成物。定義・受入基準は仮定を含む。直
 _NO_VERDICT = {"achieved": "uncertain", "reason": "no verdict (QA task not completed)", "gap": ""}
 
 
+def _with_check_facts(reason: str, checks: list) -> str:
+    """respec の FEEDBACK に、落ちた受入検査の**事実**（コマンドと実際の出力）を添える。"""
+    failed = [c for c in (checks or []) if c.get("ok") is False]
+    if not failed:
+        return reason
+    facts = "\n".join(f"  検査: {c['run']}\n  実際: {c['detail']}" for c in failed)
+    return f"{reason}\n\n落ちた受入検査（コードが実行した事実）:\n{facts}"
+
+
 def _noop(_event: Any) -> None:
     pass
 
@@ -274,7 +283,12 @@ class Director:
             }
             # PjM が「自分の職掌では直せない」と言い、まだ予算があるなら仕様を直して再実行する。
             if outcome["outcome"] == "respec" and rounds < max_rounds:
-                spec = self._respecify(model, purpose, spec, outcome["reason"], roles, log, system, inputs)
+                # PjM の言葉（判断）に、落ちた検査の**事実**を添える。仕様のどこが実行不能だったかは
+                # 解釈でなく実行結果に出ている（合意014 A）。
+                spec = self._respecify(
+                    model, purpose, spec, _with_check_facts(outcome["reason"], outcome["checks"]),
+                    roles, log, system, inputs,
+                )
                 if _infeasible(spec):
                     return self._stop_infeasible(
                         purpose, spec, spec_path, process_path, tasks, rounds, roles, log
