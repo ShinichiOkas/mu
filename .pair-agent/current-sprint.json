@@ -1,12 +1,13 @@
 {
-  "sprint_id": "014-failure-feedback-and-dependency-direction",
-  "status": "deliberating",
-  "goal": "検査 NG の理由を再実行されるタスクに届ける（各層）／依存伝播の逆流を止める。両者を入れて再走し、検査器の凍結機構が要るかを判断する",
-  "created_at": "2026-08-07T01:30:00+09:00",
-  "agreement_path": ".pair-agent/agreements/014-failure-feedback-and-dependency-direction.md",
+  "sprint_id": "015-llm-judge-and-unverified-visibility",
+  "status": "executing",
+  "goal": "接地できない性質の検査を、文脈を共有しない LLM 検査器（judge）に委ねる。未検査項目を可視化する。同一モデルでも判定が成立することを実測する",
+  "created_at": "2026-08-07T02:30:00+09:00",
+  "agreed_at": "2026-08-07T02:45:00+09:00",
+  "agreement_path": ".pair-agent/agreements/015-llm-judge-and-unverified-visibility.md",
   "deferred": {
-    "sprint_id": "013-roles-verifier-first",
-    "status": "実作業完了（記録・回帰確認まで済み）。振り返りのみ先送り",
-    "trigger": "014 完了時にまとめて振り返る"
+    "sprint_ids": ["013-roles-verifier-first", "014-failure-feedback-and-dependency-direction"],
+    "status": "実作業完了。振り返りのみ先送り",
+    "trigger": "015 完了時に 013/014/015 をまとめて振り返る"
   }
 }

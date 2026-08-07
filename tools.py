@@ -29,6 +29,7 @@ mode="append" で末尾追加でき、1回の生成に収まらない成果物�
 """
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -516,6 +517,142 @@ def fetch_url(url: str) -> ToolResult:
         shown,
         facts={**facts, "chars": chars, "truncated": truncated, "output_path": output_path},
     )
+
+
+# --- judge（LLM で実装された検査器。合意015） ---------------------------------
+#
+# 決定論の検査器が書けるのは「接地できる性質」だけである——実行可能な現実（ファイルが在る・
+# exit 0・URL が 200）か、人間が既に知っている答え（テストの期待値）。妥当性・網羅性・洞察の質は
+# どちらにも接地しない。そこへ機械検査を当てると**代理指標に化け、成果物がそれに最適化される**
+# （014 実走の Tool1/View1 事件）。だから接地できない性質は決定論にせず、ここに委ねる。
+#
+# **文脈非共有が本体**: 渡すのは要件と対象の中身だけ。走行履歴・SPEC 全文・実装者の言い分・
+# 過去の失敗は渡さない。判定者は経緯を知らないので「頑張ったから」「前回こう言われたから」が効かない。
+# 別モデルを前提にしない（使える環境かは環境依存）。同一モデルでも、文脈を共有しないことと
+# 「証拠が無ければ通さない」規範で判定が成立することを狙う。
+
+_JUDGE_SYSTEM = (
+    "You are an independent verifier. You are given ONE requirement and the FULL TEXT of one "
+    "deliverable. You know nothing about how it was produced, who produced it, or what was tried "
+    "before — and you must not speculate about any of that.\n"
+    "Decide whether the deliverable ACTUALLY satisfies the requirement, judging ONLY by what is "
+    "literally present in the text.\n"
+    "- 'pass' — you can point at the concrete part of the text that satisfies it. Quote it in "
+    "'evidence'.\n"
+    "- 'fail' — the text does not satisfy it, or satisfies it only nominally (a heading with no "
+    "content, a placeholder, a label instead of the real thing).\n"
+    "- 'uncertain' — the text does not let you decide.\n"
+    "DEFAULT TO 'fail' when evidence is absent. Absence of evidence is NOT satisfaction. "
+    "Do not credit intent, effort, or promises about future work. "
+    "'evidence' MUST be a short verbatim quote from the deliverable; if you cannot quote it, "
+    "the verdict is not 'pass'.\n"
+    "Answer in EXACTLY this shape, first line first:\n"
+    "VERDICT: pass|fail|uncertain\n"
+    "EVIDENCE: <verbatim quote, or empty>\n"
+    "REASON: <one or two sentences>"
+)
+
+# 判定の機械読み（装飾は許容・判定語は厳格）。verdict.md の読み取りと同じ作法。
+# 構造化出力（format=）に依存しない——実測で **gemma4:31b-cloud は format を守らず散文を返す**
+# ことがある（qwen3.5:9b は守る）。判定者のモデルを選べる環境を前提にしないため、
+# JSON でも散文でも読めるようにする（合意015・師匠の「同モデルでも正しく判定されるのが理想」）。
+# 判定語の前後の装飾（**VERDICT:** pass 等）は許容し、判定語そのものは厳格に読む。
+_VERDICT_LINE = re.compile(r"(?im)^\W*verdict\W*[:：][^A-Za-z]*(pass|fail|uncertain)\b")
+_EVIDENCE_LINE = re.compile(r"(?im)^\W*evidence\W*[:：][*_\s]*(.*)$")
+_REASON_LINE = re.compile(r"(?im)^\W*reason\W*[:：][*_\s]*(.+)$")
+
+
+def _read_judgement(content: str) -> dict:
+    """判定者の応答を {verdict, reason, evidence} にする。JSON でも散文でも読む。"""
+    text = str(content or "")
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        try:
+            data = json.loads(text[start : end + 1])
+            if isinstance(data, dict) and str(data.get("verdict", "")).lower() in _VERDICTS:
+                return {
+                    "verdict": str(data["verdict"]).lower(),
+                    "reason": str(data.get("reason", "")),
+                    "evidence": str(data.get("evidence", "")),
+                }
+        except (json.JSONDecodeError, TypeError):
+            pass
+    m = _VERDICT_LINE.search(text)
+    if not m:
+        return {"verdict": "uncertain", "reason": text.strip()[:300], "evidence": ""}
+    ev, rs = _EVIDENCE_LINE.search(text), _REASON_LINE.search(text)
+    return {
+        "verdict": m.group(1).lower(),
+        "reason": (rs.group(1).strip() if rs else text.strip()[:300]),
+        "evidence": (ev.group(1).strip() if ev else ""),
+    }
+
+
+_VERDICTS = ("pass", "fail", "uncertain")
+
+_JUDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["pass", "fail", "uncertain"]},
+        "reason": {"type": "string"},
+        "evidence": {"type": "string"},
+    },
+    "required": ["verdict", "reason", "evidence"],
+}
+
+
+def make_judge(l0, model: str):
+    """`judge(requirement, path)` ツールを作る。実行体（L0）とモデルは呼び出し側が注入する。
+
+    環境への接地は caller の責務（既存の設計）。モデルは走行の既定と同じでよい——
+    別モデルが使える環境かは環境依存であり、それを前提にした設計にしない（師匠の補正）。
+    """
+
+    def judge(requirement: str, path: str) -> ToolResult:
+        """要件を満たしているかを、文脈を共有しない別の LLM に判定させる。"""
+        facts = {"action": "judge", "requirement": requirement, "path": path, "model": model}
+        try:
+            target = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            # 読めないものを LLM に判定させない（存在しない成果物を「合格」にしない）。
+            return ToolResult(
+                f"error: cannot read {path} ({type(e).__name__}). 判定できない。",
+                ok=False,
+                facts={**facts, "verdict": "uncertain"},
+            )
+        messages = [
+            {"role": "system", "content": _JUDGE_SYSTEM},
+            {"role": "user", "content": f"REQUIREMENT:\n{requirement}\n\nDELIVERABLE ({path}):\n{target}"},
+        ]
+        try:
+            # format は「効くなら効く」程度に渡す。効かないモデルでも散文から読む（_read_judgement）。
+            resp = l0.chat(model, messages, format=_JUDGE_SCHEMA, think=False)
+        except Exception as e:
+            # 判定できなかったことを、判定できなかったと返す（合格に倒さない）。
+            return ToolResult(
+                f"UNCERTAIN: 判定者を呼べなかった（{type(e).__name__}: {e}）",
+                ok=False,
+                facts={**facts, "verdict": "uncertain"},
+            )
+        data = _read_judgement(getattr(resp.message, "content", ""))
+        verdict, reason, evidence = data["verdict"], data["reason"], data["evidence"]
+        body = f"{verdict.upper()}: {reason}"
+        if evidence:
+            body += f"\n根拠（成果物からの引用）: {evidence}"
+        return ToolResult(
+            body,
+            ok=verdict == "pass",   # fail も uncertain も合格にしない
+            facts={**facts, "verdict": verdict, "evidence": evidence},
+        )
+
+    return judge
+
+
+JUDGE_USAGE = (
+    "judge(requirement, path): 機械的に検査できない要件（妥当性・網羅性など）を、"
+    "**経緯を知らない別の判定者**に見せて判定させる（pass / fail / uncertain と根拠の引用を返す）。"
+    "コマンドで検査できない受け入れ基準はこれで確認すること。"
+)
 
 
 # --- L1 用の (func, usage_text) ペア ---

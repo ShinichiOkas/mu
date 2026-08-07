@@ -4,6 +4,7 @@
 facts は実体（ディスクの stat・プロセスの exit code）から作る — 表象でなく実体（合意005）。
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -521,6 +522,158 @@ def test_fetch_url_reports_http_errors_honestly():
     assert r.ok is False
     assert r.facts["status"] == 404
     assert "404" in r.content  # モデルにも理由が見える
+
+
+# --- 015: LLM で実装された検査器（judge） ------------------------------------
+#
+# 決定論の検査器が書けない性質（妥当性・網羅性）のための道具。**文脈非共有が本体**——
+# 渡すのは要件と対象の中身だけで、走行履歴・実装者の言い分・過去の失敗は渡さない。
+# 別モデルを前提にしない（環境依存になるため）。同一モデルでも成立することを設計要件に置く。
+
+class _FakeL0:
+    """judge の LLM 呼び出しの代役。渡された messages を記録する。"""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = []
+
+    def chat(self, model, messages, **kwargs):
+        import types as _t
+        self.calls.append({"model": model, "messages": messages, "kwargs": kwargs})
+        return _t.SimpleNamespace(message=_t.SimpleNamespace(content=json.dumps(self._payload)))
+
+
+def _judge_for(payload, tmp_path, text="本文", model="m"):
+    p = tmp_path / "target.md"
+    p.write_text(text, encoding="utf-8")
+    l0 = _FakeL0(payload)
+    return tools.make_judge(l0, model), l0, p
+
+
+def test_judge_returns_the_verdict_and_reason(tmp_path):
+    judge, _, p = _judge_for({"verdict": "pass", "reason": "満たしている", "evidence": "3行目"}, tmp_path)
+    r = judge("結論が書かれていること", str(p))
+    assert r.ok is True
+    assert r.facts["verdict"] == "pass"
+    assert "満たしている" in r.content
+
+
+def test_judge_fail_is_not_ok(tmp_path):
+    judge, _, p = _judge_for({"verdict": "fail", "reason": "結論が無い", "evidence": ""}, tmp_path)
+    r = judge("結論が書かれていること", str(p))
+    assert r.ok is False
+    assert r.facts["verdict"] == "fail"
+
+
+def test_judge_uncertain_is_preserved_not_collapsed_into_pass(tmp_path):
+    # 「判定できない」を潰さない（QA の既存規範と揃える）。
+    judge, _, p = _judge_for({"verdict": "uncertain", "reason": "読み取れない", "evidence": ""}, tmp_path)
+    r = judge("網羅されていること", str(p))
+    assert r.facts["verdict"] == "uncertain"
+    assert r.ok is False   # 不明を合格にしない
+
+
+def test_judge_sends_only_the_requirement_and_the_target(tmp_path):
+    # 文脈非共有が本体。走行の経緯が混ざると「頑張ったから」が効いてしまう。
+    judge, l0, p = _judge_for(
+        {"verdict": "pass", "reason": "ok", "evidence": "x"}, tmp_path, text="対象の中身マーカー"
+    )
+    judge("要件マーカー", str(p))
+    sent = json.dumps(l0.calls[0]["messages"], ensure_ascii=False)
+    assert "要件マーカー" in sent
+    assert "対象の中身マーカー" in sent
+    assert len(l0.calls[0]["messages"]) == 2          # system と user だけ（履歴なし）
+    assert l0.calls[0]["messages"][0]["role"] == "system"
+
+
+def test_judge_uses_the_run_model_when_none_is_given(tmp_path):
+    # 別モデルが使える環境かは環境依存。省略時は走行の既定モデルで動く（師匠の補正）。
+    p = tmp_path / "t.md"
+    p.write_text("x", encoding="utf-8")
+    l0 = _FakeL0({"verdict": "pass", "reason": "ok", "evidence": "x"})
+    judge = tools.make_judge(l0, "default-model")
+    judge("要件", str(p))
+    assert l0.calls[0]["model"] == "default-model"
+
+
+def test_judge_missing_target_is_an_error_not_a_pass(tmp_path):
+    l0 = _FakeL0({"verdict": "pass", "reason": "ok", "evidence": "x"})
+    judge = tools.make_judge(l0, "m")
+    r = judge("要件", str(tmp_path / "no_such_file.md"))
+    assert r.ok is False
+    assert l0.calls == []       # 読めないものを LLM に判定させない
+
+
+def test_judge_unparseable_response_is_uncertain_not_pass(tmp_path):
+    # 壊れた応答を合格に倒さない（証拠が無いことを合格にしない）。
+    import types as _t
+
+    class Broken:
+        calls = []
+        def chat(self, model, messages, **kwargs):
+            return _t.SimpleNamespace(message=_t.SimpleNamespace(content="not json at all"))
+
+    p = tmp_path / "t.md"
+    p.write_text("x", encoding="utf-8")
+    r = tools.make_judge(Broken(), "m")("要件", str(p))
+    assert r.facts["verdict"] == "uncertain"
+    assert r.ok is False
+
+
+def test_judge_reads_a_prose_answer_when_the_model_ignores_the_schema(tmp_path):
+    # 実測: gemma4:31b-cloud は format=（構造化出力）を守らず散文を返すことがある。
+    # 判定者のモデルを選べる環境を前提にしないので、散文でも読めなければならない。
+    import types as _t
+
+    class Prose:
+        def chat(self, model, messages, **kwargs):
+            return _t.SimpleNamespace(message=_t.SimpleNamespace(
+                content="VERDICT: fail\nEVIDENCE: \nREASON: 結論の節が空である"))
+
+    p = tmp_path / "t.md"
+    p.write_text("# 結論\n\n", encoding="utf-8")
+    r = tools.make_judge(Prose(), "m")("結論が書かれていること", str(p))
+    assert r.facts["verdict"] == "fail"
+    assert "結論の節が空" in r.content
+
+
+def test_judge_prose_pass_is_read_as_pass(tmp_path):
+    import types as _t
+
+    class Prose:
+        def chat(self, model, messages, **kwargs):
+            return _t.SimpleNamespace(message=_t.SimpleNamespace(
+                content="**VERDICT:** pass\nEVIDENCE: Ollama を使い続けるべき\nREASON: 明記されている"))
+
+    p = tmp_path / "t.md"
+    p.write_text("x", encoding="utf-8")
+    r = tools.make_judge(Prose(), "m")("結論があること", str(p))
+    assert r.facts["verdict"] == "pass"          # 装飾（**）は許容
+    assert r.facts["evidence"].startswith("Ollama")
+
+
+def test_judge_answer_without_a_verdict_line_is_uncertain(tmp_path):
+    import types as _t
+
+    class Vague:
+        def chat(self, model, messages, **kwargs):
+            return _t.SimpleNamespace(message=_t.SimpleNamespace(
+                content="Yes, the text has a conclusion."))   # 実測で観測された形
+
+    p = tmp_path / "t.md"
+    p.write_text("x", encoding="utf-8")
+    r = tools.make_judge(Vague(), "m")("結論があること", str(p))
+    assert r.facts["verdict"] == "uncertain"     # 判定語が無ければ合格にしない
+    assert r.ok is False
+
+
+def test_judge_prompt_demands_evidence_and_defaults_to_fail(tmp_path):
+    # 既定を fail 側に置く（LLM は pass に倒れやすい）。system にその規範が入っていること。
+    judge, l0, p = _judge_for({"verdict": "pass", "reason": "ok", "evidence": "x"}, tmp_path)
+    judge("要件", str(p))
+    system = l0.calls[0]["messages"][0]["content"]
+    assert "evidence" in system.lower()
+    assert "fail" in system.lower()
 
 
 @live
