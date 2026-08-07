@@ -72,7 +72,7 @@ def _run_link(model: str, workdir: Path) -> dict:
         for m in messages[mark:]:
             if m.get("role") == "tool":
                 used.append({"tool": m["tool_name"], "ok": m.get("ok"), "facts": m.get("facts", {})})
-        _log(f"[reflect {r}] passed={verdict['passed']} :: {verdict['reason'][:160]}")
+        print(f"[reflect {r}] passed={verdict['passed']} :: {verdict['reason'][:160]}", flush=True)
         if verdict["passed"]:
             passed = True
             break
@@ -95,8 +95,12 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     l4 = Manager(_VerboseL0(l0, _L4), l3)
     director = Director(_VerboseL0(l0, _L5), l4)
     roles = load_roles(ROLES_DIR)
+    # judge（LLM 検査器）は実行体とモデルの注入が要るので、ここで組んで渡す（環境接地は caller の責務）。
+    # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
+    # 独立性を作っているのはモデル差ではなく**文脈非共有**の方である（合意015）。
+    judge_tool = (tools_mod.make_judge(l0, qa_model), tools_mod.JUDGE_USAGE)
     return director.run(
-        model, _RUNTIME_PURPOSE, _verbose_tools(TOOLS),
+        model, _RUNTIME_PURPOSE, _verbose_tools([*TOOLS, judge_tool]),
         roles=roles, models=[model, qa_model],
         log=_log, system=_env_preamble(),
         max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,

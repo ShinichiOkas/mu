@@ -115,6 +115,38 @@ def test_rerun_hands_the_failed_check_facts_to_the_re_executed_task(tmp_path, mo
     assert "検査スクリプトを書き換えて" in rerun_goal  # 検査器を直す方向への流出を止める
 
 
+def test_criteria_without_a_command_are_reported_as_unverified(tmp_path, monkeypatch):
+    # 015: run が空の基準は「検査されたのか、項目が無かったのか」が外から区別できなかった。
+    # 隠れた合格を無くすため、未検査として結果に出す（完遂判定は変えない）。
+    spec = {
+        "definitions": [], "spec": "report.md を作る", "feasible": True, "conflicts": [],
+        "criteria": [
+            {"text": "ファイルがある", "run": "echo MARKER", "expect": "MARKER"},
+            {"text": "洞察が妥当であること", "run": "", "expect": ""},
+        ],
+    }
+    mgr = make([PROCESS2], ok2())
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", spec, list(tools.TOOLS), roles=ROLES)
+    kinds = {c["text"]: c["kind"] for c in out["checks"]}
+    assert kinds["ファイルがある"] == "machine"
+    assert kinds["洞察が妥当であること"] == "unverified"
+
+
+def test_unverified_criteria_do_not_block_completion(tmp_path, monkeypatch):
+    # 未検査があっても達成は返す（明示して達成可＝合意015 ③）。床は動かさない。
+    spec = {
+        "definitions": [], "spec": "report.md を作る", "feasible": True, "conflicts": [],
+        "criteria": [{"text": "洞察が妥当であること", "run": "", "expect": ""}],
+    }
+    mgr = make([PROCESS2], ok2())
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", spec, list(tools.TOOLS), roles=ROLES)
+    assert out["outcome"] == "done"
+    assert out["ok"] is True
+    assert [c["kind"] for c in out["checks"]] == ["unverified"]
+
+
 def test_replan_is_handled_inside_this_layer(tmp_path, monkeypatch):
     decide = {"action": "replan", "invalidate": [], "reason": "プロセスが違う"}
     mgr = make([PROCESS2, decide, PROCESS2], [

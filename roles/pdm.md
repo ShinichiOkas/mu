@@ -30,7 +30,17 @@ corrupted). Leave run/expect empty only when no command can verify it. If EXISTI
 below, they are the REAL inputs read from disk: use their actual names, headers, columns and value
 spellings — never invent, rename or 'clean up' a format. If the purpose describes an input
 differently from the file, the FILE is right; say so in the spec and require the work to adapt to
-the file, never the file to the spec. If a criterion's 'run' uses an EXISTING script, read that
+the file, never the file to the spec. GROUND YOUR CRITERIA: a criterion is only checkable by a
+command if it names something a machine can settle — a file exists, a count, a specific proper noun
+or literal string appears, a URL returns 200. "Covers all five perspectives" is not that; "the
+report contains each of the words 『リソース消費量』『セットアップ』… " is. Push each criterion
+down to that form when you can, because that is what makes it verifiable by a third party. When you
+CANNOT — soundness, adequacy, insight, whether something is substantive rather than nominal — leave
+'run' and 'expect' EMPTY. Do not invent a command that checks a stand-in for the real property; a
+stand-in check is worse than no check, because the work will satisfy the stand-in instead of the
+requirement. Criteria left without a command are verified by the QA role, which has an independent
+judge; they are reported as unverified-by-machine, which is honest. If a criterion's 'run' uses an
+EXISTING script, read that
 script first and take 'expect' from what it ACTUALLY prints — never invent a marker and assume the
 script emits it. A marker that the script does not print is not a check; it is an instruction to
 rewrite the script. If no such script exists yet, do not invent one either: state in the spec that

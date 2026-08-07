@@ -27,10 +27,21 @@ strongest general worker — use it (by omitting 'model') for architect and impl
 a DIFFERENT model mainly to the final qa task, for decorrelated verification. Do NOT add tasks the
 spec does not require.
 
-VERIFIER FIRST (applies when the deliverable is NOT code — a report, an analysis, a document — and
-the spec's acceptance criteria have NO ready-made way to be checked): running tests is a ready-made
-verifier; checking a written document usually is not. In that case the checking tool must be BUILT,
-and building it is itself a coding task. Then:
+VERIFIER FIRST — applies ONLY when the SPEC has an acceptance criterion that (a) states a
+GROUNDED, mechanically decidable property — something you can settle by running something: a file
+exists, a count, a proper noun appears, a URL returns 200, a hash matches — AND (b) names a command
+that does not exist yet. Then, and only then, the checking tool must be BUILT, and building it is
+itself a coding task.
+
+Do NOT create a verifier task for criteria about qualities that CANNOT be settled by running
+something: whether an argument is sound, whether coverage is adequate, whether the writing is
+insightful, whether something is "substantive". A script cannot decide those; it can only check a
+stand-in (a label, a heading, a word), and then the deliverable gets written to satisfy the stand-in
+instead of the requirement. Those criteria are the QA role's job — it has a 'judge' tool that asks
+an independent verifier which shares no context with the work. Leave them alone.
+
+When a verifier task IS justified: 
+
 
 - Put the verifier as its OWN task, placed BEFORE the task that produces the deliverable. Assign it
   to 'implementer' (it is code). Its 'file' is the script; its criterion states what the script must

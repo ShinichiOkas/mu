@@ -239,8 +239,17 @@ def _log(event: tuple) -> None:
         print(f"{_L4} [!] TASK FAILED: ({event[1]['role']}) {event[1]['file']}")
     elif kind == "checks":
         for c in event[1]:
-            mark = "ok" if c.get("ok") else ("skip" if c.get("ok") is None else "NG")
+            # 未検査（run が無い＝誰も機械的に見ていない）を「skip」に紛れさせない。
+            # 隠れた合格を作らないための可視化（合意015 B）。
+            if c.get("kind") == "unverified":
+                mark = "未検査"
+            else:
+                mark = "ok" if c.get("ok") else ("skip" if c.get("ok") is None else "NG")
             print(f"{_L4} 検査[{mark}] {_short(c.get('text'), 80)} :: {_short(c.get('detail'), 100)}")
+        unverified = [c for c in event[1] if c.get("kind") == "unverified"]
+        if unverified:
+            print(f"{_L4} [!] 機械的に検査されていない受入基準が {len(unverified)} 件ある"
+                  "（judge / QA の判断のみ）")
     elif kind == "verdict":
         v = event[1]
         print(f"{_L4} QA 判定: {v.get('achieved')} :: {_short(v.get('reason'), 160)}")

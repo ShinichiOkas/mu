@@ -320,13 +320,29 @@ def _failure_facts(failed_checks: list) -> str:
 
 
 def _run_criteria_checks(spec: dict, tools: Sequence[Tool]) -> list:
-    """run を持つ criteria をコード側で実行・照合する（決定論の床。verdict とは独立）。"""
+    """criteria を検査の状態つきで返す（決定論の床。verdict とは独立）。
+
+    `kind` は「誰が見たか」の区別（合意015 B）:
+      machine    — run を実行して照合した（実体に接地した床）
+      unverified — **run が無い＝誰も機械的に見ていない**
+
+    従来は run の無い基準を黙って捨てていたため、外から「検査されたのか、検査項目が
+    無かったのか」が区別できなかった——010 で潰した「見えない部分が残る」と同じ形。
+    `ok` は None のままなので**完遂判定は変わらない**（床は動かさない）。
+    接地できない性質の検査は judge（LLM 検査器）と QA が担う。
+    """
     results = []
     for c in spec.get("criteria", []):
         if not c.get("run"):
+            results.append({
+                "text": c["text"], "run": "", "ok": None, "kind": "unverified",
+                "detail": "機械的な検査コマンドが無い（judge / QA の判断に委ねられている）",
+            })
             continue
         ok, detail = run_check({"run": c["run"], "expect": c.get("expect", "")}, tools)
-        results.append({"text": c["text"], "run": c["run"], "ok": ok, "detail": detail})
+        results.append(
+            {"text": c["text"], "run": c["run"], "ok": ok, "detail": detail, "kind": "machine"}
+        )
     return results
 
 
