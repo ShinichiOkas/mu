@@ -253,7 +253,12 @@ def _log(event: tuple) -> None:
                   "（judge / QA の判断のみ）")
     elif kind == "verdict":
         v = event[1]
-        print(f"{_L4} QA 判定: {v.get('achieved')} :: {_short(v.get('reason'), 160)}")
+        # 017: どの項目で落ちたかを見せる。総合値だけだと「何が足りないか」が人間に届かない。
+        for item in v.get("items", []):
+            mark = {"pass": "PASS", "fail": "FAIL"}.get(item["verdict"], "不明")
+            print(f"{_L4}   [{mark}] #{item['n']} {_short(item['text'], 60)} :: "
+                  f"{_short(item.get('evidence'), 80)}")
+        print(f"{_L4} QA 判定（集約はコード）: {v.get('achieved')} :: {_short(v.get('reason'), 160)}")
         if v.get("gap"):
             print(f"{_L4}   gap: {_short(v.get('gap'), 160)}")
     elif kind == "pjm":

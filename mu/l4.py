@@ -171,7 +171,8 @@ class Manager:
             checks = _run_criteria_checks(spec, tools)                  # C（決定論の床）
             if checks:
                 log(("checks", checks))
-            verdict = read_verdict(tasks) if failure is None else None  # C（QA の判定を機械読み）
+            # C: QA の判定を機械読み。**集約はコード側**（全項目 PASS のみ達成。合意017）。
+            verdict = read_verdict(tasks, spec.get("criteria", [])) if failure is None else None
             if verdict:
                 log(("verdict", verdict))
             failed_checks = [c for c in checks if c["ok"] is False]

@@ -201,7 +201,11 @@ def _criterion_line(c: dict) -> str:
 def _write_spec(spec_path: str, purpose: str, spec: dict, note: str = "") -> None:
     """仕様を artifact に書く。全タスクが参照でき、人間も直接直せる（ファイル・グラウンディング）。"""
     defs = "\n".join(f"- **{d['term']}**: {d['definition']}" for d in spec.get("definitions", []))
-    crits = "\n".join(f"- [ ] {_criterion_line(c)}" for c in spec.get("criteria", []))
+    # 受入基準は**番号付き**で書く。判定書はこの番号で項目ごとの合否を返す契約になっており
+    # （合意017）、番号が無いと QA と機械が同じ項目を指せない。
+    crits = "\n".join(
+        f"{i}. [ ] {_criterion_line(c)}" for i, c in enumerate(spec.get("criteria", []), 1)
+    )
     infeasible = ""
     if _infeasible(spec):
         conflicts = "\n".join(f"- {c}" for c in spec.get("conflicts", [])) or "- （申告なし）"

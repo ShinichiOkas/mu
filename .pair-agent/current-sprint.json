@@ -1,11 +1,8 @@
 {
-  "sprint_id": "016-input-protection-two-layers",
-  "status": "completed",
-  "goal": "入力保護を二層構造にする（OS レベルで防ぐ層を足し、検出層を周ごとに働かせる）",
-  "created_at": "2026-08-07T03:30:00+09:00",
-  "agreed_at": "2026-08-07T03:40:00+09:00",
-  "completed_at": "2026-08-07T05:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/016-input-protection-two-layers.md",
-  "sprint_doc": ".pair-agent/sprints/013-016-verification-in-untestable-domains.md",
-  "retrospected": ["013-roles-verifier-first", "014-failure-feedback-and-dependency-direction", "015-llm-judge-and-unverified-visibility", "016-input-protection-two-layers"]
+  "sprint_id": "017-completion-as-per-item-binary-checks",
+  "status": "executing",
+  "goal": "完成を受入基準ごとの二値で定義し、集約をコードが行う（LLM の総合判断を取り上げる）",
+  "created_at": "2026-08-07T05:10:00+09:00",
+  "agreed_at": "2026-08-07T05:20:00+09:00",
+  "agreement_path": ".pair-agent/agreements/017-completion-as-per-item-binary-checks.md"
 }

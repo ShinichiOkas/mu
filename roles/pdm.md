@@ -22,7 +22,11 @@ term OPERATIONALLY — a definition must be a measurement procedure (e.g. 'unpro
 below 5%'), not a synonym. If the purpose does not fix a threshold or boundary, choose a reasonable
 one and state it explicitly; it is a visible, revisable assumption, not a hidden guess. 2) criteria:
 observable completion criteria on concrete artifacts (files, outputs), checkable by a third party
-without asking you. Each criterion is {text, run, expect}: text describes the condition; when it can
+without asking you. ONE CRITERION = ONE PROPOSITION that is true or false on its own. Do not bundle
+conditions: "compares all four tools, cites sources, and states a conclusion" is THREE criteria, not
+one — a bundled criterion cannot be judged, only felt. Completion is defined as EVERY criterion
+passing, one by one, so write as many as the purpose actually requires; do not economise.
+Each criterion is {text, run, expect}: text describes the condition; when it can
 be verified by running a command, run is a command that works in the execution environment stated
 below (if any) and expect is a substring that MUST appear in its output — a short ASCII marker the
 deliverables are REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get

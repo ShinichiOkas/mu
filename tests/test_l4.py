@@ -50,10 +50,12 @@ SPEC = {
 }
 PROCESS2 = {"tasks": [
     {"role": "implementer", "task": "実装する", "file": "result.csv", "criterion": "出力する"},
-    {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ACHIEVED 行"},
+    {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
 ]}
-VERDICT_YES = "ACHIEVED: yes\nREASON: 確認した\nGAP:\n"
-VERDICT_NO = "ACHIEVED: no\nREASON: 列が欠けている\nGAP: 列が足りない\n"
+# 017: 判定書は受入基準ごとの二値。総合判定（ACHIEVED）は書かせず、集約はコードが行う。
+# SPEC の受入基準は1件なので ITEM 1 のみ。
+VERDICT_YES = "ITEM 1: PASS — result.csv を確認した\nGAP:\n"
+VERDICT_NO = "ITEM 1: FAIL — 列が欠けている\nGAP: 列が足りない\n"
 ROLES = {"implementer": "IMPL-MARKER", "qa": "QA-MARKER", "pjm": "PJM-MARKER"}
 
 ok2 = lambda: [{"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]}]
@@ -125,7 +127,9 @@ def test_criteria_without_a_command_are_reported_as_unverified(tmp_path, monkeyp
             {"text": "洞察が妥当であること", "run": "", "expect": ""},
         ],
     }
-    mgr = make([PROCESS2], ok2())
+    # 受入基準が2件なので判定書も2項目書く（欠番は UNCERTAIN 扱いになる）。
+    two = "ITEM 1: PASS — ある\nITEM 2: PASS — 妥当\n"
+    mgr = make([PROCESS2], [{"done": True}, {"done": True, "writes": [("verdict.md", two)]}])
     monkeypatch.chdir(tmp_path)
     out = mgr.run("m", spec, list(tools.TOOLS), roles=ROLES)
     kinds = {c["text"]: c["kind"] for c in out["checks"]}

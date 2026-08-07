@@ -27,16 +27,31 @@ _DEFAULT_QA_TASK = {
     "role": "qa",
     "task": "受け入れ基準に照らして成果物を独立に検証し、判定書を書く",
     "file": "verdict.md",
-    "criterion": "判定書の1行目が『ACHIEVED: 』で始まる",
+    "criterion": "受入基準の番号ごとに『ITEM <番号>: PASS|FAIL|UNCERTAIN — 根拠』を1行ずつ書く",
 }
 
-_VERDICT_REQUIREMENT = "判定書が ACHIEVED（yes|no|uncertain）・REASON・GAP の3項目を含む"
+_VERDICT_REQUIREMENT = (
+    "判定書が受入基準の**全番号**について『ITEM <番号>: PASS|FAIL|UNCERTAIN — 根拠』を含む"
+)
 
 _VERDICT_CONTRACT = (
     "判定書の書式（機械的に読まれる。厳守）:\n"
-    "ACHIEVED: yes|no|uncertain\n"
-    "REASON: <1〜3行。確認した証拠を挙げる>\n"
-    "GAP: <no のとき何が欠けているか。yes/uncertain のときは空でよい>"
+    "SPEC.md の受入基準を**番号順に1つずつ**判定し、**すべての番号について**1行ずつ書くこと。\n"
+    "ITEM <番号>: PASS|FAIL|UNCERTAIN — <根拠。成果物からの引用、または実行した検査と出力>\n"
+    "GAP: <PASS でない項目について、何が欠けているか>\n"
+    "\n"
+    "規律:\n"
+    "- **総合判定は書かない。** 全体として合格かどうかを決めるのはあなたではなくコードである。\n"
+    "  あなたの仕事は1項目ずつの二値判定と、その根拠を挙げることだけ。\n"
+    "- **根拠のない PASS を書かない。** 成果物のどこを見たかを引用する。引用できないなら PASS ではない。\n"
+    "- 判定できない項目は UNCERTAIN と書く（推測で PASS にしない）。UNCERTAIN は未達として扱われる。\n"
+    "- 飛ばした番号は UNCERTAIN とみなされる。書かなければ通る、ということはない。"
+)
+
+# 判定書の項目行。契約はコードが供給するが書き手は LLM なので、装飾（**・箇条書き・全角）は許容し、
+# 判定語だけを厳格に読む（verdict.md の従来の読み方と同じ作法）。
+_ITEM_LINE = re.compile(
+    r"(?im)^\W*item\s*(\d+)\s*[:：]\s*\**\s*(pass|fail|uncertain)\b\**\s*[—\-–:：]?\s*(.*)$"
 )
 
 _PROCESS_NOTE = "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）"
@@ -125,7 +140,7 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
             f"\n\n目的の原文（PURPOSE。人間が言った言葉。SPEC はこれを PdM が仕様化したもの）:\n{purpose}\n"
             "※ 受入基準の検査に加えて、SPEC が上の目的の制約を弱めていないか"
             "（制約を落とす・言い換えて緩める・退化解を許す）も検査すること。"
-            "弱めていれば ACHIEVED: no とし、GAP にその矛盾を書く。"
+            "弱めていれば、その受入基準を FAIL とし、GAP にその矛盾を書く。"
         )
     return goal
 
@@ -206,22 +221,57 @@ def summarize(tasks: list) -> str:
     )
 
 
-def read_verdict(tasks: list) -> dict | None:
-    """最後の QA タスクの判定書を機械的に読む。QA 未完なら None、壊れは uncertain（安全側）。"""
+def read_verdict(tasks: list, criteria: list) -> dict | None:
+    """最後の QA タスクの判定書を**項目ごとに**読み、**コードが集約する**（合意017）。
+
+    完成 = 受入基準の**全項目が PASS**。部分達成を完成と呼ばない。
+    総合判定は LLM から取り上げている——「全体としてどうか」を問うと寛容側に倒れるため
+    （012 では決定論 check が 3件中2件 NG なのに QA は yes と書いた）。
+    LLM が担うのは1項目ずつの二値判定と根拠だけで、集約はここで行う。
+
+    QA 未完なら None。判定書が無い・読めないは uncertain（安全側）。
+    判定書に現れない受入基準は uncertain として並べる——黙って落とすと
+    「書かなければ通る」抜け道になる。
+    """
     qa = [t for t in tasks if t["role"] == "qa"]
     if not qa or not qa[-1].get("done"):
         return None
     p = Path(qa[-1]["file"])
     if not p.is_file():
-        return {"achieved": "uncertain", "reason": f"verdict file missing: {qa[-1]['file']}", "gap": ""}
+        return {
+            "achieved": "uncertain", "reason": f"verdict file missing: {qa[-1]['file']}",
+            "gap": "", "items": [],
+        }
     text = p.read_text(encoding="utf-8", errors="replace")
-    m = re.search(r"ACHIEVED\s*:?\s*\**\s*(yes|no|uncertain)\b", text, re.IGNORECASE)
-    if not m:
-        return {"achieved": "uncertain", "reason": "verdict unparseable (no ACHIEVED line)", "gap": ""}
+    found = {}
+    for num, verdict, evidence in _ITEM_LINE.findall(text):
+        found[int(num)] = (verdict.lower(), evidence.strip())
+    items = []
+    for i, c in enumerate(criteria or [], 1):
+        verdict, evidence = found.get(i, ("uncertain", "判定書に項目が無い"))
+        items.append({"n": i, "text": c.get("text", ""), "verdict": verdict, "evidence": evidence})
+    return {**_summarize_items(items), "gap": _verdict_field(text, "GAP"), "items": items}
+
+
+def _summarize_items(items: list) -> dict:
+    """項目の二値を集約する（コードの決定論。ここに LLM の判断は入らない）。"""
+    if not items:
+        return {"achieved": "uncertain", "reason": "受入基準が無く、判定する対象がない"}
+    failed = [i for i in items if i["verdict"] == "fail"]
+    unknown = [i for i in items if i["verdict"] == "uncertain"]
+    if not failed and not unknown:
+        return {"achieved": "yes", "reason": f"受入基準 {len(items)} 項目すべて PASS"}
+    parts = []
+    if failed:
+        parts.append("未達 " + ", ".join(f"#{i['n']} {i['text']}" for i in failed))
+    if unknown:
+        parts.append("判定不能 " + ", ".join(f"#{i['n']} {i['text']}" for i in unknown))
     return {
-        "achieved": m.group(1).lower(),
-        "reason": _verdict_field(text, "REASON"),
-        "gap": _verdict_field(text, "GAP"),
+        # どちらも「達成ではない」。ただし **FAIL（未達と分かった）と UNCERTAIN（判定できなかった）**は
+        # 上位の判断が変わる——前者は作り直し、後者は仕様か検証方法を疑う。値でも区別する。
+        "achieved": "no" if failed else "uncertain",
+        "reason": f"{len(items)} 項目中 PASS は {len(items) - len(failed) - len(unknown)}（"
+                  + " / ".join(parts) + "）",
     }
 
 
