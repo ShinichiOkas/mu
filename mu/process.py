@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Callable
+
 from .role_kb import role_section
 
 _DEFAULT_QA_TASK = {
@@ -30,8 +32,13 @@ _DEFAULT_QA_TASK = {
     "criterion": "受入基準の番号ごとに『ITEM <番号>: PASS|FAIL|UNCERTAIN — 根拠』を1行ずつ書く",
 }
 
+# 019: 「FAIL を含む判定書も完成」を成功条件に明記する。L2 Reflect はこの criterion に
+# 対して合否を判定するため、これが無いと「ITEM n: FAIL がある＝仕事が終わっていない」と
+# 誤読し、QA に成果物の修正を要求し続ける（018 実走。「判定を直しに行く」圧力）。
 _VERDICT_REQUIREMENT = (
-    "判定書が受入基準の**全番号**について『ITEM <番号>: PASS|FAIL|UNCERTAIN — 根拠』を含む"
+    "判定書が受入基準の**全番号**について『ITEM <番号>: PASS|FAIL|UNCERTAIN — 根拠』を含む。"
+    "**FAIL / UNCERTAIN を含む判定書も、全番号に根拠が書かれていれば完成である**"
+    "（成果物の不備を直すのは QA の仕事ではない。不備の事実を書くことが仕事）"
 )
 
 _VERDICT_CONTRACT = (
@@ -45,7 +52,10 @@ _VERDICT_CONTRACT = (
     "  あなたの仕事は1項目ずつの二値判定と、その根拠を挙げることだけ。\n"
     "- **根拠のない PASS を書かない。** 成果物のどこを見たかを引用する。引用できないなら PASS ではない。\n"
     "- 判定できない項目は UNCERTAIN と書く（推測で PASS にしない）。UNCERTAIN は未達として扱われる。\n"
-    "- 飛ばした番号は UNCERTAIN とみなされる。書かなければ通る、ということはない。"
+    "- 飛ばした番号は UNCERTAIN とみなされる。書かなければ通る、ということはない。\n"
+    "- **不合格は不合格と書いて完成である。** FAIL を書いた判定書は失敗ではない——それが検証の\n"
+    "  成果である。FAIL を消すために成果物を直そうとしたり、判定を甘くしたりしてはならない。\n"
+    "  成果物の修正は、あなたの判定書を受け取った進行側が別のタスクとして回す。"
 )
 
 # 判定書の項目行。契約はコードが供給するが書き手は LLM なので、装飾（**・箇条書き・全角）は許容し、

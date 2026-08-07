@@ -889,3 +889,20 @@ def test_deadline_and_protected_are_passed_to_l4(tmp_path, monkeypatch):
                  protected=["inventory.csv"], deadline=lambda: False)
     assert result["achieved"] is True
     assert callable(agent._l4._l3.calls[0]["kwargs"].get("approve"))
+
+
+# --- 019: 役割定義書の規範（リポジトリの roles/ が宣言していること） -------------
+
+
+def test_repo_pdm_forbids_assumed_answers_in_expect():
+    # 018 実走: PdM が入力の先頭5行から「P003 は死に筋のはず」と推測して expect に焼き込み、
+    # 自己矛盾した報告書が機械検査を通過した。答えの仮定はマーカーに置かせない。
+    from pathlib import Path as _P
+    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    assert "PREDICTED RESULT" in text
+
+
+def test_repo_qa_declares_honest_fail_as_success():
+    from pathlib import Path as _P
+    text = _P("roles/qa.md").read_text(encoding="utf-8")
+    assert "正直な FAIL" in text

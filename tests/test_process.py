@@ -101,3 +101,32 @@ def test_stale_failure_is_cleared_when_the_task_succeeds():
     t["last_failure"] = "前回の失敗"
     clear_failure(t)
     assert t.get("last_failure") is None
+
+
+# --- 019: 正直な FAIL 判定書は成功である ---------------------------------------
+#
+# 018 実走: QA が ITEM 3: FAIL と正しく書いたのに、L2 Reflect が「成果物を直せ」と
+# 要求し続けた。L2 は criterion（コード供給）に対して判定するので、
+# 「FAIL を含む判定書も完成」を criterion と契約の両方に明記する。
+
+from mu.process import normalize_tasks, task_goal
+
+
+def test_qa_criterion_says_an_honest_fail_verdict_is_complete():
+    tasks = normalize_tasks(
+        [{"role": "implementer", "task": "作る", "file": "out.txt", "criterion": "ある"}],
+        {"qa": {}, "implementer": {}}, lambda e: None,
+    )
+    qa = next(t for t in tasks if t["role"] == "qa")
+    assert "FAIL" in qa["criterion"]
+    assert "完成" in qa["criterion"]      # FAIL を含む判定書も完成、が成功条件に見える
+
+
+def test_qa_contract_forbids_fixing_the_deliverable_to_erase_a_fail():
+    tasks = normalize_tasks(
+        [{"role": "implementer", "task": "作る", "file": "out.txt", "criterion": "ある"}],
+        {"qa": {}, "implementer": {}}, lambda e: None,
+    )
+    qa = next(t for t in tasks if t["role"] == "qa")
+    goal = task_goal(qa, "SPEC.md", [])
+    assert "不合格は不合格と書いて完成" in goal

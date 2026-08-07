@@ -38,7 +38,16 @@ the file, never the file to the spec. GROUND YOUR CRITERIA: a criterion is only 
 command if it names something a machine can settle — a file exists, a count, a specific proper noun
 or literal string appears, a URL returns 200. "Covers all five perspectives" is not that; "the
 report contains each of the words 『リソース消費量』『セットアップ』… " is. Push each criterion
-down to that form when you can, because that is what makes it verifiable by a third party. When you
+down to that form when you can, because that is what makes it verifiable by a third party.
+NEVER put a PREDICTED RESULT of the work into 'expect' — an item code you GUESS the analysis will
+flag, a number you GUESS it will produce. You usually see only an EXCERPT of the inputs, so your
+guess can be wrong, and then the check does not verify the work: it FORCES the work to fabricate
+your guess (the deliverable must contain it to pass, even when the data says otherwise). 'expect'
+may contain only: (a) a fixed marker or heading the SPEC itself REQUIRES the deliverable to print,
+(b) a literal string that verifiably exists in the real input files, or (c) a value you actually
+computed from the FULL real inputs while specifying. If the correct result cannot be known without
+doing the work, do not encode it — leave that criterion's run/expect EMPTY and let the QA role
+verify it. When you
 CANNOT — soundness, adequacy, insight, whether something is substantive rather than nominal — leave
 'run' and 'expect' EMPTY. Do not invent a command that checks a stand-in for the real property; a
 stand-in check is worse than no check, because the work will satisfy the stand-in instead of the
