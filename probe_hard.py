@@ -11,7 +11,6 @@ case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf
 
 import json
 import os
-import stat
 import sys
 import time
 from pathlib import Path
@@ -34,6 +33,10 @@ L4_MAX = 3      # PjM 判断サイクル
 L3_MAX = 8
 L2_MAX = 6
 L2_L1_MAX = 10
+
+# 壁時計の予算（秒）。層の予算は周回数建てで時間と整合しない——外部 kill は finally を
+# 飛ばして観測ゼロを生むため、**内部締切**で部分結果つきに終わらせる（合意018 ⑥）。
+TIME_BUDGET = int(os.environ.get("MU_TIME_BUDGET", "1500"))
 
 # --- H1 deadstock: 在庫・売上・返品の3表。罠: 売上の P008 は小文字 p008 でのみ出現。
 #     確実な死に筋: P007, P010（売上ゼロ・在庫あり）。定義依存: P003（返品率90%）。
@@ -268,9 +271,9 @@ def main() -> None:
         p = Path(rel)
         p.parent.mkdir(parents=True, exist_ok=True)
         if p.exists():
-            # 前回の走行が強制終了されると read-only が残る（finally も走らない）。
+            # 前回の走行が強制終了されると ACL・read-only が残る（finally も走らない）。
             # 入力の配置はそれを解いてから行う——さもないと次の走行が始められない。
-            os.chmod(p, stat.S_IWRITE)
+            tools_mod.thaw(p)
         p.write_text(content, encoding="utf-8")
     if spec["protect"]:
         tools_mod.protect(spec["protect"])
@@ -285,14 +288,16 @@ def main() -> None:
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
     print(f"roles: {sorted(roles) or '(none — 知識なしの対照走)'} from {roles_dir}")
     print(f"purpose: {spec['purpose']}")
-    print(f"protected: {spec['protect']}")
+    print(f"protected: {spec['protect']}  time_budget: {TIME_BUDGET}s")
     t0 = time.monotonic()
     try:
         result = director.run(
             model, spec["purpose"], _verbose_tools(TOOLS),
             roles=roles, models=pool,
             log=_log, system=_env_preamble(),
-            guard=tools_mod.protection_violations,   # 破れたら周の頭で止める（合意016 ②）
+            guard=tools_mod.protection_violations,   # 破れたら周・タスク境界で止める（合意016→018）
+            deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
+            protected=tools_mod.protected_paths(),   # 計画 lint 用の保護一覧（合意018 ④）
             max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
             l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )

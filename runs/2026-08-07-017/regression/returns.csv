@@ -1,0 +1,3 @@
+ReturnID,SaleID,ProductID,ReturnDate,Reason
+R001,S002,P002,2023-01-06,Defective
+R002,S004,P001,2023-01-07,Changed Mind

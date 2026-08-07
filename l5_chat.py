@@ -76,15 +76,29 @@ def _short(text: object, n: int = 120) -> str:
 
 
 def _env_preamble() -> str:
-    """タスク実行と check コマンド設計へ渡す環境グラウンディング（呼び出し側の責務）。"""
-    return (
-        "Environment:\n"
-        f"- OS: {platform.system()} {platform.release()}\n"
-        f"- Working directory: {os.getcwd()}\n"
+    """タスク実行と check コマンド設計へ渡す環境グラウンディング（呼び出し側の責務）。
+
+    保護された入力があれば**その存在と規範**もここで宣言する（合意018 ④）。宣言が無いと
+    計画層は入力の実在を知らず、モック置換の単位を発明する（017 実走の setup_mocks）。
+    """
+    lines = [
+        "Environment:",
+        f"- OS: {platform.system()} {platform.release()}",
+        f"- Working directory: {os.getcwd()}",
         "- execute_command runs in PowerShell — use PowerShell/Windows syntax "
-        "(e.g. Get-ChildItem, Get-Content), not Unix commands like ls/cat.\n"
-        "- Use list_dir to discover files instead of guessing paths."
-    )
+        "(e.g. Get-ChildItem, Get-Content), not Unix commands like ls/cat.",
+        "- Use list_dir to discover files instead of guessing paths.",
+    ]
+    protected = tools_mod.protected_paths()
+    if protected:
+        names = ", ".join(os.path.basename(p) for p in protected)
+        lines.append(
+            f"- PROTECTED INPUT FILES (read-only originals): {names}. "
+            "These files ALREADY EXIST and hold the REAL input data. Never overwrite, delete, "
+            "recreate or replace them with mock/sample/test data, and never plan a task or "
+            "script that does — adapt all work to their actual content."
+        )
+    return "\n".join(lines)
 
 
 # --- 実況（表示は CLI の責務。mu の層は無変更・無関知） ------------------------

@@ -1,8 +1,9 @@
 {
-  "sprint_id": "017-completion-as-per-item-binary-checks",
+  "sprint_id": "018-fix-the-run-infrastructure",
   "status": "executing",
-  "goal": "完成を受入基準ごとの二値で定義し、集約をコードが行う（LLM の総合判断を取り上げる）",
-  "created_at": "2026-08-07T05:10:00+09:00",
-  "agreed_at": "2026-08-07T05:20:00+09:00",
-  "agreement_path": ".pair-agent/agreements/017-completion-as-per-item-binary-checks.md"
+  "goal": "走行基盤の6欠陥（BOM/範囲外offset/ACL＋コマンド単位検出/計画lint/write_scope強制/締切注入）を修理し、017 Phase 4 の観測を取る",
+  "created_at": "2026-08-08T00:00:00+09:00",
+  "agreed_at": "2026-08-08T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/018-fix-the-run-infrastructure.md",
+  "note": "017 は executing のまま保留（Phase 4 の実走観測を 018 Phase 3 が兼ねる）"
 }

@@ -69,14 +69,23 @@ _PROTECTED: dict = {}
 # 保護前のファイル属性（解除時の復元用）。元々 read-only だったものを書けるようにして返さない。
 _ORIGINAL_MODE: dict = {}
 
+# ACL で凍結できたパス（解除時に icacls /reset が要るものだけ）。
+_ACL_FROZEN: set = set()
+
+# execute_command が既に報告した破れ（path, status）。報告は一度だけ——停止の決定は
+# 呼び出し側（L4 の guard）が担い、tools 層は「破った本人に・破った経路で」規範を届けるまで。
+_REPORTED: set = set()
+
 
 def protect(paths) -> None:
     """指定パスを読み取り専用として登録し、**OS レベルでも書けなくする**。
 
-    二層構造（合意016）: tools 層の拒否（理由を言葉で返せる）に加え、OS の読み取り専用属性を
-    かける。`execute_command` 経由の書き込み——015 で実際に入力を壊した経路——はこちらで止まる。
-    ただし `attrib -R` や `Remove-Item -Force` による**意図的な回避は止められない**（実測）。
-    だから `protection_violations()` の検出層を残す。原本は金庫に入れる。それでも監査はする。
+    二層構造（合意016 → 018 で格上げ）: tools 層の拒否（理由を言葉で返せる）に加え、
+    read-only 属性＋**ACL（(R) のみ許可）**をかける。属性だけでは `Set-Content -Force` /
+    `Out-File -Force` / `Remove-Item -Force` に貫通される（017 再走で実破壊・実測）。
+    ACL はこの3経路を全て止める。ただし所有者は `icacls /reset` で解除できるため、
+    **意図的な回避は依然止められない**——だから `protection_violations()` の検出層を残す。
+    原本は金庫に入れる。それでも監査はする。
 
     登録時点の内容ダイジェストと**保護前の属性**を控える（後者は解除時の復元に使う）。
     """
@@ -87,27 +96,101 @@ def protect(paths) -> None:
 
 
 def _freeze(path: Path) -> None:
-    """OS の読み取り専用属性をかける。元の属性は復元用に控える。"""
+    """OS 側の凍結: read-only 属性 → ACL の順にかける。
+
+    順序が要る——ACL を先にかけると、自分の属性変更（FILE_WRITE_ATTRIBUTES）も
+    拒まれて chmod が失敗する。解除（clear_protection / thaw）は逆順。
+    """
     try:
         _ORIGINAL_MODE[str(path)] = path.stat().st_mode
+    except OSError:
+        return  # 存在しない等。検出層が missing で拾う
+    try:
         os.chmod(path, stat.S_IREAD)
     except OSError:
-        _ORIGINAL_MODE.pop(str(path), None)  # 存在しない等。検出層が missing で拾う
+        pass
+    if _acl_restrict(path):
+        _ACL_FROZEN.add(str(path))
+
+
+def _acl_restrict(path: Path) -> bool:
+    """ACL で書き込み・削除・属性変更を落とす（現ユーザーに読み取りのみ許可）。
+
+    実測（018）: read-only 属性は -Force 系に貫通されるが、この ACL は
+    Set-Content -Force / Out-File -Force / Remove-Item -Force を全て止める。
+    非 Windows / icacls 不在では False を返し、属性のみの保護に留まる。
+    """
+    if os.name != "nt":
+        return False
+    user = os.environ.get("USERNAME")
+    if not user:
+        return False
+    try:
+        proc = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant", f"{user}:(R)"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
+
+
+def _acl_release(path: Path) -> bool:
+    """ACL を継承既定へ戻す（icacls /reset）。所有者ならいつでも可能（実測）。"""
+    if os.name != "nt":
+        return False
+    try:
+        proc = subprocess.run(
+            ["icacls", str(path), "/reset"], capture_output=True, text=True, timeout=15,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
 
 
 def clear_protection() -> None:
-    """保護登録を解除し、**保護前の属性へ戻す**（テスト・セッション切替・走行の終了時）。
+    """保護登録を解除し、**保護前の状態へ戻す**（テスト・セッション切替・走行の終了時）。
 
     走行の器が `finally` で必ず呼ぶこと。呼ばれないとリポジトリのファイルが
-    読み取り専用のまま残る（合意016 ①）。
+    ACL・読み取り専用のまま残る（合意016 ①。残骸は次走の `thaw` が解く）。
+    解除は凍結の逆順: ACL → 属性（ACL が残ったままだと chmod 自体が拒まれる）。
     """
     for path, mode in _ORIGINAL_MODE.items():
+        if path in _ACL_FROZEN:
+            _acl_release(Path(path))
         try:
             os.chmod(path, mode)   # 元が read-only ならその状態に戻る
         except OSError:
             pass
+    _ACL_FROZEN.clear()
     _ORIGINAL_MODE.clear()
     _PROTECTED.clear()
+    _REPORTED.clear()
+
+
+def thaw(path) -> None:
+    """凍結の残骸（ACL・read-only 属性）を解く。
+
+    強制終了された走行は clear_protection が走らず残骸を残す——次の走行が入力を
+    配置する前に呼ぶ（probe の後始末。合意018）。登録の有無に依らずパス単位で解く。
+    """
+    p = Path(path)
+    if not p.exists():
+        return
+    _acl_release(p)
+    try:
+        os.chmod(p, stat.S_IWRITE)
+    except OSError:
+        pass
+
+
+def protected_paths() -> list:
+    """保護登録された絶対パスの一覧。
+
+    呼び出し側が env preamble（「実在の原本・再作成禁止」の宣言）や計画 lint に使う。
+    保護の存在がプロンプトに無いと、計画層は知らずにモック置換を計画する（017 実走）。
+    """
+    return sorted(_PROTECTED)
 
 
 def _digest(path: Path) -> str | None:
@@ -134,6 +217,23 @@ def protection_violations() -> list:
             "status": "missing" if current is None else "modified",
         })
     return violations
+
+
+def _fresh_violations() -> list:
+    """まだ報告していない破れ。execute_command が実行のたびに照合する（合意018 ③）。
+
+    017 実走: 保護の拒否が write_file 経由でしか言葉にならず、シェル経由の破壊には
+    生の「Access denied」しか返らなかった。説明の無い拒否をモデルは「回避すべき障害」と
+    解釈し、-Force へエスカレートした。破れの瞬間に・破った経路で・規範の文面ごと返す。
+    報告は同じ破れにつき一度だけ——停止の決定は呼び出し側（L4 の guard）の職掌。
+    """
+    fresh = []
+    for v in protection_violations():
+        key = (v["path"], v["status"])
+        if key not in _REPORTED:
+            _REPORTED.add(key)
+            fresh.append(v)
+    return fresh
 
 
 def _protected_result(path: str, action: str) -> ToolResult:
@@ -203,11 +303,21 @@ def read_file(path: str, offset: int = 0, limit=None) -> ToolResult:
     if limit is not None:
         limit = max(0, limit)
     # 全文を read_text せず1行ずつ流す——窓の外はメモリに載せない（サイズ無制限化の実体）。
-    with Path(path).open(encoding="utf-8", errors="replace") as f:
+    # utf-8-sig: 先頭に BOM があれば剥がす（.ps1 は BOM 付きで書く・合意018 ①）。無ければ utf-8 と同じ。
+    with Path(path).open(encoding="utf-8-sig", errors="replace") as f:
         shown, total, next_offset = _take_window(f, offset, limit)
     text = "".join(shown)
+    if not shown:
+        # 無言の空文字列は「読めたが空」か「範囲外」かをモデルが区別できない（017 実走で
+        # 同じ呼び出しの繰り返しを生んだ）。事実を散文で言う。facts の chars は本文の量のまま。
+        text_out = (
+            f"(empty file: {path} has 0 lines)" if total == 0
+            else f"(no lines at offset {offset}: {path} has {total} lines, valid offsets are 0-{total - 1})"
+        )
+    else:
+        text_out = text
     return ToolResult(
-        text + _window_notice(path, offset, len(shown), total, next_offset, "lines"),
+        text_out + _window_notice(path, offset, len(shown), total, next_offset, "lines"),
         facts={
             "action": "read",
             "path": path,
@@ -224,6 +334,20 @@ def read_file(path: str, offset: int = 0, limit=None) -> ToolResult:
 # write_file の mode。弱いモデルの表記ゆれを吸収する（束縛と同じく実行の頑健化）。
 _APPEND_MODES = {"append", "a", "add"}
 _OVERWRITE_MODES = {"overwrite", "w", "write", "replace", ""}
+
+# UTF-8 BOM 付きで書く拡張子（合意018 ①）。Windows PowerShell 5.1 は BOM なし UTF-8 の
+# スクリプトを CP932 と読み、日本語入り .ps1 が ParserError になる（017 再走の最大の時間泥棒。
+# ログの `蝠・刀蜷・` 化けが証拠）。BOM があれば 5.1 と pwsh が同じに読む。
+_BOM_SUFFIXES = {".ps1", ".psm1", ".psd1"}
+
+
+def _write_encoding(p: Path, append: bool) -> str:
+    """書き込みエンコーディング。.ps1 系のみ BOM 付き（追記の途中には挟まない）。"""
+    if p.suffix.lower() not in _BOM_SUFFIXES:
+        return "utf-8"
+    if append and p.exists() and p.stat().st_size > 0:
+        return "utf-8"
+    return "utf-8-sig"
 
 
 def write_file(path: str, content: str, mode: str = "overwrite") -> ToolResult:
@@ -245,7 +369,7 @@ def write_file(path: str, content: str, mode: str = "overwrite") -> ToolResult:
             facts={"action": "write", "path": str(p), "mode": normalized, "written": False},
         )
     p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a" if append else "w", encoding="utf-8") as f:
+    with p.open("a" if append else "w", encoding=_write_encoding(p, append)) as f:
         f.write(content)
     size = p.stat().st_size  # 書けた実体の証拠はディスクの stat から取る
     added = len(content.encode("utf-8"))
@@ -261,7 +385,8 @@ def edit_file(path: str, old: str, new: str) -> ToolResult:
     p = Path(path)
     if str(p.resolve()) in _PROTECTED:
         return _protected_result(path, "edit")
-    text = p.read_text(encoding="utf-8", errors="replace")
+    # utf-8-sig で読む（BOM は本文に混ぜない）。.ps1 系は書き戻しでも BOM を維持する（合意018 ①）。
+    text = p.read_text(encoding="utf-8-sig", errors="replace")
     count = text.count(old)
     if count == 0:
         # 実際に起きる誤用（末尾に足したいのに置換で書こうとする）へ行き先を示す。
@@ -272,7 +397,7 @@ def edit_file(path: str, old: str, new: str) -> ToolResult:
             ok=False,
             facts={"action": "edit", "path": str(p), "replacements": 0},
         )
-    p.write_text(text.replace(old, new), encoding="utf-8")
+    p.write_text(text.replace(old, new), encoding=_write_encoding(p, False))
     return ToolResult(
         f"replaced {count} occurrence(s) in {path}",
         facts={"action": "edit", "path": str(p), "replacements": count, "bytes": p.stat().st_size},
@@ -300,7 +425,12 @@ def list_dir(path: str = ".", offset: int = 0, limit=None) -> ToolResult:
         for e in sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
     )
     shown, total, next_offset = _take_window(entries, offset, limit)
-    text = "".join(shown).rstrip("\n") if shown else "(empty)"
+    if shown:
+        text = "".join(shown).rstrip("\n")
+    elif total == 0:
+        text = "(empty)"
+    else:  # 範囲外 offset を「空のディレクトリ」に見せない（合意018 ②）
+        text = f"(no entries at offset {offset}: {path} has {total} entries)"
     return ToolResult(
         text + _window_notice(path, offset, len(shown), total, next_offset, "entries"),
         facts={
@@ -344,17 +474,32 @@ def execute_command(command: str) -> ToolResult:
             + f"\n...(truncated, {chars} chars total. "
             + f'全文: read_file("{output_path}", offset=0))'
         )
-    return ToolResult(
-        f"exit={proc.returncode}\n{out}",
-        ok=proc.returncode == 0,
-        facts={
-            "action": "exec",
-            "exit": proc.returncode,
-            "chars": chars,
-            "truncated": truncated,
-            "output_path": output_path,
-        },
-    )
+    ok = proc.returncode == 0
+    facts = {
+        "action": "exec",
+        "exit": proc.returncode,
+        "chars": chars,
+        "truncated": truncated,
+        "output_path": output_path,
+    }
+    # コマンド単位の破れ検出（合意018 ③）: 実行のたびにダイジェストを照合し、破れの瞬間に
+    # **規範の文面ごと**実行者へ返す。シェル経由の破壊に生の Access denied しか返らないと、
+    # モデルは障害として回避しにいく（017 実走）。報告は同じ破れにつき一度だけ。
+    fresh = _fresh_violations()
+    if fresh:
+        names = ", ".join(
+            f"{Path(v['path']).name}（{'消失' if v['status'] == 'missing' else '改変'}）"
+            for v in fresh
+        )
+        out += (
+            f"\n[protection] 保護された入力ファイルが変更された: {names}。"
+            "これらは実在の原本であり、上書き・削除・モックへの置き換えは禁止。"
+            "この破れは記録済みで、走行は停止される。原本を直したり作り直したりするのではなく、"
+            "原本の実際の内容に合わせて作業しなければならない。"
+        )
+        ok = False
+        facts["protection_broken"] = fresh
+    return ToolResult(f"exit={proc.returncode}\n{out}", ok=ok, facts=facts)
 
 
 # --- web（検索・取得。合意011） -----------------------------------------------
@@ -641,7 +786,7 @@ def make_judge(l0, model: str):
         """要件を満たしているかを、文脈を共有しない別の LLM に判定させる。"""
         facts = {"action": "judge", "requirement": requirement, "path": path, "model": model}
         try:
-            target = Path(path).read_text(encoding="utf-8", errors="replace")
+            target = Path(path).read_text(encoding="utf-8-sig", errors="replace")
         except OSError as e:
             # 読めないものを LLM に判定させない（存在しない成果物を「合格」にしない）。
             return ToolResult(

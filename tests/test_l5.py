@@ -868,3 +868,24 @@ def test_qa_task_criterion_carries_the_contract(tmp_path, monkeypatch):
     assert "PASS|FAIL|UNCERTAIN" in qa_task["criterion"]
     assert "ACHIEVED 行を含む" in qa_task["criterion"]      # PjM が書いた分は残る
     assert "ITEM" not in result["tasks"][0]["criterion"]    # 他役割には足さない
+
+# --- 018: 締切と保護一覧の受け渡し（L5 → L4） ----------------------------------
+
+
+def test_deadline_stops_the_purpose_loop_with_partial_state(tmp_path, monkeypatch):
+    # 外部 kill は finally を飛ばし観測ゼロを生む（017 再走×2）。締切は部分結果つきで
+    # **正常に返る**こと——タイムアウトを「観測できる失敗」に変える。
+    agent = make([SPEC])                      # specify だけ消費。L4 は呼ばれない
+    result = run(agent, tmp_path, monkeypatch, deadline=lambda: True)
+    assert result["achieved"] is False
+    assert result["escalated"] is True
+    assert "時間" in result["assessment"]["reason"]
+    assert agent._l4._l3.calls == []
+
+
+def test_deadline_and_protected_are_passed_to_l4(tmp_path, monkeypatch):
+    agent = make([SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch,
+                 protected=["inventory.csv"], deadline=lambda: False)
+    assert result["achieved"] is True
+    assert callable(agent._l4._l3.calls[0]["kwargs"].get("approve"))

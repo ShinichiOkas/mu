@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
@@ -36,7 +37,7 @@ from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
     task_goal, write_process, process_note,
 )
-from .role_kb import role_prompt, role_tools, task_roles
+from .role_kb import role_perms, role_prompt, role_tools, task_roles
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -88,6 +89,60 @@ def _outcome(outcome, reason, tasks, verdict, checks, ok, rounds, process_path) 
     }
 
 
+# 時間切れの申告文（合意018 ⑥）。外部 kill は finally を飛ばし観測ゼロを生む——
+# 締切は部分結果つきの escalate として**正常に返す**（タイムアウトを観測できる失敗に変える）。
+_TIME_UP = "時間予算を使い切った（deadline）。ここまでの部分結果を返す。人間の判断が要る。"
+
+
+def _broken_outcome(broken: list, tasks, rounds, process_path, log: Callable) -> dict:
+    detail = ", ".join(f"{b.get('path')}({b.get('status')})" for b in broken)
+    log(("protection_broken", broken))
+    return _outcome(
+        "escalate", f"保護された入力が壊れている: {detail}。"
+        "壊れた入力の上で作業を続けても結果は意味を持たない。人間の確認が要る。",
+        tasks, None, [], False, rounds, process_path,
+    )
+
+
+def plan_lint(task: dict, doc: Any, protected: Sequence[str] | None, log: Callable) -> Callable:
+    """L3 の Plan をコードが検査する承認スロット（合意018 ④⑤）。
+
+    017 実走: Planner は役割の write_scope の外の成果物（read_verification_log.txt）や、
+    保護入力に触れる単位を発明した。規範（プロンプト）は確率的にしか効かない——
+    単位の `file` は計画の時点でコードが拒否する:
+      - 保護された入力を file にする単位（直接の再作成。スクリプト経由の間接破壊は
+        ACL 層と guard が止める）
+      - write_scope=own の役割で、タスクの出力ファイル以外を file にする単位
+    全滅したらタスク自身を1単位として置く（空の計画は L3 が「empty plan」で失敗し、
+    タスクごと死ぬため）。
+    """
+    guarded = {str(Path(p).resolve()) for p in (protected or [])}
+    _, scope = role_perms(doc)
+    own = str(Path(task["file"]).resolve())
+
+    def approve(units: list) -> list:
+        kept = []
+        for u in units:
+            f = str(u.get("file") or "")
+            resolved = str(Path(f).resolve()) if f else ""
+            if resolved and resolved in guarded:
+                log(("unit_rejected", task["role"], f, "保護された入力ファイル"))
+                continue
+            if scope == "own" and resolved and resolved != own:
+                log(("unit_rejected", task["role"], f, f"write_scope 外（書けるのは {task['file']} のみ）"))
+                continue
+            kept.append(u)
+        if not kept:
+            log(("plan_fallback", task["role"], task["file"]))
+            kept = [{
+                "task": task["task"], "file": task["file"],
+                "criterion": task.get("criterion", ""), "done": False,
+            }]
+        return kept
+
+    return approve
+
+
 # --- 層をまたいで使う生命線のヘルパ（L5 も同じ形で LLM に判断させる） ----------
 
 def lifeline_system(
@@ -132,6 +187,8 @@ class Manager:
         log: Callable[[Any], None] = _noop,
         system: str | None = None,
         guard: Callable[[], list] | None = None,
+        deadline: Callable[[], bool] | None = None,
+        protected: Sequence[str] | None = None,
         max_rounds: int = 3,
         l3_max: int = 8,
         l2_max: int = 6,
@@ -151,23 +208,28 @@ class Manager:
         rounds = 0
         for _ in range(max_rounds):
             rounds += 1
+            # 締切（呼び出し側注入・合意018 ⑥）。層の予算は周回数建てで壁時計と整合しない——
+            # 外部 kill は finally を飛ばし観測ゼロを生むため、時間切れは部分結果つきで返す。
+            if deadline and deadline():
+                return _outcome("escalate", _TIME_UP, tasks, None, [], False, rounds, process_path)
             # 守られるべき入力（原本）が壊れていないかを**周の頭で**見る。壊れた後の作業は
             # すべて偽の前提の上に乗るため、進める意味がない（合意016 ②。015 で実発火）。
             # 保護機構そのものは持たない——呼び出し側が注入する（環境接地は caller の責務）。
             broken = guard() if guard else []
             if broken:
-                detail = ", ".join(f"{b.get('path')}({b.get('status')})" for b in broken)
-                log(("protection_broken", broken))
-                return _outcome(
-                    "escalate", f"保護された入力が壊れている: {detail}。"
-                    "壊れた入力の上で作業を続けても結果は意味を持たない。人間の確認が要る。",
-                    tasks, None, [], False, rounds, process_path,
-                )
+                return _broken_outcome(broken, tasks, rounds, process_path, log)
             write_process(process_path, purpose, tasks, process_note(roles))
             log(("process", tasks, process_path))
 
-            failure = self._execute(model, tasks, tools, roles, pool,   # D（役割を着た L3 の逐次ループ）
-                                    spec_path, purpose, system, log, limits)
+            failure, broken, timed_out = self._execute(                 # D（役割を着た L3 の逐次ループ）
+                model, tasks, tools, roles, pool,
+                spec_path, purpose, system, log, limits,
+                guard=guard, deadline=deadline, protected=protected,
+            )
+            if broken:      # タスク境界の検査で破れが出た（017: 1周が締切に収まらず周頭では遅い）
+                return _broken_outcome(broken, tasks, rounds, process_path, log)
+            if timed_out:
+                return _outcome("escalate", _TIME_UP, tasks, None, [], False, rounds, process_path)
             checks = _run_criteria_checks(spec, tools)                  # C（決定論の床）
             if checks:
                 log(("checks", checks))
@@ -208,11 +270,23 @@ class Manager:
         self, model: str, tasks: list, tools: Sequence[Tool], roles: dict,
         pool: list, spec_path: str, purpose: str, system: str | None,
         log: Callable, limits: dict,
-    ) -> dict | None:
-        """pending タスクを順に実行する。最初に失敗したタスクを返す（全部成功なら None）。"""
+        guard: Callable[[], list] | None = None,
+        deadline: Callable[[], bool] | None = None,
+        protected: Sequence[str] | None = None,
+    ) -> tuple[dict | None, list, bool]:
+        """pending タスクを順に実行する。返り値は (最初に失敗したタスク | None, 破れ, 時間切れ)。
+
+        guard / deadline は**タスク境界でも**見る（合意018 ③⑥）。017 再走では1周が締切に
+        収まらず、周の頭だけの検査は一度も走らなかった——破壊はタスクの中で起きる。
+        """
         for i, t in enumerate(tasks):
             if t.get("done"):
                 continue
+            if deadline and deadline():
+                return None, [], True
+            broken = guard() if guard else []
+            if broken:
+                return None, broken, False
             doc = roles.get(t["role"], "")
             task_system = "\n\n".join(s for s in (role_prompt(doc), system) if s)
             task_model = t.get("model") if t.get("model") in pool else model
@@ -220,6 +294,7 @@ class Manager:
             task_tools = role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
             result = self._l3.run(
                 task_model, task_goal(t, spec_path, prior, purpose), task_tools,
+                approve=plan_lint(t, doc, protected, log),   # 計画のコード検査（合意018 ④⑤）
                 log=log, system=task_system or None,
                 max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
                 l2_l1_max=limits["l2_l1_max"],
@@ -229,8 +304,8 @@ class Manager:
                 clear_failure(t)   # 通ったら前回の失敗は捨てる（持つのは直近1回だけ）
             log(("task_done", t) if t["done"] else ("task_failed", t))
             if not t["done"]:
-                return t
-        return None
+                return t, [], False
+        return None, [], False
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
     #

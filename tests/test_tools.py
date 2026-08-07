@@ -154,9 +154,12 @@ def test_no_violations_when_protected_files_are_untouched(protected):
 
 
 def _bypass(path, write):
-    """防ぐ層を意図的に回避する（attrib -R 相当）。二層構造の外側を外してから触る。"""
+    """防ぐ層を意図的に回避する（所有者は icacls /reset と attrib -R で外せる——実測）。
+    二層構造の外側を外してから触る。この回避が可能だからこそ検出層が要る。"""
     import os
     import stat
+    import subprocess
+    subprocess.run(["icacls", str(path), "/reset"], capture_output=True)
     os.chmod(path, stat.S_IWRITE)
     write()
 
@@ -752,3 +755,157 @@ def test_fetch_url_long_page_is_saved_whole_and_reachable():
     assert saved.exists() and saved.stat().st_size > 10_000
     assert tools.read_file(str(saved), offset=0).ok is True
     saved.unlink()
+
+# --- 018-①: .ps1 は UTF-8 BOM 付きで書く -------------------------------------
+#
+# 017 再走の最大の時間泥棒: write_file は BOM なし UTF-8 で書き、モデルは
+# `powershell -File`（Windows PowerShell 5.1）で実行する。5.1 は BOM なしを CP932 と
+# 読むため、日本語入りスクリプトが ParserError の書き直しループに落ちた
+# （ログの `蝠・刀蜷・` 化けが証拠）。BOM を付ければ 5.1 と pwsh が同じに読む。
+
+_BOM = b"\xef\xbb\xbf"
+
+
+def test_ps1_is_written_with_bom(tmp_path):
+    p = tmp_path / "s.ps1"
+    tools.write_file(str(p), 'Write-Output "日本語"')
+    assert p.read_bytes().startswith(_BOM)
+
+
+def test_non_ps1_is_written_without_bom(tmp_path):
+    p = tmp_path / "s.txt"
+    tools.write_file(str(p), "日本語")
+    assert not p.read_bytes().startswith(_BOM)
+
+
+def test_ps1_append_does_not_insert_a_second_bom(tmp_path):
+    p = tmp_path / "s.ps1"
+    tools.write_file(str(p), "$a = 1\n")
+    tools.write_file(str(p), "$b = 2\n", mode="append")
+    data = p.read_bytes()
+    assert data.startswith(_BOM)
+    assert data.count(_BOM) == 1
+
+
+def test_ps1_append_to_a_fresh_file_still_gets_a_bom(tmp_path):
+    p = tmp_path / "s.ps1"
+    tools.write_file(str(p), "$a = 1\n", mode="append")
+    assert p.read_bytes().startswith(_BOM)
+
+
+def test_edit_file_keeps_the_bom_on_ps1(tmp_path):
+    p = tmp_path / "s.ps1"
+    tools.write_file(str(p), '$name = "商品"\n')
+    tools.edit_file(str(p), "商品", "商品名")
+    data = p.read_bytes()
+    assert data.startswith(_BOM)
+    assert data.count(_BOM) == 1
+
+
+def test_read_file_does_not_show_the_bom_to_the_model(tmp_path):
+    p = tmp_path / "s.ps1"
+    tools.write_file(str(p), "$a = 1\n")
+    assert tools.read_file(str(p)).content.startswith("$a")
+
+
+def test_japanese_ps1_survives_windows_powershell(tmp_path, monkeypatch):
+    # 決定打の回帰テスト: 017 実走で落ち続けた形そのもの。日本語文字列入り .ps1 を
+    # 5.1 で実行しても ParserError にならないこと。
+    import shutil
+    if shutil.which("powershell") is None:
+        pytest.skip("Windows PowerShell が無い環境")
+    monkeypatch.chdir(tmp_path)
+    tools.write_file("jp.ps1", '$msg = "商品名レポート"\nWrite-Output "MARKER-OK $msg"\n')
+    r = tools.execute_command("powershell -NoProfile -File jp.ps1")
+    assert r.ok is True
+    assert "MARKER-OK" in r.content
+
+
+# --- 018-②: 範囲外 offset・空ファイルは無言にしない ---------------------------
+#
+# 017 実走: 37行の SPEC.md に offset=45 で読んだ QA へ無言の空文字列が返り、
+# 同じ呼び出しの繰り返しと L2 の混乱を生んだ。「読めたが空」か「範囲外」かを散文で言う。
+
+
+def test_read_offset_beyond_end_states_the_fact_in_prose(big_file):
+    r = tools.read_file(str(big_file), offset=10_000)
+    assert r.ok is True
+    assert "500" in r.content          # 全体の行数が見える
+    assert "offset" in r.content
+
+
+def test_read_empty_file_states_the_fact_in_prose(tmp_path):
+    p = tmp_path / "empty.txt"
+    p.write_text("", encoding="utf-8")
+    r = tools.read_file(str(p))
+    assert r.ok is True
+    assert r.content != ""             # 無言にしない
+
+
+def test_list_dir_offset_beyond_end_states_the_fact(many_files):
+    r = tools.list_dir(str(many_files), offset=10_000)
+    assert r.ok is True
+    assert "offset" in r.content
+
+
+# --- 018-③: 防ぐ層の ACL 格上げと、コマンド単位の検出 -------------------------
+#
+# 実測（017 再走）: read-only 属性は Set-Content/Out-File/Remove-Item の -Force に
+# 貫通される。ACL（/inheritance:r /grant <user>:(R)）は全て止める。
+# 所有者は icacls /reset で外せるため検出層は残る（二層構造は不変・合意016）。
+
+
+def test_forced_shell_write_is_blocked(protected):
+    # 017 再走の実破壊経路そのもの。
+    r = tools.execute_command(f'Set-Content -Path "{protected}" -Value broken -Force')
+    assert r.ok is False
+    assert protected.read_text(encoding="utf-8") == "original"
+
+
+def test_forced_out_file_is_blocked(protected):
+    r = tools.execute_command(f'"broken" | Out-File -FilePath "{protected}" -Force')
+    assert r.ok is False
+    assert protected.read_text(encoding="utf-8") == "original"
+
+
+def test_forced_delete_is_blocked(protected):
+    r = tools.execute_command(f'Remove-Item "{protected}" -Force')
+    assert r.ok is False
+    assert protected.exists()
+
+
+def test_execute_command_reports_a_violation_with_the_norm(protected):
+    # 規範の文面が「破った本人に・破った経路で」届くこと。生の Access denied だけでは
+    # モデルは障害として回避しにいく（017 実走: Get-Acl 調査 → -Force 迂回）。
+    _bypass(protected, lambda: protected.write_text("mock", encoding="utf-8"))
+    r = tools.execute_command("Write-Output unrelated")
+    assert r.ok is False
+    assert "保護" in r.content
+
+
+def test_a_violation_is_reported_only_once(protected):
+    # 報告は一度だけ。停止の決定は呼び出し側（L4 の guard）が担う——tools 層は報告まで。
+    _bypass(protected, lambda: protected.write_text("mock", encoding="utf-8"))
+    first = tools.execute_command("Write-Output a")
+    second = tools.execute_command("Write-Output b")
+    assert first.ok is False
+    assert second.ok is True
+
+
+def test_protected_paths_lists_registrations(protected):
+    paths = tools.protected_paths()
+    assert len(paths) == 1
+    assert paths[0].endswith("input.csv")
+
+
+def test_thaw_releases_a_leftover_freeze(tmp_path):
+    # 強制終了された走行は clear_protection が走らず、ACL＋属性の残骸を残す。
+    # 次の走行が入力を配置する前に thaw で解けること。
+    p = tmp_path / "leftover.csv"
+    p.write_text("old", encoding="utf-8")
+    tools.protect([str(p)])
+    tools._PROTECTED.clear()       # 登録だけ失われた（プロセス死）を再現。凍結は残る
+    tools._ORIGINAL_MODE.clear()
+    tools.thaw(p)
+    p.write_text("new", encoding="utf-8")   # 例外が出ないこと
+    assert p.read_text(encoding="utf-8") == "new"

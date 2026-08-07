@@ -38,6 +38,9 @@ L3_MAX = 8
 L2_MAX = 6
 L2_L1_MAX = 12   # 検索→取得→書き出しは周が要る（コーディングより 1 タスクの工程が多い）
 
+# 壁時計の予算（秒）。外部 kill は finally を飛ばし観測ゼロを生む——内部締切で終わらせる（合意018 ⑥）。
+TIME_BUDGET = int(os.environ.get("MU_TIME_BUDGET", "1500"))
+
 # --- link: L2 単走。web ツールを繋げられるかだけを見る最小の課題 ---
 _LINK_GOAL = (
     "Ollama の structured outputs（構造化出力）について、公式ドキュメントを web で調べ、"
@@ -99,11 +102,13 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
     # 独立性を作っているのはモデル差ではなく**文脈非共有**の方である（合意015）。
     judge_tool = (tools_mod.make_judge(l0, qa_model), tools_mod.JUDGE_USAGE)
+    t0 = time.monotonic()
     return director.run(
         model, _RUNTIME_PURPOSE, _verbose_tools([*TOOLS, judge_tool]),
         roles=roles, models=[model, qa_model],
         log=_log, system=_env_preamble(),
-        guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016）
+        guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016→018）
+        deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
         max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
         l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
     )
@@ -135,6 +140,8 @@ def main() -> None:
         print(f"[L0Error] {e}", flush=True)
         raise
     finally:
+        # 破れの記録は**解除の前に**取る（解除後は登録が消えて検出できない。probe_hard と同じ順序）。
+        violations = tools_mod.protection_violations()
         tools_mod.clear_protection()   # OS レベルの保護を必ず外す（合意016 ①）
     elapsed = time.time() - started
 
@@ -145,7 +152,6 @@ def main() -> None:
                 print(f"  {'[x]' if t.get('done') else '[ ]'} ({t['role']}) {t.get('file')}")
             continue
         print(f"  {key}: {str(value)[:400]}")
-    violations = tools_mod.protection_violations()
     print(f"  protection violations: {violations if violations else 'none'}", flush=True)
 
 

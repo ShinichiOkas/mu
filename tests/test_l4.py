@@ -169,7 +169,8 @@ def test_guard_that_reports_nothing_does_not_interfere(tmp_path, monkeypatch):
 
 
 def test_guard_is_checked_every_round_not_only_at_the_end(tmp_path, monkeypatch):
-    # 015 で判明: 走り切らないと検出報告が出ない。周ごとに見る。
+    # 015 で判明: 走り切らないと検出報告が出ない。周ごと・タスクごとに見る（018 で粒度を強化。
+    # 2回目の検査＝1周目のタスク1の前で止まる——1周待たない）。
     seen = {"n": 0}
 
     def guard():
@@ -182,7 +183,7 @@ def test_guard_is_checked_every_round_not_only_at_the_end(tmp_path, monkeypatch)
         {"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
     ])
     out = run(mgr, tmp_path, monkeypatch, guard=guard)
-    assert out["outcome"] == "escalate"      # 2周目の頭で止まる
+    assert out["outcome"] == "escalate"
     assert seen["n"] == 2
 
 
@@ -264,3 +265,108 @@ def test_pjm_prompt_and_contract_come_from_outside_the_code(tmp_path, monkeypatc
     system = mgr._l0.calls[0]["messages"][0]["content"]
     assert "PJM-ROLE-DOC" in system                # やり方は役割定義から
     assert "tasks" in system                       # 形はスキーマから
+
+def test_guard_is_checked_between_tasks_not_only_at_round_heads(tmp_path, monkeypatch):
+    # 018: 017 再走では1周が締切に収まらず、周の頭の検査は一度も走らなかった。
+    # 破壊はタスクの中で起きる——タスク境界で見て、次のタスクを偽の前提の上で走らせない。
+    seen = {"n": 0}
+
+    def guard():
+        seen["n"] += 1
+        return [] if seen["n"] <= 2 else [{"path": "inventory.csv", "status": "modified"}]
+
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, guard=guard)
+    assert out["outcome"] == "escalate"
+    assert "inventory.csv" in out["reason"]
+    assert len(mgr._l3.calls) == 1      # タスク1の後・タスク2の前で止まる
+
+
+# --- 018-⑥: 締切（deadline）の注入 --------------------------------------------
+#
+# 層の予算は「周回数」建てで、外部 kill は「分」建て——整合せず、kill は finally を
+# 飛ばして観測ゼロを生んだ（017 再走×2）。guard と同型で呼び出し側が締切を注入し、
+# 周・タスク境界で見て、時間切れは**部分結果つき escalate** として正常に返す。
+
+
+def test_deadline_stops_before_any_work(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, deadline=lambda: True)
+    assert out["outcome"] == "escalate"
+    assert "時間" in out["reason"]
+    assert mgr._l3.calls == []
+
+
+def test_deadline_between_tasks_returns_partial_results(tmp_path, monkeypatch):
+    seen = {"n": 0}
+
+    def deadline():
+        seen["n"] += 1
+        return seen["n"] > 2      # 周の頭(1)→タスク1前(2)は許し、タスク2前(3)で切れる
+
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, deadline=deadline)
+    assert out["outcome"] == "escalate"
+    assert "時間" in out["reason"]
+    assert len(mgr._l3.calls) == 1
+    assert out["tasks"][0].get("done") is True     # 部分結果が返る
+
+
+def test_deadline_that_never_fires_does_not_interfere(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, deadline=lambda: False)
+    assert out["outcome"] == "done"
+
+
+# --- 018-④⑤: L3 の Plan をコードが検査する（保護入力・write_scope） -----------
+#
+# 017 実走: Planner は保護入力を file にする単位や、役割の write_scope の外の成果物
+# （read_verification_log.txt）を発明した。規範（プロンプト）は確率的にしか効かない——
+# 単位の file は計画の時点でコードが拒否する（L3 の approve スロット）。
+
+
+def test_plan_lint_rejects_protected_files_and_out_of_scope_files(tmp_path, monkeypatch):
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"}
+    doc = {"prompt": "QA", "tools": None, "write_scope": "own"}
+    approve = plan_lint(task, doc, ["inventory.csv"], lambda e: None)
+    units = approve([
+        {"task": "mock を作る", "file": "inventory.csv", "criterion": ""},
+        {"task": "検証ログ", "file": "read_verification_log.txt", "criterion": ""},
+        {"task": "判定書", "file": "verdict.md", "criterion": ""},
+    ])
+    assert [u["file"] for u in units] == ["verdict.md"]
+
+
+def test_plan_lint_allows_other_files_for_unrestricted_roles(tmp_path, monkeypatch):
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "implementer", "task": "実装する", "file": "main.py", "criterion": ""}
+    doc = {"prompt": "IMPL", "tools": None, "write_scope": "any"}
+    approve = plan_lint(task, doc, ["inventory.csv"], lambda e: None)
+    units = approve([
+        {"task": "実装", "file": "main.py", "criterion": ""},
+        {"task": "補助", "file": "helper.py", "criterion": ""},
+        {"task": "入力を作り直す", "file": "inventory.csv", "criterion": ""},
+    ])
+    assert [u["file"] for u in units] == ["main.py", "helper.py"]   # 保護だけ拒否
+
+
+def test_plan_lint_that_empties_a_plan_falls_back_to_the_task_itself(tmp_path, monkeypatch):
+    # 全滅させると L3 が「empty plan」で失敗しタスクごと死ぬ。タスク自身を1単位として置く。
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"}
+    doc = {"prompt": "QA", "tools": None, "write_scope": "own"}
+    approve = plan_lint(task, doc, [], lambda e: None)
+    units = approve([{"task": "別の場所へ", "file": "elsewhere.md", "criterion": ""}])
+    assert [u["file"] for u in units] == ["verdict.md"]
+    assert units[0]["done"] is False
+
+
+def test_execute_passes_the_plan_lint_to_l3(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, protected=["inventory.csv"])
+    assert out["outcome"] == "done"
+    assert callable(mgr._l3.calls[0]["kwargs"].get("approve"))

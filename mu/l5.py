@@ -256,6 +256,8 @@ class Director:
         l2_max: int = 6,
         l2_l1_max: int = 10,
         guard: Any = None,
+        deadline: Any = None,
+        protected: Sequence[str] | None = None,
     ) -> dict:
         roles = roles or {}
         inputs = _input_grounding(                                    # 入力の実物（合意007 C2）
@@ -270,13 +272,24 @@ class Director:
         rounds, l4_rounds, tasks, assessment = 0, 0, [], _NO_VERDICT
         for _ in range(max_rounds):
             rounds += 1
+            # 締切（呼び出し側注入・合意018 ⑥）。外部 kill は finally を飛ばし観測ゼロを
+            # 生む——時間切れは部分結果つきの escalate として**正常に返す**。
+            if deadline and deadline():
+                assessment = {
+                    "achieved": "uncertain",
+                    "reason": "時間予算を使い切った（deadline）。部分結果で停止。人間の判断が要る",
+                    "gap": "",
+                }
+                return _done(False, True, assessment, spec, spec_path, tasks,
+                             process_path, rounds, l4_rounds)
             _write_spec(spec_path, purpose, spec, _spec_note(roles))
             log(("spec", spec, spec_path))
 
             outcome = self._l4.run(                                   # D: 進行の層に任せる
                 model, spec, tools, roles=roles, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
-                guard=guard,   # 守られるべき入力の破れ検査（呼び出し側が注入・素通し）
+                guard=guard, deadline=deadline, protected=protected,
+                # ↑ 破れ検査・締切・保護一覧は呼び出し側が注入し、この層は素通しする
                 max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
             )
             tasks = outcome["tasks"]
