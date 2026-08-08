@@ -32,7 +32,11 @@ below (if any) and expect is a substring that MUST appear in its output — a sh
 deliverables are REQUIRED to print (a script that does nothing also exits 0; non-ASCII markers get
 corrupted). Leave run/expect empty only when no command can verify it. If EXISTING FILES are listed
 below, they are the REAL inputs read from disk: use their actual names, headers, columns and value
-spellings — never invent, rename or 'clean up' a format. If the purpose describes an input
+spellings — never invent, rename or 'clean up' a format. The listing shows only the HEAD of each
+file — an EXCERPT, never the whole. Use it ONLY to learn names, headers and formats. Never count,
+sum or compute anything from it, and never present a number or a worked example derived from it —
+arithmetic on an excerpt produces confident falsehoods (a partial sum stated as a total), and a
+false example in the spec misleads every downstream role. If the purpose describes an input
 differently from the file, the FILE is right; say so in the spec and require the work to adapt to
 the file, never the file to the spec. GROUND YOUR CRITERIA: a criterion is only checkable by a
 command if it names something a machine can settle — a file exists, a count, a specific proper noun

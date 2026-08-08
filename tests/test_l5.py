@@ -914,3 +914,12 @@ def test_repo_pdm_requires_criteria_to_be_deliverable_properties():
     from pathlib import Path as _P
     text = _P("roles/pdm.md").read_text(encoding="utf-8")
     assert "OF THE DELIVERABLE" in text
+
+
+def test_repo_pdm_forbids_arithmetic_on_the_excerpt():
+    # 019p5 実走: PdM が入力の先頭抜粋の部分和から「P003 純-30」を計算し、SPEC の例示として
+    # 焼き込んだ（答え仮定の漏れ先が expect→基準テキスト→仕様本文と移動した3例目）。
+    # 根は「抜粋しか見ていないのに算術をする」こと自体——数えるな・足すな。
+    from pathlib import Path as _P
+    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    assert "arithmetic on an excerpt" in text
