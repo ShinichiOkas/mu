@@ -391,3 +391,50 @@ def test_the_contract_is_not_injected_into_other_roles(tmp_path, monkeypatch):
     run(mgr, tmp_path, monkeypatch)
     impl_system = mgr._l3.calls[0]["kwargs"].get("system") or ""
     assert "ITEM <番号>" not in impl_system
+
+# --- 019 Phase5: 判定書 unit の検査は正準（コード供給）——LLM に発明させない --------
+#
+# 019p4 実走: L3 が判定書の unit に自作の検査を発明し、その検査自体が壊れて
+# （実在しない Write-Content・ParserError・ありえない expect）**正しい判定書を3回**
+# 落とした。判定書の中身は read_verdict（コード）が読む——unit の検査は
+# 「規定の形式で存在するか」の最小でよい。
+
+
+def test_plan_lint_replaces_qa_unit_checks_with_the_canonical_check(tmp_path, monkeypatch):
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"}
+    doc = {"prompt": "QA", "tools": None, "write_scope": "own"}
+    approve = plan_lint(task, doc, [], lambda e: None)
+    units = approve([{
+        "task": "判定書を書く", "file": "verdict.md",
+        "check": {"run": "Write-Content nonsense", "expect": "'ITEM 1:' and no code blocks"},
+    }])
+    assert units[0]["check"]["expect"] == "ITEM 1:"
+    assert "verdict.md" in units[0]["check"]["run"]
+    assert "Write-Content" not in units[0]["check"]["run"]
+
+
+def test_plan_lint_fallback_unit_also_gets_the_canonical_check(tmp_path, monkeypatch):
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"}
+    doc = {"prompt": "QA", "tools": None, "write_scope": "own"}
+    approve = plan_lint(task, doc, [], lambda e: None)
+    units = approve([{"task": "別の場所へ", "file": "elsewhere.md", "criterion": ""}])
+    assert units[0]["file"] == "verdict.md"
+    assert units[0]["check"]["expect"] == "ITEM 1:"
+
+
+def test_plan_lint_leaves_non_qa_checks_alone(tmp_path, monkeypatch):
+    # 検査の発明を禁じるのは判定書だけ。実装タスクの check は計画者の裁量のまま。
+    from mu.l4 import plan_lint
+    monkeypatch.chdir(tmp_path)
+    task = {"role": "implementer", "task": "実装する", "file": "main.py", "criterion": ""}
+    doc = {"prompt": "IMPL", "tools": None, "write_scope": "any"}
+    approve = plan_lint(task, doc, [], lambda e: None)
+    units = approve([{
+        "task": "実装", "file": "main.py",
+        "check": {"run": "python main.py", "expect": "OK"},
+    }])
+    assert units[0]["check"] == {"run": "python main.py", "expect": "OK"}

@@ -35,7 +35,7 @@ from .l1 import Tool
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
-    task_contract, task_goal, write_process, process_note,
+    task_contract, task_goal, verdict_check, write_process, process_note,
 )
 from .role_kb import role_perms, role_prompt, role_tools, task_roles
 
@@ -119,6 +119,7 @@ def plan_lint(task: dict, doc: Any, protected: Sequence[str] | None, log: Callab
     guarded = {str(Path(p).resolve()) for p in (protected or [])}
     _, scope = role_perms(doc)
     own = str(Path(task["file"]).resolve())
+    has_contract = bool(task_contract(task))   # 契約持ち（QA）の成果物は検査もコードが決める
 
     def approve(units: list) -> list:
         kept = []
@@ -131,6 +132,10 @@ def plan_lint(task: dict, doc: Any, protected: Sequence[str] | None, log: Callab
             if scope == "own" and resolved and resolved != own:
                 log(("unit_rejected", task["role"], f, f"write_scope 外（書けるのは {task['file']} のみ）"))
                 continue
+            # 判定書 unit の検査は正準（コード供給）に差し替える。LLM が発明した検査は
+            # それ自体が壊れて正しい判定書を落とす（019p4 で3回実発火）。
+            if has_contract and resolved == own:
+                u = dict(u, check=verdict_check(task["file"]))
             kept.append(u)
         if not kept:
             log(("plan_fallback", task["role"], task["file"]))
@@ -138,6 +143,8 @@ def plan_lint(task: dict, doc: Any, protected: Sequence[str] | None, log: Callab
                 "task": task["task"], "file": task["file"],
                 "criterion": task.get("criterion", ""), "done": False,
             }]
+            if has_contract:
+                kept[0]["check"] = verdict_check(task["file"])
         return kept
 
     return approve

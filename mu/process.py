@@ -67,6 +67,17 @@ _ITEM_LINE = re.compile(
 _PROCESS_NOTE = "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）"
 
 
+def verdict_check(file: str) -> dict:
+    """判定書 unit に付ける正準検査（コード供給）。
+
+    019p4 実走: L3 が判定書の unit に自作の検査を発明し、その検査自体が壊れて
+    （実在しないコマンドレット・ParserError・ありえない expect）正しい判定書を3回落とした。
+    判定書の中身はコード（read_verdict）が読む——unit の検査は「規定の形式で存在するか」を
+    見る最小のものでよく、LLM に発明させない（合意008 の貫徹）。
+    """
+    return {"run": f'Get-Content "{file}"', "expect": "ITEM 1:"}
+
+
 def task_contract(task: dict) -> str:
     """タスクに紐づくポジションの契約（コード供給）。いまは QA の判定書契約だけ。
 
