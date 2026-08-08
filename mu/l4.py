@@ -35,7 +35,7 @@ from .l1 import Tool
 from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
 from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
-    task_goal, write_process, process_note,
+    task_contract, task_goal, write_process, process_note,
 )
 from .role_kb import role_perms, role_prompt, role_tools, task_roles
 
@@ -288,7 +288,11 @@ class Manager:
             if broken:
                 return None, broken, False
             doc = roles.get(t["role"], "")
-            task_system = "\n\n".join(s for s in (role_prompt(doc), system) if s)
+            # 契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
+            # 欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
+            task_system = "\n\n".join(
+                s for s in (role_prompt(doc), task_contract(t), system) if s
+            )
             task_model = t.get("model") if t.get("model") in pool else model
             prior = [p["file"] for p in tasks[:i] if p.get("done")]
             task_tools = role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）

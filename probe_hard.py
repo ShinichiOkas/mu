@@ -284,6 +284,9 @@ def main() -> None:
     l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
     l4 = Manager(_VerboseL0(l0, _L4), l3)
     director = Director(_VerboseL0(l0, _L5), l4)
+    # judge（LLM 検査器）。probe_research には配っていたが hard 系に無く、QA が接地できない
+    # 基準を判定する道具を持っていなかった（019 実走の混乱の遠因）。研究側と同じ注入。
+    judge_tool = (tools_mod.make_judge(l0, pool[-1]), tools_mod.JUDGE_USAGE)
 
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
     print(f"roles: {sorted(roles) or '(none — 知識なしの対照走)'} from {roles_dir}")
@@ -292,7 +295,7 @@ def main() -> None:
     t0 = time.monotonic()
     try:
         result = director.run(
-            model, spec["purpose"], _verbose_tools(TOOLS),
+            model, spec["purpose"], _verbose_tools([*TOOLS, judge_tool]),
             roles=roles, models=pool,
             log=_log, system=_env_preamble(),
             guard=tools_mod.protection_violations,   # 破れたら周・タスク境界で止める（合意016→018）

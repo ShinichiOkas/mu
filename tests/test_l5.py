@@ -906,3 +906,11 @@ def test_repo_qa_declares_honest_fail_as_success():
     from pathlib import Path as _P
     text = _P("roles/qa.md").read_text(encoding="utf-8")
     assert "正直な FAIL" in text
+
+
+def test_repo_pdm_requires_criteria_to_be_deliverable_properties():
+    # 019 実走: 「全商品が計算に含まれていること」（計算の性質）は成果物を読んでも判定できず、
+    # QA が商品コード単位の ITEM に流れて read_verdict と噛み合わなかった。
+    from pathlib import Path as _P
+    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    assert "OF THE DELIVERABLE" in text

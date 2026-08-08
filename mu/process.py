@@ -67,6 +67,17 @@ _ITEM_LINE = re.compile(
 _PROCESS_NOTE = "（PjM の生成物。役割・人選・順序は仮定を含む。直接編集して直してよい）"
 
 
+def task_contract(task: dict) -> str:
+    """タスクに紐づくポジションの契約（コード供給）。いまは QA の判定書契約だけ。
+
+    019 実走で判明: 契約を task_goal にだけ載せると、L3 が unit を計画し直すたびに
+    **転記から欠落**して L2 に届かない（規範が確率的な転記に乗る）。呼び出し側（L4）は
+    これを task の system に載せる——system は L3→L2 へコードが素通しで運ぶため、
+    再計画で薄まらない。goal 側の記載も残す（計画者にも見せる。二重化であって重複ではない）。
+    """
+    return _VERDICT_CONTRACT if task.get("role") == "qa" else ""
+
+
 def default_qa_task(roles: dict) -> dict:
     """コードのミニマム定義に、役割定義書の宣言を重ねた QA タスクを作る（合意008）。"""
     doc = roles.get("qa") if isinstance(roles.get("qa"), dict) else {}

@@ -370,3 +370,24 @@ def test_execute_passes_the_plan_lint_to_l3(tmp_path, monkeypatch):
     out = run(mgr, tmp_path, monkeypatch, protected=["inventory.csv"])
     assert out["outcome"] == "done"
     assert callable(mgr._l3.calls[0]["kwargs"].get("approve"))
+
+# --- 019 Phase4: 契約は確率的な転記に乗せない——system でコードが運ぶ ------------
+#
+# 019 実走: 判定書契約（＋「FAIL を含む判定書も完成」）は task_goal にだけあり、
+# L3 が unit を計画し直すたびに転記から欠落して L2 に届かなかった。
+# system は L3→L2 へコードが素通しで運ぶ——契約はそこに載せる（goal にも残す）。
+
+
+def test_qa_contract_rides_the_system_channel(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch)
+    qa_system = mgr._l3.calls[1]["kwargs"].get("system") or ""
+    assert "ITEM <番号>" in qa_system                    # 判定書の書式
+    assert "不合格は不合格と書いて完成" in qa_system      # 正直な FAIL の承認（019）
+
+
+def test_the_contract_is_not_injected_into_other_roles(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch)
+    impl_system = mgr._l3.calls[0]["kwargs"].get("system") or ""
+    assert "ITEM <番号>" not in impl_system

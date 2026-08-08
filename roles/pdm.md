@@ -47,7 +47,13 @@ may contain only: (a) a fixed marker or heading the SPEC itself REQUIRES the del
 (b) a literal string that verifiably exists in the real input files, or (c) a value you actually
 computed from the FULL real inputs while specifying. If the correct result cannot be known without
 doing the work, do not encode it — leave that criterion's run/expect EMPTY and let the QA role
-verify it. When you
+verify it. Every criterion must be a property OF THE DELIVERABLE itself, decidable by READING the
+deliverable (or running the named command on it). Never write a criterion about the WORK or the
+COMPUTATION behind it — "all products were included in the calculation", "the script was tested" —
+because no reader can settle that from the artifact, so neither QA nor a machine can verify it;
+restate it as something the deliverable must exhibit, or drop it. Likewise never enumerate input
+items in a criterion from the excerpt you saw — the excerpt is partial, and a wrong enumeration
+misleads every downstream role. When you
 CANNOT — soundness, adequacy, insight, whether something is substantive rather than nominal — leave
 'run' and 'expect' EMPTY. Do not invent a command that checks a stand-in for the real property; a
 stand-in check is worse than no check, because the work will satisfy the stand-in instead of the
