@@ -6,7 +6,15 @@ r"""probe_hard.py — 難課題セット（H1〜H6）で L5（目的）＋L4（�
 
 使い方:
     .\.venv\Scripts\python.exe probe_hard.py <case> <model> <workdir> [qa_model]
-case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf
+case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf | schedule | action
+
+schedule / action（021 拡張・師匠の指示でバリエーションを拡大）:
+  schedule — Outlook 風モック（probe_fixtures/outlook.py）越しの複数人予定調整。
+             成果物は「ファイル」でなく**サービスの状態変化**（正しい予約）。
+             データ設計上、全員が空く60分枠は 2026-08-20 15:00-16:00 の1つだけ
+             （tests/test_probe_fixtures.py が総当たりで検算済み）
+  action   — 成果物を作らない「実行して終わり」のタスク。maintenance.ps1 の完全実行
+             （-Mode full の発見が必要）。ファイル・グラウンディング前提への負荷試験
 """
 
 import json
@@ -196,6 +204,14 @@ if __name__ == "__main__":
     unittest.main()
 '''
 
+# --- 021 拡張: 計測器（モック）はファイルから読む。中身と検算は tests/test_probe_fixtures.py ---
+_FIXTURES = Path(__file__).parent / "probe_fixtures"
+
+
+def _fixture(name: str) -> str:
+    return (_FIXTURES / name).read_text(encoding="utf-8")
+
+
 CASES = {
     "deadstock": {
         "purpose": (
@@ -253,6 +269,29 @@ CASES = {
         ),
         "files": {},
         "protect": [],
+    },
+    "schedule": {
+        "purpose": (
+            "佐藤・鈴木・高橋の3人が全員参加できる60分の会議『企画会議』を、"
+            "2026-08-17〜2026-08-21 の営業時間（9:00-17:00）内で見つけて予約してくれ。"
+            "この環境の予定表サービスは outlook.py（Outlook 風の CLI）で、予定の照会と予約は"
+            "必ず `python outlook.py` を通すこと（引数なしで実行すると使い方が表示される）。"
+            "全員の既存の予定と重ならない枠であることが必須。"
+        ),
+        "files": {
+            "outlook.py": _fixture("outlook.py"),
+            "calendar_data.json": _fixture("calendar_data.json"),
+        },
+        "protect": ["outlook.py", "calendar_data.json"],
+    },
+    "action": {
+        "purpose": (
+            "この環境の完全メンテナンスを maintenance.ps1 で実行してくれ。"
+            "何かを新しく作る必要はない——メンテナンスが**完全に**実行し終わっている"
+            "ことが重要だ。スクリプトの使い方はスクリプト自身を読めば分かる。"
+        ),
+        "files": {"maintenance.ps1": _fixture("maintenance.ps1")},
+        "protect": ["maintenance.ps1"],
     },
 }
 

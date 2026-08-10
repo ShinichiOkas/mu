@@ -1,0 +1,3 @@
+ITEM 1: PASS — deadstock_report.txt ファイルが存在する（list_dir を実行した結果 "file deadstock_report.txt(49 bytes)" に記載されていることより）
+ITEM 2: UNCERTAIN — P008 の扱いが SPEC.md で明示されていないため、正味販売数の定義で同商品コードの比較条件（大文字小文字区分：case sensitivity）について判定不能 → root cause 引用:"SPEC.md は"死に筋商品 = inventory.csv に記載あり、かつ net_sales <= 0"と記すが、sales.csv の "p008"(小文字) と inventory.csv の"P008"(大文字) が一致する条件（case-sensitive か）が明示されていない
+ITEM 3: PASS — deadstock_report.txt に P007, ホッチキス， 0 とP010、蛍光ペン， 0 のように各死に筋商品について正味販売数が明記されており net_sales=0 が判定の根拠になっている（read_file で確認）
