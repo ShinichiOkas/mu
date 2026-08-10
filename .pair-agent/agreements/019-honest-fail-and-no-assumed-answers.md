@@ -1,8 +1,9 @@
 # 合意ドキュメント 019 — 正直な FAIL は成功／マーカーに答えを仮定しない
 
 - **sprint**: 019-honest-fail-and-no-assumed-answers
-- **status**: executed（2026-08-08 完了条件達成＋理想条件も達成——019p6 で achieved: true・
-  1周4分15秒・捏造ゼロ。6走の推移は runs/2026-08-08-019p6/README.md。振り返り待ち）
+- **status**: completed（2026-08-10 振り返り済み。完了条件＋理想条件を達成——019p6 で
+  achieved: true・1周4分15秒・捏造ゼロ。6走の推移は runs/2026-08-08-019p6/README.md、
+  実装記録は .pair-agent/sprints/019-honest-fail-and-no-assumed-answers.md）
 - **version**: 1
 - **前提**: 017-018 完了。機構（項目別二値の集約）は完成し、偽・完遂を実走で止めた。
   残るは周辺の**規範**2件（runs/2026-08-08-018/README.md の観測 1・2）。
