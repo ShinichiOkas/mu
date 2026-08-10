@@ -52,8 +52,14 @@ def load_roles(path: str = "roles") -> dict:
 
 
 def parse_role_doc(text: str) -> dict:
-    """role 定義書を {prompt, tools, write_scope} に分解する（frontmatter は本文に混ぜない）。"""
-    tools, scope, body = None, "any", text
+    """role 定義書を {prompt, tools, write_scope, ...} に分解する（frontmatter は本文に混ぜない）。
+
+    tools / write_scope 以外のキーも文字列のまま持ち回る——コード側のミニマム定義を
+    上書きする値（例: qa の task/file/criterion）の経路であり、捨てると
+    「frontmatter で上書きできる」の契約（合意008）が不通になる（023 A1 で実発火）。
+    """
+    doc: dict = {"tools": None, "write_scope": "any"}
+    body = text
     if text.startswith("---"):
         end = text.find("\n---", 3)
         if end != -1:
@@ -61,11 +67,14 @@ def parse_role_doc(text: str) -> dict:
                 key, _, value = line.partition(":")
                 key, value = key.strip().lower(), value.strip()
                 if key == "tools":
-                    tools = [t.strip() for t in value.split(",") if t.strip()]
+                    doc["tools"] = [t.strip() for t in value.split(",") if t.strip()]
                 elif key == "write_scope" and value:
-                    scope = value.lower()
+                    doc["write_scope"] = value.lower()
+                elif key and value:
+                    doc[key] = value
             body = text[end + 4:].lstrip("\n")
-    return {"prompt": body, "tools": tools, "write_scope": scope}
+    doc["prompt"] = body   # 本文は最後に入れる（frontmatter の同名キーに潰させない）
+    return doc
 
 
 def task_roles(roles: dict) -> dict:

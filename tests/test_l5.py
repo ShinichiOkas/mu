@@ -745,6 +745,26 @@ def test_default_qa_task_is_overridable_by_the_role_doc(tmp_path, monkeypatch):
     assert result["achieved"] is True                        # 判定書の場所も追随する
 
 
+def test_frontmatter_override_keys_survive_the_loader(tmp_path):
+    # 023 A1: 上の test_default_qa_task_... は roles dict を手組みで注入しており、
+    # 実際の経路（roles/*.md → load_roles）では上書きキーがローダーに捨てられて
+    # いた（宣言テスト化）。実経路で「frontmatter に書けば効く」を固定する。
+    from mu.role_kb import load_roles
+    from mu.process import default_qa_task
+    d = tmp_path / "roles"
+    d.mkdir()
+    (d / "qa.md").write_text(
+        "---\ntools: read_file\nwrite_scope: own\n"
+        "file: judgement.md\ncriterion: LOADER-CRITERION\n---\nQA-DOC\n",
+        encoding="utf-8",
+    )
+    roles = load_roles(str(d))
+    qa = default_qa_task(roles)
+    assert qa["file"] == "judgement.md"
+    assert qa["criterion"] == "LOADER-CRITERION"
+    assert "QA-DOC" in roles["qa"]["prompt"]     # 本文はそのまま
+
+
 def test_qa_task_presence_is_not_overridable(tmp_path, monkeypatch):
     # 床: 定義書が何を言っても「QA タスクが存在すること」は消せない。
     roles = dict(ROLES, qa={"prompt": "", "tools": None, "write_scope": "own",
