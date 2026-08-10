@@ -923,3 +923,66 @@ def test_repo_pdm_forbids_arithmetic_on_the_excerpt():
     from pathlib import Path as _P
     text = _P("roles/pdm.md").read_text(encoding="utf-8")
     assert "arithmetic on an excerpt" in text
+
+
+# --- 021 修正3件（schedule 実走の偽・不合格への対処） ---------------------------
+
+
+def test_repo_pdm_forbids_inventing_unseen_invocations():
+    # PdM が存在しないサブコマンド `list` を発明（2走とも再現）。見た形だけを使う。
+    from pathlib import Path as _P
+    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    assert "actually seen" in text
+
+
+def test_repo_pjm_treats_broken_check_commands_as_spec_defects():
+    # PjM は「検査コマンド自体が壊れている」と診断しながら rerun を3回選んだ。
+    from pathlib import Path as _P
+    text = _P("roles/pjm.md").read_text(encoding="utf-8")
+    assert "CHECK COMMAND itself" in text
+
+
+def test_input_grounding_shows_the_full_docstring_of_scripts(tmp_path):
+    # 先頭300字では usage が途中で切れ、PdM が続きを推測する（021 schedule）。
+    # スクリプトの自己記述（docstring）は全文見せて、推測の必要を消す。
+    from mu.l5 import _input_grounding
+    filler = "この行は説明の詰め物である。\n" * 20            # 300字を確実に超える
+    (tmp_path / "tool.py").write_text(
+        f'"""tool.py — ツールのモック。\n\n{filler}    python tool.py SUBCOMMAND-MARKER\n"""\nprint(1)\n',
+        encoding="utf-8",
+    )
+    text = _input_grounding(str(tmp_path), set())
+    assert "SUBCOMMAND-MARKER" in text
+
+
+def test_input_grounding_shows_ps1_leading_comments(tmp_path):
+    from mu.l5 import _input_grounding
+    (tmp_path / "run.ps1").write_text(
+        "param([string]$Mode = \"quick\")\n# run.ps1 - mock runner\n"
+        "# PS1-USAGE-MARKER: use -Mode full for the full run\n$x = 1\n",
+        encoding="utf-8",
+    )
+    text = _input_grounding(str(tmp_path), set())
+    assert "PS1-USAGE-MARKER" in text
+
+
+def test_input_grounding_keeps_plain_files_to_a_short_head(tmp_path):
+    from mu.l5 import _input_grounding
+    (tmp_path / "data.csv").write_text(
+        "".join(f"row{i}\n" for i in range(50)), encoding="utf-8"
+    )
+    text = _input_grounding(str(tmp_path), set())
+    assert "row4" in text
+    assert "row9" not in text        # データファイルは従来どおり先頭5行だけ
+
+
+def test_escalation_reason_reaches_the_result(tmp_path, monkeypatch):
+    # 「achieved: false なのに assessment は yes」の走行で、なぜ落ちたかが結果から
+    # 読めなかった（021 schedule）。escalate の理由を結果契約に載せる。
+    decide = {"action": "escalate", "invalidate": [], "reason": "ESCALATE-REASON-MARKER 人手が要る"}
+    agent = make([SPEC, PROCESS3, decide], [
+        {"done": True}, {"done": False},     # 実装タスクが失敗 → PjM が escalate
+    ])
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["escalated"] is True
+    assert "ESCALATE-REASON-MARKER" in result.get("escalation_reason", "")

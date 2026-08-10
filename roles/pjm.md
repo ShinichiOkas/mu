@@ -66,3 +66,11 @@ some work must be redone: list in 'invalidate' the FILES of ONLY the tasks that 
 the task list will be rebuilt. 'respec' — the specification or its definitions are wrong; it will be
 revised using your 'reason'. 'escalate' — human judgment is needed or no further progress is
 possible.
+
+Diagnose WHAT failed before choosing. If a failed deterministic check's output shows that the
+CHECK COMMAND itself is broken — 'unknown command', a usage/help text where data was expected,
+'command not found', a parse error of the command line — then the deliverable has NOT been refuted:
+the SPEC's check is defective. Choose 'respec' and name the broken command in 'reason'. Do NOT
+choose 'rerun' for this case — redoing the work cannot fix a broken check, and invalidating only
+the QA verdict NEVER changes a deterministic check result; such a rerun burns a round and returns
+to the same failure.

@@ -83,23 +83,58 @@ def _noop(_event: Any) -> None:
 
 
 def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds,
-          l4_rounds: int = 0) -> dict:
+          l4_rounds: int = 0, escalation_reason: str = "") -> dict:
     """呼び出し側への返り値。`rounds` は**この層の**周回（respec サイクル）、
-    `l4_rounds` は最後に回した L4（PjM サイクル）の周回——予算は各層が自分で持つ（合意009）。"""
+    `l4_rounds` は最後に回した L4（PjM サイクル）の周回——予算は各層が自分で持つ（合意009）。
+
+    `escalation_reason`（合意021 修正③）: escalate で返すとき、**なぜ落ちたか**を機械契約に
+    載せる。021 schedule で「achieved: false なのに assessment は yes」となり、下の層の
+    escalate 理由（検査コマンドの故障）が最終結果から読めなかった。
+    """
     return {
         "achieved": achieved, "escalated": escalated, "assessment": assessment,
         "spec": spec, "spec_path": spec_path, "tasks": tasks,
         "process_path": process_path, "rounds": rounds, "l4_rounds": l4_rounds,
+        "escalation_reason": escalation_reason,
     }
 
 
+# 自己記述を全文見せるスクリプト。抜粋（先頭5行）では usage が途中で切れ、PdM が続きの
+# サブコマンドを推測で発明する（021 schedule: `list` を2走連続で発明 → 検査が壊れ偽・不合格）。
+_SCRIPT_SUFFIXES = {".py", ".ps1", ".psm1"}
+
+
+def _self_description(text: str, suffix: str) -> str:
+    """スクリプトの自己記述（.py: 冒頭 docstring / .ps1: 冒頭コメント塊）。無ければ空。"""
+    if suffix == ".py":
+        stripped = text.lstrip()
+        for quote in ('"""', "'''"):
+            if stripped.startswith(quote):
+                end = stripped.find(quote, len(quote))
+                if end != -1:
+                    return stripped[len(quote):end].strip()
+        return ""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            out.append(s.lstrip("#").strip())
+        elif s and not s.lower().startswith("param"):
+            break
+    return "\n".join(out).strip()
+
+
 def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300) -> str:
-    """作業ディレクトリの**実在する入力**を一覧＋先頭抜粋にして返す（合意007 C2）。
+    """作業ディレクトリの**実在する入力**を一覧＋抜粋にして返す（合意007 C2）。
 
     PdM は目的の文章だけからは入力の形式を知りえず、実測すると形式を発明する
     （sales×12b: ヘッダーを2度発明 → 不一致 → respec → 入力破壊）。仕様を作る前に
     実物を前置する。005 の assess 証拠グラウンディング・006 の env preamble と同型で、
     「事実は呼び出し側（コード）が渡し、LLM に想像させない」形。
+
+    スクリプト（実行可能な道具）は先頭5行でなく**自己記述（docstring/コメント塊）を全文**
+    見せる（合意021 修正②）。見えない usage の続きは推測で発明される——規範で禁じると同時に、
+    推測の必要そのものを消す。
     """
     p = Path(workdir or ".")
     if not p.is_dir():
@@ -110,11 +145,21 @@ def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int 
         if f.is_dir():
             lines.append(f"- {f.name}/ (directory)")
             continue
+        is_script = f.suffix.lower() in _SCRIPT_SUFFIXES
         try:
             size = f.stat().st_size
-            text = f.read_text(encoding="utf-8", errors="strict")[:head]
+            with f.open(encoding="utf-8", errors="strict") as fh:
+                text = fh.read(4000 if is_script else head)
         except (OSError, UnicodeDecodeError):
             lines.append(f"- {f.name} (binary or unreadable)")
+            continue
+        doc = _self_description(text, f.suffix.lower()) if is_script else ""
+        if doc:
+            lines.append(
+                f"- {f.name} ({size} bytes) — 自己記述（スクリプト冒頭の説明。"
+                "コマンド・引数はここに書かれた形だけを使うこと）:"
+            )
+            lines.extend(f"    {line}" for line in doc.splitlines()[:40])
             continue
         lines.append(f"- {f.name} ({size} bytes) — 先頭:")
         lines.extend(f"    {line}" for line in text.splitlines()[:5])
@@ -281,7 +326,8 @@ class Director:
                     "gap": "",
                 }
                 return _done(False, True, assessment, spec, spec_path, tasks,
-                             process_path, rounds, l4_rounds)
+                             process_path, rounds, l4_rounds,
+                             escalation_reason="時間予算を使い切った（deadline）")
             _write_spec(spec_path, purpose, spec, _spec_note(roles))
             log(("spec", spec, spec_path))
 
@@ -319,14 +365,17 @@ class Director:
                 return _done(True, False, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
             feedback = str(decision.get("feedback") or "")
             if not feedback:
-                return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+                # 受理されず指示も無い＝人間へ。下の層の申告理由を結果契約で持ち上げる（修正③）。
+                return _done(False, True, assessment, spec, spec_path, tasks, process_path,
+                             rounds, l4_rounds, escalation_reason=str(outcome.get("reason") or ""))
             spec = self._respecify(model, purpose, spec, feedback, roles, log, system, inputs)
             if _infeasible(spec):
                 return self._stop_infeasible(
                     purpose, spec, spec_path, process_path, tasks, rounds, roles, log
                 )
 
-        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds,
+                     l4_rounds, escalation_reason="respec 予算切れ（この層の周回を使い切った）")
 
     def _stop_infeasible(
         self, purpose: str, spec: dict, spec_path: str, process_path: str,
@@ -346,7 +395,8 @@ class Director:
             "reason": "PdM が目的を充足不能と申告した（制約が同時に満たせない）。人間の判断が要る",
             "gap": "; ".join(conflicts),
         }
-        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds)
+        return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds,
+                     escalation_reason="PdM が目的を充足不能と申告した")
 
     # --- 生命線の LLM 呼び出し（やり方は roles/pdm.md、形はスキーマ） ---
     def _specify(

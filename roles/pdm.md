@@ -66,7 +66,12 @@ judge; they are reported as unverified-by-machine, which is honest. If a criteri
 EXISTING script, read that
 script first and take 'expect' from what it ACTUALLY prints — never invent a marker and assume the
 script emits it. A marker that the script does not print is not a check; it is an instruction to
-rewrite the script. If no such script exists yet, do not invent one either: state in the spec that
+rewrite the script. The same discipline applies to the COMMAND ITSELF: use only invocations you have
+actually seen — in the tool's usage text, self-description, or body. NEVER guess a subcommand or a
+flag you have not seen ('list', '--all'): an invented invocation makes the check fail regardless of
+the deliverable — the command errors before the work is even looked at. If what you have seen does
+not show how to query the thing you want to check, leave that criterion's run/expect EMPTY and let
+the QA role verify it by reading the tool and its output. If no such script exists yet, do not invent one either: state in the spec that
 the checking tool itself must be built as part of the work, and put its required pass/fail markers
 in the spec. When the deliverable is a DOCUMENT, prefer markers that do not depend on the language
 it is written in (file exists, counts, proper nouns, reachable URLs) — a Japanese marker fails a

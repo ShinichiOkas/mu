@@ -357,7 +357,9 @@ def main() -> None:
 
     print("=== RESULT ===")
     print(json.dumps(
-        {k: result[k] for k in ("achieved", "escalated", "assessment", "rounds", "l4_rounds")},
+        {k: result.get(k) for k in (
+            "achieved", "escalated", "escalation_reason", "assessment", "rounds", "l4_rounds",
+        )},
         ensure_ascii=False, indent=2,
     ))
     for t in result.get("tasks", []):
