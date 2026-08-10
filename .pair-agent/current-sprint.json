@@ -1,10 +1,8 @@
 {
-  "sprint_id": "020-research-regression",
-  "status": "completed",
-  "goal": "リサーチ回帰——012 の病理4種すべて再発なし・achieved: True（131秒）",
+  "sprint_id": "021-reproducibility-and-generality",
+  "status": "executing",
+  "goal": "難課題7走の一巡で修理後基盤の到達点を面で把握（再現率・課題型の横断・偽の達成の有無）",
   "created_at": "2026-08-10T00:00:00+09:00",
   "agreed_at": "2026-08-10T00:00:00+09:00",
-  "completed_at": "2026-08-10T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/020-research-regression.md",
-  "note": "振り返り済み（2026-08-10）。次スプリント未協議——候補: 再現率測定／量化子保存＋リサーチ深さの仕様化（LONGTERM_TODO）"
+  "agreement_path": ".pair-agent/agreements/021-reproducibility-and-generality.md"
 }
