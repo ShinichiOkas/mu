@@ -1,10 +1,8 @@
 {
-  "sprint_id": "019-honest-fail-and-no-assumed-answers",
-  "status": "completed",
-  "goal": "正直な FAIL の承認と答え仮定の根絶。6 Phase で achieved: true（6走目・1周4分・捏造ゼロ）",
-  "created_at": "2026-08-08T02:00:00+09:00",
-  "agreed_at": "2026-08-08T02:00:00+09:00",
-  "completed_at": "2026-08-10T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/019-honest-fail-and-no-assumed-answers.md",
-  "note": "振り返り済み（2026-08-10）。次スプリント未協議——候補は LONGTERM_TODO（再現率測定／他課題への横展開／QA 理路の観測）"
+  "sprint_id": "020-research-regression",
+  "status": "executing",
+  "goal": "リサーチ回帰——013→019 の修理群が非コーディング領域でも効くことを測る（012 の病理4種の再発有無）",
+  "created_at": "2026-08-10T00:00:00+09:00",
+  "agreed_at": "2026-08-10T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/020-research-regression.md"
 }
