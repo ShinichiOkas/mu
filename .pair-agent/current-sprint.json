@@ -1,8 +1,10 @@
 {
   "sprint_id": "021-reproducibility-and-generality",
-  "status": "executing",
-  "goal": "難課題7走の一巡で修理後基盤の到達点を面で把握（再現率・課題型の横断・偽の達成の有無）",
+  "status": "completed",
+  "goal": "難課題9種×11走で修理後基盤の到達点を面で把握。偽・達成ゼロ維持・schedule の新病理を修理",
   "created_at": "2026-08-10T00:00:00+09:00",
   "agreed_at": "2026-08-10T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/021-reproducibility-and-generality.md"
+  "completed_at": "2026-08-10T23:59:00+09:00",
+  "agreement_path": ".pair-agent/agreements/021-reproducibility-and-generality.md",
+  "note": "振り返り済み。次スプリント未協議——筆頭候補は LONGTERM_TODO [重大] L0 の無音ハング（read タイムアウト無制限×協調的締切）"
 }
