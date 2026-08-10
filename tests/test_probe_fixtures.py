@@ -114,3 +114,17 @@ def test_maintenance_full_runs_all_steps(maintenance, tmp_path):
     assert state["mode"] == "full"
     assert len(state["steps"]) == 4
     assert "integrity-check" in state["steps"]
+
+
+def test_outlook_unknown_command_fails_loudly(outlook):
+    # 021 schedule 実走: PdM が存在しない `list` を発明し、モックがヘルプ＋exit 0 を返した
+    # ため検査が静かに壊れ、ヘルプ文面との偶然の一致で偽 PASS も起きた。未知は大声で失敗する。
+    r = outlook("list")
+    assert r.returncode == 1
+    assert "ERROR unknown command" in r.stdout
+
+
+def test_outlook_no_args_still_shows_usage_without_error(outlook):
+    r = outlook()
+    assert r.returncode == 0
+    assert "book" in r.stdout

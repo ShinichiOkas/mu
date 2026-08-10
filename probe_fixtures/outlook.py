@@ -92,8 +92,14 @@ def main() -> int:
         print(f"BOOKED {booking_id} {date} {start}-{end}")
         return 0
 
+    if cmd == "help":
+        print(__doc__)
+        return 0
+    # 未知のコマンドは大声で失敗する。ヘルプを exit 0 で返すと「壊れた検査コマンド」が
+    # 静かに成功扱いになり、ヘルプ文面との偶然の一致で偽 PASS まで起きる（021 schedule 実走）。
+    print(f"ERROR unknown command: {cmd}")
     print(__doc__)
-    return 0
+    return 1
 
 
 if __name__ == "__main__":

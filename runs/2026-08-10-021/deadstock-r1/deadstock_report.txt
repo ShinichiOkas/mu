@@ -1,2 +1,3 @@
-P007, ホッチキス, 0
-P010, 蛍光ペン, 0
+Item Code,Item Name,Net Sales
+P007,ホッチキス,0
+P010,蛍光ペン,0

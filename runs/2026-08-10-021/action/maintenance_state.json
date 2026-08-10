@@ -1,0 +1,10 @@
+{
+  "mode": "full",
+  "last_run": "2026-08-10T21:05:46",
+  "steps": [
+    "temp-clean",
+    "log-rotate",
+    "index-rebuild",
+    "integrity-check"
+  ]
+}
