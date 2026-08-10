@@ -91,16 +91,26 @@ class OllamaInterface:
         *,
         client: Any | None = None,
         connect_timeout: float | None = 5.0,
+        read_timeout: float | None = 600.0,
         max_retries: int = 3,
         base_delay: float = 0.5,
         max_delay: float = 8.0,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         if client is None:
-            # connect のみタイムアウトを課す（ハングした接続確立を理想化の内に入れる）。
-            # read/write は無制限のまま — ローカル LLM の生成は長く、切ると生成自体を壊す。
+            # connect に加えて read も**有限**にする（合意022）。かつては「ローカル LLM の
+            # 長い生成を切らない」ため read 無制限にしていたが、cloud モデル経由の
+            # ネットワークストールと区別できず、1呼び出しが走行全体を無音でハングさせた
+            # （021 で110分・deadline はタスク境界でしか見ないため救えない）。
+            # 協調的締切は全ブロッキング呼び出しの有限性が前提。
+            # ollama は stream=False では生成完了までバイトが流れないため、read タイムアウトは
+            # 実質「1生成の上限」。既定600s は実測の最長1呼び出し（161.9s）の約3.7倍。
+            # 特殊な長生成には呼び出し側が None（明示の逃げ道）や大きい値を注入できる。
+            # ReadTimeout は TransportError の子であり、既存の接続系リトライ梯子が受ける
+            # （切ることが目的ではなく、ストールからの回復が目的）。
             client = ollama.Client(
-                host=host, timeout=httpx.Timeout(None, connect=connect_timeout)
+                host=host,
+                timeout=httpx.Timeout(None, connect=connect_timeout, read=read_timeout),
             )
         self._client = client
         self.max_retries = max_retries

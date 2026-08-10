@@ -1,10 +1,8 @@
 {
-  "sprint_id": "021-reproducibility-and-generality",
-  "status": "completed",
-  "goal": "難課題9種×11走で修理後基盤の到達点を面で把握。偽・達成ゼロ維持・schedule の新病理を修理",
-  "created_at": "2026-08-10T00:00:00+09:00",
-  "agreed_at": "2026-08-10T00:00:00+09:00",
-  "completed_at": "2026-08-10T23:59:00+09:00",
-  "agreement_path": ".pair-agent/agreements/021-reproducibility-and-generality.md",
-  "note": "振り返り済み。次スプリント未協議——筆頭候補は LONGTERM_TODO [重大] L0 の無音ハング（read タイムアウト無制限×協調的締切）"
+  "sprint_id": "022-l0-bounded-read-timeout",
+  "status": "executing",
+  "goal": "L0 の無音ハング修理——read タイムアウトの有限化（既定600s・注入可能）とストール模擬での実証",
+  "created_at": "2026-08-11T00:00:00+09:00",
+  "agreed_at": "2026-08-11T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/022-l0-bounded-read-timeout.md"
 }

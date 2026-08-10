@@ -250,13 +250,11 @@ def test_list_connection_exhausted_becomes_unreachable():
     assert c.list_calls == 2
 
 
-# --- 既定クライアントの接続タイムアウト（ハングした接続確立を理想化の内に入れる） ---
-
-def test_default_client_has_connect_timeout_but_unbounded_read():
-    l0 = OllamaInterface()
-    timeout = l0._client._client.timeout  # ollama.Client が包む httpx.Client の設定
-    assert timeout.connect == 5.0
-    assert timeout.read is None  # ローカル LLM の長い生成を切らない
+# --- 既定クライアントのタイムアウト（ハングした接続確立・ストールした応答を理想化の内に） ---
+#
+# かつてここには「read 無制限」を固定するテストがあった（ローカルの長い生成を切らない意図）。
+# 021 の実測（cloud ストールで110分の無音ハング・deadline は協調的で救えない）により
+# 合意022 で設計転換——read も有限が既定になった。新しい固定は下の 022 節にある。
 
 
 # --- ストリーミングは v1 未対応: 明示エラーで fail-fast（拡張点は将来の _idealize_stream） ---
@@ -272,3 +270,76 @@ def test_generate_streaming_is_rejected_before_touching_network():
     c = FakeClient()  # 効果ゼロ = クライアントが呼ばれたら破綻する
     with pytest.raises(NotImplementedError):
         make(c).generate("m", "hi", stream=True)
+
+
+# --- 022: read タイムアウトの有限化（無音ハングの根絶） -------------------------
+#
+# 021 schedule-v2 実測: cloud モデルへの1呼び出しがストールし、走行全体が110分以上の
+# 無音ハング。deadline は協調的（タスク境界でしか見ない）で、チャット呼び出しの内側では
+# 発火できない——[[cooperative-deadlines-need-bounded-primitives]]。
+# read を有限（既定600s・注入可能）にし、ReadTimeout は既存の接続系リトライ梯子が受ける。
+
+
+def test_default_client_has_finite_read_timeout():
+    l0 = OllamaInterface()
+    timeout = l0._client._client.timeout
+    assert timeout.connect == 5.0
+    assert timeout.read == 600.0     # 実測の最長1呼び出し 161.9s に対し約3.7倍の余裕
+
+
+def test_read_timeout_is_injectable():
+    l0 = OllamaInterface(read_timeout=123.0)
+    assert l0._client._client.timeout.read == 123.0
+
+
+def test_read_timeout_none_is_an_explicit_escape_hatch():
+    # 特殊なローカル長生成のための明示的な逃げ道。既定は有限に倒す。
+    l0 = OllamaInterface(read_timeout=None)
+    assert l0._client._client.timeout.read is None
+
+
+def test_read_timeout_stall_exhausts_into_unreachable():
+    # 恒常的なストール: リトライが尽きたら Unreachable（無限に待たない）。
+    c = FakeClient(chat=[httpx.ReadTimeout("stall")] * 10)
+    with pytest.raises(Unreachable):
+        make(c).chat("m", [])
+    assert c.chat_calls == 4         # 初回 + max_retries(3)
+
+
+def test_a_real_stalled_server_fails_in_finite_time():
+    # ストールの模擬（正常系テストではこの穴は永遠に見えない）: 接続を受けて
+    # 一切応答しない実 TCP サーバに対し、有限時間で Unreachable に畳まれること。
+    import socket
+    import threading
+    import time as _time
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+    held = []
+
+    def hold():
+        try:
+            conn, _ = server.accept()
+            held.append(conn)          # 受けたまま何も返さない＝ストール
+            conn2, _ = server.accept() # リトライ分も受ける
+            held.append(conn2)
+        except OSError:
+            pass
+
+    t = threading.Thread(target=hold, daemon=True)
+    t.start()
+    try:
+        l0 = OllamaInterface(
+            host=f"http://127.0.0.1:{port}", read_timeout=0.5,
+            max_retries=1, sleep=lambda s: None,
+        )
+        started = _time.monotonic()
+        with pytest.raises(Unreachable):
+            l0.chat("m", [{"role": "user", "content": "hi"}])
+        assert _time.monotonic() - started < 10   # 110分でなく数秒で畳まれる
+    finally:
+        for conn in held:
+            conn.close()
+        server.close()
