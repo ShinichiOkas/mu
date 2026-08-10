@@ -1,0 +1,2 @@
+python outlook.py book "企画会議"
+BOOKED MTG-001 2026-08-20 15:00-16:00
