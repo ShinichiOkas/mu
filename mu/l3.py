@@ -218,7 +218,7 @@ class Orchestrator:
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---
     def _plan(self, model: str, goal: str, system: str | None = None) -> list:
-        data = self._structured(model, _with_env(_PLAN_SYSTEM, system), f"GOAL:\n{goal}", _PLAN_SCHEMA)
+        data = structured(self._l0, model, with_env(_PLAN_SYSTEM, system), f"GOAL:\n{goal}", _PLAN_SCHEMA)
         return [dict(u, done=False) for u in data.get("units", [])]
 
     def _replan(
@@ -228,21 +228,23 @@ class Orchestrator:
             f"GOAL:\n{goal}\n\nCURRENT PLAN:\n{_plan_summary(units)}\n\n"
             f"FAILURE ANALYSIS:\n{json.dumps(analysis, ensure_ascii=False)}\n\nProduce a revised plan."
         )
-        data = self._structured(model, _with_env(_REPLAN_SYSTEM, system), user, _PLAN_SCHEMA)
+        data = structured(self._l0, model, with_env(_REPLAN_SYSTEM, system), user, _PLAN_SCHEMA)
         new_units = [dict(u, done=False) for u in data.get("units", [])]
         return _carry_done(units, new_units) or units  # 空応答なら現状維持
 
     def _analyze(self, model: str, unit: dict, msgs: list) -> dict:
         user = f"UNIT:\n{json.dumps(unit, ensure_ascii=False)}\n\nTRANSCRIPT:\n{transcript(msgs)}"
-        return self._structured(model, _ANALYZE_SYSTEM, user, _ANALYZE_SCHEMA)
-
-    def _structured(self, model: str, system: str, user: str, schema: dict) -> dict:
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        resp = self._l0.chat(model, messages, format=schema, think=False)
-        return _parse_json(resp.message.content)
+        return structured(self._l0, model, _ANALYZE_SYSTEM, user, _ANALYZE_SCHEMA)
 
 
-def _with_env(prompt: str, system: str | None) -> str:
+def structured(l0: Any, model: str, system: str, user: str, schema: dict) -> dict:
+    """構造化出力の1呼び出し（生命線。層間共用——L4 / L5 も同じ形でしか LLM に判断させない）。"""
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    resp = l0.chat(model, messages, format=schema, think=False)
+    return parse_json(resp.message.content)
+
+
+def with_env(prompt: str, system: str | None) -> str:
     """check コマンドは実環境で走るため、計画プロンプトにも環境（呼び出し側供給）を写す。
 
     grep / ls など環境に無いコマンドの check は、正しい成果物でも落ちる偽・不合格を生む
@@ -310,7 +312,7 @@ def _plan_summary(units: list) -> str:
     )
 
 
-def _parse_json(content: str) -> dict:
+def parse_json(content: str) -> dict:
     text = content or ""
     start, end = text.find("{"), text.rfind("}")
     for candidate in (text, text[start : end + 1] if 0 <= start < end else ""):

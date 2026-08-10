@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l3 import Orchestrator, _parse_json, _with_env, run_check  # 層間共用ヘルパ
+from .l3 import Orchestrator, run_check, structured, with_env  # 層間共用ヘルパ
 from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
     task_contract, task_goal, verdict_check, write_process, process_note,
@@ -163,14 +163,7 @@ def lifeline_system(
     doc = role_prompt(roles.get(role, ""), section).strip()
     if not doc:
         log(("role_doc_missing", role, section))
-    return _with_env("\n\n".join(s for s in (doc, _shape_line(schema)) if s), env)
-
-
-def structured(l0: Any, model: str, system: str, user: str, schema: dict) -> dict:
-    """構造化出力の1呼び出し（生命線）。層はこの形でしか LLM に判断させない。"""
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    resp = l0.chat(model, messages, format=schema, think=False)
-    return _parse_json(resp.message.content)
+    return with_env("\n\n".join(s for s in (doc, _shape_line(schema)) if s), env)
 
 
 class Manager:
@@ -335,8 +328,9 @@ class Manager:
             f"ROLES (your knowledge base):\n{roles_s}\n\n"
             f"AVAILABLE MODELS (default first):\n{', '.join(pool)}"
         )
-        data = structured(self._l0, 
-            model, lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log),
+        data = structured(
+            self._l0, model,
+            lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log),
             user, _PROCESS_SCHEMA,
         )
         return normalize_tasks(data.get("tasks", []), task_roles(roles), log)
@@ -360,8 +354,9 @@ class Manager:
             f"PROCESS:\n{summarize(tasks)}\n\n"
             f"ROUND RESULT:\n" + ("\n".join(result_parts) or "(no info)")
         )
-        data = structured(self._l0, 
-            model, lifeline_system(roles, "pjm", "decide", _DECIDE_SCHEMA, system, log),
+        data = structured(
+            self._l0, model,
+            lifeline_system(roles, "pjm", "decide", _DECIDE_SCHEMA, system, log),
             user, _DECIDE_SCHEMA,
         )
         if data.get("action") not in ("rerun", "replan", "respec", "escalate"):

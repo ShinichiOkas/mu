@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l4 import Manager, lifeline_system, structured
+from .l3 import structured
+from .l4 import Manager, lifeline_system
 from .role_kb import role_section
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
