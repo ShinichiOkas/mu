@@ -1,9 +1,10 @@
 {
   "sprint_id": "023-policy-review-cleanup",
-  "status": "executing",
+  "status": "completed",
   "goal": "レビュー指摘の全消化——ポリシー不一致の修理（A1 frontmatter 上書き経路・A2 probe_l4 の保護後始末）、構造重複の根絶（B1/C1 CLI 実況の共通化・B2 層間ヘルパ一本化・C2 probe_l4 統合削除）、残骸掃除（C3/D）",
   "created_at": "2026-08-11T00:00:00+09:00",
   "agreed_at": "2026-08-11T00:00:00+09:00",
+  "completed_at": "2026-08-11T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/023-policy-review-cleanup.md",
-  "note": "師匠指示「全部1スプリントにしてください」（2026-08-11）。テスト green 維持のままフェーズごとにコミット"
+  "note": "振り返り実施済み（vision/023・Skill 新規2＋精緻化1）。次スプリント未協議——候補は LONGTERM_TODO（リサーチの深さの仕様化／QA 理路の観測など）"
 }
