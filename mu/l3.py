@@ -112,8 +112,39 @@ def _identity_approve(units: list) -> list:
     return units
 
 
-def _noop(_event: Any) -> None:
-    pass
+def noop(_event: Any) -> None:
+    """log スロットの既定値（層間共用。観測は呼び出し側が差し込む）。"""
+
+
+def check_goal_lines(check: dict | None) -> str:
+    """check を実行契約として goal 文へ写す（L3 の単位と L4 のタスクで同一の文面）。
+
+    check は L2 への契約でもある: 成果物はこのコマンドで検証され、
+    expect が指定されていればその文字列を出力に含む必要がある。
+    """
+    check = check or {}
+    if not check.get("run"):
+        return ""
+    lines = f"\n検証コマンド（コード側で実行される）: {check['run']}"
+    if check.get("expect"):
+        lines += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
+    return lines
+
+
+def failure_goal_lines(last_failure: str) -> str:
+    """前回失敗の事実と「検査器でなく成果物を直せ」の規範（L3 / L4 で同一の文面）。
+
+    理由を添えずに再実行させると、実行者は成果物でなく**検査器の方**を直しにいく
+    （013 実走で観測・合意014 A）。載せるのはコードが実行した事実だけ（合意014 ①）。
+    """
+    if not last_failure:
+        return ""
+    return (
+        f"\n\n前回の失敗（コードが実行した事実。あなたの前回の試みはこれで落ちた）:\n"
+        f"{last_failure}\n"
+        "※ 直すのは**成果物の側**である。検査コマンドや検査スクリプトを書き換えて"
+        "通そうとしてはならない。"
+    )
 
 
 class Orchestrator:
@@ -130,7 +161,7 @@ class Orchestrator:
         tools: Sequence[Tool],
         *,
         approve: Callable[[list], list] = _identity_approve,
-        log: Callable[[Any], None] = _noop,
+        log: Callable[[Any], None] = noop,
         system: str | None = None,
         max_rounds: int = 8,
         l2_max: int = 6,
@@ -200,20 +231,8 @@ class Orchestrator:
             f"出力ファイル: {unit['file']}\n"
             f"成功条件（これを満たすこと）: {unit['criterion']}"
         )
-        check = unit.get("check") or {}
-        if check.get("run"):
-            # check は L2 への契約でもある: 成果物はこのコマンドで検証され、
-            # expect が指定されていればその文字列を出力に含む必要がある。
-            goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
-            if check.get("expect"):
-                goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
-        if unit.get("last_failure"):
-            # 理由を添えずに再実行させると、実行者は成果物でなく検査器を直しにいく（合意014 A）。
-            goal += (
-                f"\n\n前回の失敗（コードが実行した事実）:\n{unit['last_failure']}\n"
-                "※ 直すのは成果物の側である。検査コマンドや検査スクリプトを書き換えて"
-                "通そうとしてはならない。"
-            )
+        goal += check_goal_lines(unit.get("check"))
+        goal += failure_goal_lines(unit.get("last_failure") or "")
         return goal
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---

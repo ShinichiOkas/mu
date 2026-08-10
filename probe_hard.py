@@ -387,7 +387,7 @@ def main() -> None:
         # 破れの記録を取ってから解除する（解除後は登録が消えて検出できない）。
         # OS レベルの保護は必ず外す（合意016 ①）。外し漏れるとリポジトリのファイルが
         # 読み取り専用のまま残る。※プロセスを強制終了された場合はここも走らない——
-        # そのため走行の入力配置（_place_inputs）が read-only を解いてから書く。
+        # そのため main 冒頭の入力配置が thaw で read-only を解いてから書く。
         violations = tools_mod.protection_violations()
         tools_mod.clear_protection()
     elapsed = time.monotonic() - t0

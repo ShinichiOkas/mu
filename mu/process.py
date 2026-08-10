@@ -20,9 +20,11 @@ L4（進行の層）が扱うデータ型と、その入出力をここに置く
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Callable
 
+from .l3 import check_goal_lines, failure_goal_lines
 from .role_kb import role_section
 
 _DEFAULT_QA_TASK = {
@@ -146,20 +148,8 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
         f"出力ファイル: {task['file']}\n"
         f"成功条件（これを満たすこと）: {task['criterion']}"
     )
-    check = task.get("check") or {}
-    if check.get("run"):
-        goal += f"\n検証コマンド（コード側で実行される）: {check['run']}"
-        if check.get("expect"):
-            goal += f"\n検証コマンドの出力に必ず含めるべき文字列: {check['expect']}"
-    if task.get("last_failure"):
-        # 理由を添えずに再実行させると、実行者は成果物でなく**検査器の方**を直しにいく
-        # （013 実走で観測）。載せるのはコードが実行した事実だけ（合意014 ①）。
-        goal += (
-            f"\n\n前回の失敗（コードが実行した事実。あなたの前回の試みはこれで落ちた）:\n"
-            f"{task['last_failure']}\n"
-            "※ 直すのは**成果物の側**である。検査コマンドや検査スクリプトを書き換えて"
-            "通そうとしてはならない。"
-        )
+    goal += check_goal_lines(task.get("check"))          # 文面は L3 の単位と共通（023）
+    goal += failure_goal_lines(task.get("last_failure") or "")
     refs = [spec_path, *prior_files]
     goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
     if task["role"] == "qa":
@@ -233,7 +223,6 @@ def carry_done_tasks(old: list, new: list) -> list:
 
     QA タスクは決して carry しない — 再計画後は必ず検証し直す。
     """
-    from collections import Counter
     old_c = Counter(t["file"] for t in old)
     new_c = Counter(t["file"] for t in new)
     done_files = {

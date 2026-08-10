@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l3 import Orchestrator, run_check, structured, with_env  # 層間共用ヘルパ
+from .l3 import Orchestrator, noop, run_check, structured, with_env  # 層間共用ヘルパ
 from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
     task_contract, task_goal, verdict_check, write_process, process_note,
@@ -77,10 +77,6 @@ _DECIDE_SCHEMA = {
 }
 
 
-def _noop(_event: Any) -> None:
-    pass
-
-
 def _outcome(outcome, reason, tasks, verdict, checks, ok, rounds, process_path) -> dict:
     """上の層への申告。`outcome` は done / respec / escalate。"""
     return {
@@ -89,9 +85,10 @@ def _outcome(outcome, reason, tasks, verdict, checks, ok, rounds, process_path) 
     }
 
 
-# 時間切れの申告文（合意018 ⑥）。外部 kill は finally を飛ばし観測ゼロを生む——
-# 締切は部分結果つきの escalate として**正常に返す**（タイムアウトを観測できる失敗に変える）。
-_TIME_UP = "時間予算を使い切った（deadline）。ここまでの部分結果を返す。人間の判断が要る。"
+# 時間切れの申告文（合意018 ⑥。L5 も同じ文で申告する——層間共用）。外部 kill は finally を
+# 飛ばし観測ゼロを生む——締切は部分結果つきの escalate として**正常に返す**
+# （タイムアウトを観測できる失敗に変える）。
+TIME_UP = "時間予算を使い切った（deadline）。ここまでの部分結果を返す。人間の判断が要る。"
 
 
 def _broken_outcome(broken: list, tasks, rounds, process_path, log: Callable) -> dict:
@@ -184,7 +181,7 @@ class Manager:
         purpose: str = "",
         spec_path: str = "SPEC.md",
         process_path: str = "PROCESS.md",
-        log: Callable[[Any], None] = _noop,
+        log: Callable[[Any], None] = noop,
         system: str | None = None,
         guard: Callable[[], list] | None = None,
         deadline: Callable[[], bool] | None = None,
@@ -211,7 +208,7 @@ class Manager:
             # 締切（呼び出し側注入・合意018 ⑥）。層の予算は周回数建てで壁時計と整合しない——
             # 外部 kill は finally を飛ばし観測ゼロを生むため、時間切れは部分結果つきで返す。
             if deadline and deadline():
-                return _outcome("escalate", _TIME_UP, tasks, None, [], False, rounds, process_path)
+                return _outcome("escalate", TIME_UP, tasks, None, [], False, rounds, process_path)
             # 守られるべき入力（原本）が壊れていないかを**周の頭で**見る。壊れた後の作業は
             # すべて偽の前提の上に乗るため、進める意味がない（合意016 ②。015 で実発火）。
             # 保護機構そのものは持たない——呼び出し側が注入する（環境接地は caller の責務）。
@@ -229,7 +226,7 @@ class Manager:
             if broken:      # タスク境界の検査で破れが出た（017: 1周が締切に収まらず周頭では遅い）
                 return _broken_outcome(broken, tasks, rounds, process_path, log)
             if timed_out:
-                return _outcome("escalate", _TIME_UP, tasks, None, [], False, rounds, process_path)
+                return _outcome("escalate", TIME_UP, tasks, None, [], False, rounds, process_path)
             checks = _run_criteria_checks(spec, tools)                  # C（決定論の床）
             if checks:
                 log(("checks", checks))
@@ -387,15 +384,6 @@ def _shape_line(schema: dict) -> str:
         for name, spec in schema.get("properties", {}).items()
     )
     return "Reply as JSON: {" + body + "}  ('?' = optional)."
-
-
-# QA タスクのミニマム定義（検証を飛ばして完遂に到達させないための床）。
-# 文面・出力ファイル・成功条件は roles/qa.md の frontmatter で上書きできるが、
-# **「QA タスクが存在すること」自体は上書きできない**（合意008。データ側から検証を消せると
-# 偽・完遂の経路が再び開く）。
-# 判定書の書式＝**コードが正規表現で読む契約**（`read_verdict` と対になる）。
-# ポジション側の持ち物なのでコードが供給する。役割定義書に二重に書かせない（合意008）。
-# artifact の注記のミニマム（定義書の `## spec-artifact` / `## process-artifact` で上書き可能）。
 
 
 def _first_line(text: str) -> str:

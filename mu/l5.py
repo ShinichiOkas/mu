@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .l1 import Tool
-from .l3 import structured
-from .l4 import Manager, lifeline_system
+from .l3 import noop, structured
+from .l4 import Manager, TIME_UP, lifeline_system
 from .role_kb import role_section
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
@@ -77,10 +77,6 @@ def _with_check_facts(reason: str, checks: list) -> str:
         return reason
     facts = "\n".join(f"  検査: {c['run']}\n  実際: {c['detail']}" for c in failed)
     return f"{reason}\n\n落ちた受入検査（コードが実行した事実）:\n{facts}"
-
-
-def _noop(_event: Any) -> None:
-    pass
 
 
 def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds,
@@ -294,7 +290,7 @@ class Director:
         spec_path: str = "SPEC.md",
         process_path: str = "PROCESS.md",
         review: Callable[[dict], dict] = _auto_review,
-        log: Callable[[Any], None] = _noop,
+        log: Callable[[Any], None] = noop,
         system: str | None = None,
         max_rounds: int = 2,
         l4_max: int = 3,
@@ -321,14 +317,9 @@ class Director:
             # 締切（呼び出し側注入・合意018 ⑥）。外部 kill は finally を飛ばし観測ゼロを
             # 生む——時間切れは部分結果つきの escalate として**正常に返す**。
             if deadline and deadline():
-                assessment = {
-                    "achieved": "uncertain",
-                    "reason": "時間予算を使い切った（deadline）。部分結果で停止。人間の判断が要る",
-                    "gap": "",
-                }
+                assessment = {"achieved": "uncertain", "reason": TIME_UP, "gap": ""}
                 return _done(False, True, assessment, spec, spec_path, tasks,
-                             process_path, rounds, l4_rounds,
-                             escalation_reason="時間予算を使い切った（deadline）")
+                             process_path, rounds, l4_rounds, escalation_reason=TIME_UP)
             _write_spec(spec_path, purpose, spec, _spec_note(roles))
             log(("spec", spec, spec_path))
 

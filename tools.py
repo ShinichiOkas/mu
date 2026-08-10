@@ -445,6 +445,14 @@ def list_dir(path: str = ".", offset: int = 0, limit=None) -> ToolResult:
     )
 
 
+def _save_full_output(text: str, prefix: str) -> str:
+    """切り詰める出力の全文を一時ファイルへ落とし、パスを返す（続きは read_file で辿る）。"""
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
 def execute_command(command: str) -> ToolResult:
     """PowerShell でコマンドを実行し、終了コードと標準出力/エラーを返す。"""
     proc = subprocess.run(
@@ -466,9 +474,7 @@ def execute_command(command: str) -> ToolResult:
     if truncated:
         # 出力はディスクに残らないので、切り詰めるときだけ全文をファイルへ落として辿れるようにする。
         # 続きは既存の read_file(offset=) で読む——新しい機構を足さない（合意010）。
-        fd, output_path = tempfile.mkstemp(prefix="mu-exec-", suffix=".txt")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(out)
+        output_path = _save_full_output(out, "mu-exec-")
         out = (
             out[:_MAX_OUTPUT]
             + f"\n...(truncated, {chars} chars total. "
@@ -587,14 +593,6 @@ def _format_results(results) -> str:
         if r["snippet"]:
             lines.append(f"   {r['snippet']}")
     return "\n".join(lines)
-
-
-def _save_full_output(text: str, prefix: str) -> str:
-    """切り詰める出力の全文を一時ファイルへ落とし、パスを返す（続きは read_file で辿る）。"""
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".txt")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    return path
 
 
 def web_search(query: str, limit: int = 10) -> ToolResult:
