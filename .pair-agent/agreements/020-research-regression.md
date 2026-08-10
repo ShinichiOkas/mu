@@ -1,8 +1,8 @@
 # 合意ドキュメント 020 — リサーチ回帰（013→019 の修理群を非コーディング領域で測る）
 
 - **sprint**: 020-research-regression
-- **status**: executed（2026-08-10 完了条件達成——achieved: True・131s・012 の病理4種すべて
-  再発なし・実体検証済み。runs/2026-08-10-020/README.md 参照。振り返り待ち）
+- **status**: completed（2026-08-10 振り返り済み——achieved: True・131s・012 の病理4種すべて
+  再発なし・実体検証済み。runs/2026-08-10-020/README.md・sprints/020-research-regression.md 参照）
 - **version**: 1
 - **前提**: 019 完了（deadstock で achieved: true・偽の達成通算ゼロ）。ただし修理群の効果測定は
   コーディング系1課題のみ。mu は汎用エージェントの材料であり、非コーディング領域
