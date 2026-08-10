@@ -1,7 +1,8 @@
 # 合意ドキュメント 022 — L0 の無音ハング修理（read タイムアウトの有限化）
 
 - **sprint**: 022-l0-bounded-read-timeout
-- **status**: executing（2026-08-11 合意——021 振り返りの選択肢提示で師匠が方向を決定）
+- **status**: completed（2026-08-11 完了条件達成・師匠判断で振り返りスキップ。
+  ストール模擬で有限時間の Unreachable を実証・308 tests green・コミット 53ac07a）
 - **version**: 1
 - **前提**: 021 schedule-v2 で [重大] を実測——cloud モデルへの1呼び出しがストールし、
   走行全体が **110分以上の無音ハング**。deadline（018）はタスク境界でしか見ない
