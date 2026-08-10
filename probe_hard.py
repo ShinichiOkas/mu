@@ -25,6 +25,10 @@ import time
 from pathlib import Path
 
 import tools as tools_mod
+from chat_common import (
+    ROLES_DIR, VerboseL0, env_preamble, log, verbose_tools,
+    L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
+)
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
@@ -33,9 +37,6 @@ from mu.l4 import Manager
 from mu.l5 import Director
 from mu.role_kb import load_roles
 from tools import TOOLS
-from l5_chat import (
-    _VerboseL0, _verbose_tools, _log, _env_preamble, _L5, _L4, _L3, _L2, _L1, ROLES_DIR,
-)
 
 L5_MAX = 2      # respec サイクル
 L4_MAX = 3      # PjM 判断サイクル
@@ -354,11 +355,11 @@ def main() -> None:
         tools_mod.protect(spec["protect"])
 
     l0 = OllamaInterface()
-    l1 = ToolLoop(_VerboseL0(l0, _L1))
-    l2 = Agent(_VerboseL0(l0, _L2), l1)
-    l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
-    l4 = Manager(_VerboseL0(l0, _L4), l3)
-    director = Director(_VerboseL0(l0, _L5), l4)
+    l1 = ToolLoop(VerboseL0(l0, _L1))
+    l2 = Agent(VerboseL0(l0, _L2), l1)
+    l3 = Orchestrator(VerboseL0(l0, _L3), l2)
+    l4 = Manager(VerboseL0(l0, _L4), l3)
+    director = Director(VerboseL0(l0, _L5), l4)
     # judge（LLM 検査器）。probe_research には配っていたが hard 系に無く、QA が接地できない
     # 基準を判定する道具を持っていなかった（019 実走の混乱の遠因）。研究側と同じ注入。
     judge_tool = (tools_mod.make_judge(l0, pool[-1]), tools_mod.JUDGE_USAGE)
@@ -370,9 +371,9 @@ def main() -> None:
     t0 = time.monotonic()
     try:
         result = director.run(
-            model, spec["purpose"], _verbose_tools([*TOOLS, judge_tool]),
+            model, spec["purpose"], verbose_tools([*TOOLS, judge_tool]),
             roles=roles, models=pool,
-            log=_log, system=_env_preamble(),
+            log=log, system=env_preamble(),
             guard=tools_mod.protection_violations,   # 破れたら周・タスク境界で止める（合意016→018）
             deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
             protected=tools_mod.protected_paths(),   # 計画 lint 用の保護一覧（合意018 ④）

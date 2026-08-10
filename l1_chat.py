@@ -16,41 +16,23 @@ L1 = L0 の上でツールコールを回す層。ツールは tools.py の検�
 既定モデルは qwen3.5:9b（tool 対応）。gemma3 系は tools 非対応なので不可。
 """
 
-import os
-import platform
 import sys
 
+from chat_common import env_preamble, utf8_console
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from tools import TOOLS
 
-# Windows コンソール等でも日本語・記号で落ちないよう UTF-8 にそろえる。
-for _stream in (sys.stdout, sys.stdin):
-    try:
-        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+utf8_console()
 
 DEFAULT_MODEL = "qwen3.5:9b"  # 参照モデル（他は gemma4:12b）
 MAX_ROUNDS = 32  # ループ上限（呼び出し側が規定）。無限ツールコールの暴走を打ち切る
 
 
-def _env_preamble() -> str:
-    """呼び出し側が与える環境の地面（C: 環境吸収は呼び出し側＋ツールの責務）。"""
-    return (
-        "Environment:\n"
-        f"- OS: {platform.system()} {platform.release()}\n"
-        f"- Working directory: {os.getcwd()}\n"
-        "- execute_command runs in PowerShell — use PowerShell/Windows syntax "
-        "(e.g. Get-ChildItem, Get-Content), not Unix commands like ls/cat.\n"
-        "- Use list_dir to discover files instead of guessing paths."
-    )
-
-
 def main() -> None:
     model = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MODEL
     l1 = ToolLoop(OllamaInterface())
-    messages: list = [{"role": "system", "content": _env_preamble()}]
+    messages: list = [{"role": "system", "content": env_preamble()}]
 
     names = ", ".join(func.__name__ for func, _ in TOOLS)
     print(f"L1 chat / model={model}  tools: {names}  (/exit で終了)")

@@ -22,6 +22,10 @@ import json
 import sys
 from pathlib import Path
 
+from chat_common import (
+    ROLES_DIR, VerboseL0, env_preamble, log, short, utf8_console, verbose_tools,
+    L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
+)
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
@@ -29,10 +33,14 @@ from mu.l3 import Orchestrator
 from mu.l4 import Manager
 from mu.role_kb import load_roles
 from tools import TOOLS
-from l5_chat import (
-    _VerboseL0, _verbose_tools, _log, _env_preamble, _short,
-    _L4, _L3, _L2, _L1, ROLES_DIR, DEFAULT_MODEL, L4_MAX, L3_MAX, L2_MAX, L2_L1_MAX,
-)
+
+utf8_console()
+
+DEFAULT_MODEL = "gemma4:12b"
+L4_MAX = 3       # PjM 判断サイクル（rerun/replan の回数）。上限は呼び出し側が規定する
+L3_MAX = 8
+L2_MAX = 6
+L2_L1_MAX = 10
 
 
 def _load_spec(path: Path) -> dict:
@@ -60,16 +68,16 @@ def main() -> None:
     spec = _load_spec(spec_file)
 
     l0 = OllamaInterface()
-    l3 = Orchestrator(_VerboseL0(l0, _L3), Agent(_VerboseL0(l0, _L2), ToolLoop(_VerboseL0(l0, _L1))))
-    manager = Manager(_VerboseL0(l0, _L4), l3)
+    l3 = Orchestrator(VerboseL0(l0, _L3), Agent(VerboseL0(l0, _L2), ToolLoop(VerboseL0(l0, _L1))))
+    manager = Manager(VerboseL0(l0, _L4), l3)
 
     print(f"L4 chat / model={model}  pool={pool}  roles={sorted(roles)}  l4_max={L4_MAX}")
     print(f"spec: {spec_file}")
-    print(f"  {_short(spec['spec'], 200)}")
+    print(f"  {short(spec['spec'], 200)}")
     try:
         outcome = manager.run(
-            model, spec, _verbose_tools(TOOLS),
-            roles=roles, models=pool, log=_log, system=_env_preamble(),
+            model, spec, verbose_tools(TOOLS),
+            roles=roles, models=pool, log=log, system=env_preamble(),
             max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
     except L0Error as e:
@@ -79,16 +87,16 @@ def main() -> None:
     print("=== OUTCOME ===")
     print(f"outcome: {outcome['outcome']}  (ok={outcome['ok']}, rounds={outcome['rounds']})")
     if outcome["reason"]:
-        print(f"reason : {_short(outcome['reason'], 300)}")
+        print(f"reason : {short(outcome['reason'], 300)}")
     for t in outcome["tasks"]:
         model_s = f" @{t['model']}" if t.get("model") else ""
         print(f"  {'[x]' if t.get('done') else '[ ]'} ({t['role']}{model_s}) {t.get('file')}")
     verdict = outcome["verdict"]
     if verdict:
-        print(f"verdict: {verdict['achieved']} :: {_short(verdict.get('reason'), 200)}")
+        print(f"verdict: {verdict['achieved']} :: {short(verdict.get('reason'), 200)}")
     for c in outcome["checks"]:
         mark = "ok" if c.get("ok") else ("skip" if c.get("ok") is None else "NG")
-        print(f"check[{mark}] {_short(c.get('text'), 80)}")
+        print(f"check[{mark}] {short(c.get('text'), 80)}")
 
 
 if __name__ == "__main__":

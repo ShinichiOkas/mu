@@ -12,39 +12,18 @@ L2 = L1（D）を Reflect（C＋A）で包み、与えたゴールに向かっ�
 既定モデルは qwen3.5:9b（tool 対応）。
 """
 
-import os
-import platform
 import sys
 
+from chat_common import env_preamble, short, utf8_console
 from mu.l0 import OllamaInterface, L0Error
 from mu.l2 import Agent
 from tools import TOOLS
 
-for _stream in (sys.stdout, sys.stdin):
-    try:
-        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+utf8_console()
 
 DEFAULT_MODEL = "qwen3.5:9b"  # 参照モデル（他は gemma4:12b）
 MAX_ROUNDS = 5   # L2 の上限（呼び出し側が規定）
 L1_MAX = 10      # 1 周で L1 を回す上限
-
-
-def _env_preamble() -> str:
-    return (
-        "Environment:\n"
-        f"- OS: {platform.system()} {platform.release()}\n"
-        f"- Working directory: {os.getcwd()}\n"
-        "- execute_command runs in PowerShell — use PowerShell/Windows syntax "
-        "(e.g. Get-ChildItem, Get-Content), not Unix commands like ls/cat.\n"
-        "- Use list_dir to discover files instead of guessing paths."
-    )
-
-
-def _short(text: str, n: int = 100) -> str:
-    text = (text or "").replace("\n", " ")
-    return text if len(text) <= n else text[:n] + "…"
 
 
 def main() -> None:
@@ -64,7 +43,7 @@ def main() -> None:
             continue
 
         messages: list = [
-            {"role": "system", "content": _env_preamble()},
+            {"role": "system", "content": env_preamble()},
             {"role": "user", "content": goal},
         ]
         passed = False
@@ -74,8 +53,8 @@ def main() -> None:
                 messages, verdict = agent.step(model, messages, goal, TOOLS, l1_max=L1_MAX)
                 for m in messages[mark:]:
                     if m.get("role") == "tool":
-                        print(f"  [tool] {m['tool_name']} -> {_short(m['content'])}")
-                print(f"  [reflect {r}] passed={verdict['passed']} :: {_short(verdict['reason'], 160)}")
+                        print(f"  [tool] {m['tool_name']} -> {short(m['content'])}")
+                print(f"  [reflect {r}] passed={verdict['passed']} :: {short(verdict['reason'], 160)}")
                 if verdict["passed"]:
                     passed = True
                     break

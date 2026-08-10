@@ -20,6 +20,10 @@ import time
 from pathlib import Path
 
 import tools as tools_mod
+from chat_common import (
+    ROLES_DIR, VerboseL0, env_preamble, log, verbose_tools,
+    L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
+)
 from mu.l0 import OllamaInterface, L0Error
 from mu.l1 import ToolLoop
 from mu.l2 import Agent
@@ -28,9 +32,6 @@ from mu.l4 import Manager
 from mu.l5 import Director
 from mu.role_kb import load_roles
 from tools import TOOLS
-from l5_chat import (
-    _VerboseL0, _verbose_tools, _log, _env_preamble, _L5, _L4, _L3, _L2, _L1, ROLES_DIR,
-)
 
 L5_MAX = 2
 L4_MAX = 3
@@ -61,10 +62,10 @@ _RUNTIME_PURPOSE = (
 def _run_link(model: str, workdir: Path) -> dict:
     """L2 単走: web_search → fetch_url → write_file が繋がるか。"""
     l0 = OllamaInterface()
-    agent = Agent(_VerboseL0(l0, _L2), ToolLoop(_VerboseL0(l0, _L1)))
-    tools = _verbose_tools(TOOLS)
+    agent = Agent(VerboseL0(l0, _L2), ToolLoop(VerboseL0(l0, _L1)))
+    tools = verbose_tools(TOOLS)
     messages: list = [
-        {"role": "system", "content": _env_preamble()},
+        {"role": "system", "content": env_preamble()},
         {"role": "user", "content": _LINK_GOAL},
     ]
     used: list = []
@@ -92,11 +93,11 @@ def _run_link(model: str, workdir: Path) -> dict:
 def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     """L5 実走: 目的だけ渡す。仕様・プロセス・人選・QA はすべて mu が決める。"""
     l0 = OllamaInterface()
-    l1 = ToolLoop(_VerboseL0(l0, _L1))
-    l2 = Agent(_VerboseL0(l0, _L2), l1)
-    l3 = Orchestrator(_VerboseL0(l0, _L3), l2)
-    l4 = Manager(_VerboseL0(l0, _L4), l3)
-    director = Director(_VerboseL0(l0, _L5), l4)
+    l1 = ToolLoop(VerboseL0(l0, _L1))
+    l2 = Agent(VerboseL0(l0, _L2), l1)
+    l3 = Orchestrator(VerboseL0(l0, _L3), l2)
+    l4 = Manager(VerboseL0(l0, _L4), l3)
+    director = Director(VerboseL0(l0, _L5), l4)
     roles = load_roles(ROLES_DIR)
     # judge（LLM 検査器）は実行体とモデルの注入が要るので、ここで組んで渡す（環境接地は caller の責務）。
     # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
@@ -104,9 +105,9 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     judge_tool = (tools_mod.make_judge(l0, qa_model), tools_mod.JUDGE_USAGE)
     t0 = time.monotonic()
     return director.run(
-        model, _RUNTIME_PURPOSE, _verbose_tools([*TOOLS, judge_tool]),
+        model, _RUNTIME_PURPOSE, verbose_tools([*TOOLS, judge_tool]),
         roles=roles, models=[model, qa_model],
-        log=_log, system=_env_preamble(),
+        log=log, system=env_preamble(),
         guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016→018）
         deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
         max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
@@ -123,7 +124,7 @@ def main() -> None:
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)  # file grounding は cwd（使い捨てディレクトリで走らせる）
 
-    # probe 自身の出力は print で出す。`_log` は L5 側のイベントタプル用であり、
+    # probe 自身の出力は print で出す。`log`（chat_common）は L5 側のイベントタプル用であり、
     # 文字列を渡すと event[0] が先頭 1 文字になって**どの分岐にも当たらず黙って捨てられる**
     # （初回走行で最終結果の記録を落とした。silent-degradation の実例）。
     print(f"=== probe_research {case} / model={model} qa={qa_model} / {workdir} ===", flush=True)
