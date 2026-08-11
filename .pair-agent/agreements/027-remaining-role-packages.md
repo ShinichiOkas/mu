@@ -1,6 +1,6 @@
 # 合意 027 — 未定義3パッケージの役割設計と実証実験（secretary / rnd / book）
 
-status: retrospecting（2026-08-11。4フェーズ完了・323 green・3ドメインとも実走達成・coding スモーク合格。振り返り待ち）
+status: completed（2026-08-11。4フェーズ完了・323 green・3ドメインとも実走達成・coding スモーク合格・振り返り実施済み）
 created: 2026-08-11
 
 ## 背景（師匠の言葉・原文）

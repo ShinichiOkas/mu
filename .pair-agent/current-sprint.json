@@ -1,9 +1,10 @@
 {
   "sprint_id": "027-remaining-role-packages",
-  "status": "retrospecting",
-  "agreed_at": "2026-08-11T00:00:00+09:00",
+  "status": "completed",
   "goal": "未定義の3パッケージ（rnd／secretary／book）の役割を作成し、実証実験（実走ループ）で検証する",
   "created_at": "2026-08-11T00:00:00+09:00",
+  "agreed_at": "2026-08-11T00:00:00+09:00",
+  "completed_at": "2026-08-11T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/027-remaining-role-packages.md",
-  "note": "4フェーズ完了（A e8f7497 / B e1cc634 / C a3fa0e4 / D）。3ドメインとも実走達成・偽・達成ゼロ維持・coding スモーク合格。5パッケージ体制（coding verified＋4 draft）。振り返り待ち"
+  "note": "振り返り実施済み（vision/027・Skill 2件承認）。師匠の現在地認識: 骨格の Mu はほぼ完成に近い——重心は中身（役割定義の設計と品質・検証語彙）へ。5パッケージ体制（coding verified＋4 draft、昇格は師匠判断）。次スプリント未協議——候補: L5 パッケージ自動選択（条件が揃いつつある）／リサーチの深さの仕様化／検証語彙の構造化（言語必須欄など）"
 }
