@@ -27,6 +27,18 @@ from mu.role_kb import L4_ROLES, missing_positions, staffing_lines
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
 ROLES_DIR = str(Path(__file__).resolve().parent / "roles" / "coding")   # 既定＝コーディングパッケージ（合意026）
 
+
+def roles_paths() -> tuple:
+    """ロードする役割パッケージのパス（合意026——切替は L6＝呼び出し側の判断）。
+
+    環境変数 `MU_ROLES_DIR` で指定する（カンマ区切りで複数セットの合成も可）。
+    無指定＝コーディングパッケージ。パスは `load_roles(*roles_paths())` にそのまま渡せる。
+    どのパッケージがあるかは `roles/<pkg>/manifest.json`（`list_packages`）が名乗る。
+    """
+    raw = os.environ.get("MU_ROLES_DIR", "")
+    paths = tuple(p.strip() for p in raw.split(",") if p.strip())
+    return paths or (ROLES_DIR,)
+
 # 全層タワー（l4_chat / l5_chat / probe）の層ラベル。浅いタワーの CLI（l3_chat）は
 # 自分のインデントを自分で定義する（表示は呼び出し側の持ち物）。
 L5 = "  [L5]"
@@ -81,13 +93,24 @@ def env_preamble() -> str:
     return "\n".join(lines)
 
 
-def show_roles(roles: dict) -> None:
+def show_roles(roles: dict, paths: tuple = ()) -> None:
     """ロード済み役割の表示（合意025——バインディングの透明化）。
 
     人選対象の一覧は PjM の process プロンプトに載るものと**同じ関数**
     （`staffing_lines`）から出す——人間が見るものと LLM が見るものの一致を構造で保証する。
     渡した役割の集合＝人選の範囲そのもの。4ポジションの定義書不足があれば添える。
+    `paths` を渡すと出所も表示する——パッケージなら素性（manifest.json の名前と検証状態）ごと
+    （合意026。verified 以外で走っていることが人間に見えるように）。
     """
+    for path in paths:
+        mf = Path(path) / "manifest.json"
+        if mf.is_file():
+            m = json.loads(mf.read_text(encoding="utf-8"))
+            desc = f" — {m['description']}" if m.get("description") else ""
+            print(f"[roles] パッケージ: {m.get('name', Path(path).name)}"
+                  f"（{m.get('status', '状態未表明')}）{desc}")
+        else:
+            print(f"[roles] セット: {path}（マニフェストなし）")
     print("[roles] 人選対象（PjM が見る一覧と同一）:")
     for line in staffing_lines(roles).splitlines():
         print(f"  {line}")

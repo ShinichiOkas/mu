@@ -40,7 +40,7 @@ import sys
 
 import tools as tools_mod
 from chat_common import (
-    Abort, ROLES_DIR, VerboseL0, env_preamble, log, short, show_roles, utf8_console, verbose_tools,
+    Abort, VerboseL0, env_preamble, log, roles_paths, short, show_roles, utf8_console, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -98,7 +98,7 @@ def _review(report: dict) -> dict:
 def main() -> None:
     model = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MODEL
     pool = [model, *sys.argv[2:]]
-    roles = load_roles(ROLES_DIR)
+    roles = load_roles(*roles_paths())   # 切替は MU_ROLES_DIR（合意026）
     l0 = OllamaInterface()
     l1 = ToolLoop(VerboseL0(l0, _L1))
     l2 = Agent(VerboseL0(l0, _L2), l1)
@@ -108,7 +108,7 @@ def main() -> None:
     tools = verbose_tools(TOOLS)
 
     print(f"L5 chat / model={model}  pool={pool}  l5_max={L5_MAX} l4_max={L4_MAX}")
-    show_roles(roles)
+    show_roles(roles, roles_paths())
     print(f"  cwd={os.getcwd()}  <- 成果物・SPEC.md・PROCESS.md・verdict.md はここに作られます")
     print("  環境:", platform.system(), platform.release(), "/ execute_command=PowerShell")
     print("  (目的を入力 / /exit で終了)")

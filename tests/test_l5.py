@@ -429,6 +429,30 @@ def test_list_packages_broken_manifest_is_loud(tmp_path):
     assert "manifest.json" in str(e.value)
 
 
+def test_roles_paths_env_switches_packages(monkeypatch):
+    # 026 B: 切替面。MU_ROLES_DIR（カンマ区切りで合成可）が「この範囲で選んでほしい」の
+    # 意思表示になる。無指定＝coding パッケージ（既定は ROLES_DIR と同一）。
+    from chat_common import ROLES_DIR, roles_paths
+    monkeypatch.delenv("MU_ROLES_DIR", raising=False)
+    assert roles_paths() == (ROLES_DIR,)
+    monkeypatch.setenv("MU_ROLES_DIR", "roles/research")
+    assert roles_paths() == ("roles/research",)
+    monkeypatch.setenv("MU_ROLES_DIR", "roles/coding, roles-extra")
+    assert roles_paths() == ("roles/coding", "roles-extra")
+
+
+def test_repo_planned_packages_are_placeholders():
+    # 026 B: 残り3ドメイン（研究開発・秘書業務・書籍執筆）は枠（planned）だけ。
+    # 役割文を想像で書かない——実走の失敗観測から書く（承認済みスキル）。
+    from pathlib import Path as _P
+    from mu.role_kb import list_packages
+    root = _P(__file__).resolve().parent.parent / "roles"
+    pkgs = {p["name"]: p for p in list_packages(str(root))}
+    for name in ("rnd", "secretary", "book"):
+        assert pkgs[name]["status"] == "planned"
+        assert not list(_P(pkgs[name]["path"]).glob("*.md"))   # 役割文はまだ無い
+
+
 def test_repo_coding_package_is_listed_verified():
     # 026 A の現物検査: リポジトリの coding パッケージがマニフェスト付きで存在し、
     # 検証状態 verified（019〜025 の実走群が根拠）で列挙される。

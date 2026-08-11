@@ -26,7 +26,7 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    ROLES_DIR, VerboseL0, env_preamble, log, show_roles, verbose_tools,
+    VerboseL0, env_preamble, log, roles_paths, show_roles, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -339,9 +339,8 @@ def main() -> None:
     spec = CASES[case]
     # 役割定義書の出所は差し替え可能（合意008）。空ディレクトリを指せば
     # 「役割は認識しているが知識が無い」状態の対照走になる。
-    roles_dir = os.environ.get("MU_ROLES_DIR", ROLES_DIR)
-    roles = load_roles(roles_dir)
-    show_roles(roles)
+    roles = load_roles(*roles_paths())   # 切替は MU_ROLES_DIR（合意026。カンマ区切り合成可）
+    show_roles(roles, roles_paths())
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     for rel, content in spec["files"].items():
@@ -366,7 +365,6 @@ def main() -> None:
     judge_tool = (tools_mod.make_judge(l0, pool[-1]), tools_mod.JUDGE_USAGE)
 
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
-    print(f"roles: {sorted(roles) or '(none — 知識なしの対照走)'} from {roles_dir}")
     print(f"purpose: {spec['purpose']}")
     print(f"protected: {spec['protect']}  time_budget: {TIME_BUDGET}s")
     t0 = time.monotonic()

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 from chat_common import (
-    ROLES_DIR, VerboseL0, env_preamble, log, short, show_roles, utf8_console, verbose_tools,
+    VerboseL0, env_preamble, log, roles_paths, short, show_roles, utf8_console, verbose_tools,
     L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -64,7 +64,7 @@ def main() -> None:
     spec_file = Path(sys.argv[1]).resolve()
     model = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_MODEL
     pool = [model, *sys.argv[3:]]
-    roles = load_roles(ROLES_DIR)
+    roles = load_roles(*roles_paths())   # 切替は MU_ROLES_DIR（合意026）
     spec = _load_spec(spec_file)
 
     l0 = OllamaInterface()
@@ -72,7 +72,7 @@ def main() -> None:
     manager = Manager(VerboseL0(l0, _L4), l3)
 
     print(f"L4 chat / model={model}  pool={pool}  l4_max={L4_MAX}")
-    show_roles(roles)
+    show_roles(roles, roles_paths())
     print(f"spec: {spec_file}")
     print(f"  {short(spec['spec'], 200)}")
     try:
