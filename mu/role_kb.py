@@ -37,11 +37,24 @@ from .l1 import Tool, ToolResult
 # L4 の内部ポジション（PdM/PjM）。作業タスクに割り当てる役割ではないので人選対象から外す。
 L4_ROLES = ("pdm", "pjm")
 
+# コードが名前を知る4ポジション（合意024 の契約）。これ以外の役割は純粋なデータ。
+POSITIONS = (*L4_ROLES, "qa", "implementer")
 
-def load_roles(path: str = "roles") -> dict:
-    """role 定義書（PjM のナレッジベース）をディレクトリから読む。
+
+def load_roles(*paths: str) -> dict:
+    """role 定義書（PjM のナレッジベース）をディレクトリから読む。引数なし＝ "roles"。
 
     返り値は `{role名: {"prompt": 本文, "tools": [...]|None, "write_scope": "own"|"any"}}`。
+    **この dict が人選の範囲そのもの**（合意025）——PjM はここに載る役割からしか選べない。
+    「この範囲で選んでほしい」の意思表示は、どのセット（ディレクトリ）をロードするかで行う:
+
+        load_roles()                          # 既定の roles/ 一式
+        load_roles("roles", "roles-novel")    # セットの合成（役割はドメインごとに足していく）
+
+    合成時の床: **同名役割の衝突はエラー**（静かな上書きはしない。両方の出所を名指しする）。
+    存在しないディレクトリは空集合として扱う（定義書が無い役割は「知識が無い状態」で動く
+    ——その不足は `missing_positions` で可視化する）。
+
     合意007 B1: 役割の**権限**も役割定義に属するデータとし、frontmatter で宣言する:
 
         ---
@@ -52,10 +65,30 @@ def load_roles(path: str = "roles") -> dict:
     権限を適用するのはコード（`role_tools`）であり、PjM が出せるのは role 名だけ——
     **PjM/LLM は自分の権限を書き換えられない**。人間は roles/*.md を直接直せる。
     """
-    p = Path(path)
-    if not p.is_dir():
-        return {}
-    return {f.stem: parse_role_doc(f.read_text(encoding="utf-8")) for f in sorted(p.glob("*.md"))}
+    roles: dict = {}
+    origin: dict = {}
+    for path in paths or ("roles",):
+        p = Path(path)
+        if not p.is_dir():
+            continue
+        for f in sorted(p.glob("*.md")):
+            if f.stem in roles:
+                raise ValueError(
+                    f"役割 '{f.stem}' が複数のセットで定義されている: "
+                    f"{origin[f.stem]} / {path}"
+                )
+            roles[f.stem] = parse_role_doc(f.read_text(encoding="utf-8"))
+            origin[f.stem] = path
+    return roles
+
+
+def missing_positions(roles: dict) -> tuple:
+    """4ポジション（POSITIONS）のうち定義書が無いものを返す（全部あれば空。合意025）。
+
+    エラーにはしない——「定義書が無ければ知識ゼロで動いて失敗する。それが正しい挙動」
+    の哲学のまま、不足を呼び出し側に**見える**ようにするだけの床。
+    """
+    return tuple(name for name in POSITIONS if name not in roles)
 
 
 def parse_role_doc(text: str) -> dict:

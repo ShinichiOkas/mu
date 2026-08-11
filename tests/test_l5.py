@@ -342,6 +342,49 @@ def test_load_roles_reads_directory(tmp_path):
     }
 
 
+def test_load_roles_composes_multiple_sets(tmp_path):
+    # 025 B: ロールセットの合成。「どのセットをロードするか」がユーザーの意思表示になる。
+    from mu.role_kb import load_roles
+    core = tmp_path / "core"
+    novel = tmp_path / "novel"
+    core.mkdir(), novel.mkdir()
+    (core / "qa.md").write_text("QA-DOC", encoding="utf-8")
+    (novel / "writer.md").write_text("WRITER-DOC", encoding="utf-8")
+    roles = load_roles(str(core), str(novel))
+    assert set(roles) == {"qa", "writer"}
+    assert roles["writer"]["prompt"] == "WRITER-DOC"
+
+
+def test_load_roles_collision_names_both_sources(tmp_path):
+    # 025 B の床: 同名役割の静かな上書きは、今回取り除きたい不透明さそのもの。
+    # どちらが勝ったかを推測させず、役割名と両方の出所を名指しして落とす。
+    import pytest
+    from mu.role_kb import load_roles
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir(), b.mkdir()
+    (a / "qa.md").write_text("QA-A", encoding="utf-8")
+    (b / "qa.md").write_text("QA-B", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        load_roles(str(a), str(b))
+    msg = str(e.value)
+    assert "qa" in msg and str(a) in msg and str(b) in msg
+
+
+def test_missing_positions_reports_undefined_core_names(tmp_path):
+    # 025 B の床: コードが名前を知る4ポジション（合意024）の不足を可視化する。
+    # エラーにはしない——「定義書が無ければ知識ゼロで動いて失敗する」哲学のまま。
+    from pathlib import Path as _P
+    from mu.role_kb import load_roles, missing_positions
+    d = tmp_path / "roles"
+    d.mkdir()
+    (d / "qa.md").write_text("QA-DOC", encoding="utf-8")
+    (d / "writer.md").write_text("WRITER-DOC", encoding="utf-8")   # ポジション外は無関係
+    assert missing_positions(load_roles(str(d))) == ("pdm", "pjm", "implementer")
+    repo_roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    assert missing_positions(repo_roles) == ()
+
+
 def test_specify_and_process_prompts_carry_env(tmp_path, monkeypatch):
     agent = make([SPEC, PROCESS3], ok3())
     run(agent, tmp_path, monkeypatch, system="ENV-PS-MARKER")
