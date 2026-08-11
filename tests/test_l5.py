@@ -442,15 +442,14 @@ def test_roles_paths_env_switches_packages(monkeypatch):
 
 
 def test_repo_planned_packages_are_placeholders():
-    # 026 B: 残り3ドメイン（研究開発・秘書業務・書籍執筆）は枠（planned）だけ。
-    # 役割文を想像で書かない——実走の失敗観測から書く（承認済みスキル）。
+    # 026 B: status=planned は「枠だけ」を正直に名乗る——役割文を持たない
+    # （役割文を書いた時点で draft へ上げる。想像で書かないの構造化）。
     from pathlib import Path as _P
     from mu.role_kb import list_packages
     root = _P(__file__).resolve().parent.parent / "roles"
-    pkgs = {p["name"]: p for p in list_packages(str(root))}
-    for name in ("rnd", "secretary", "book"):
-        assert pkgs[name]["status"] == "planned"
-        assert not list(_P(pkgs[name]["path"]).glob("*.md"))   # 役割文はまだ無い
+    for p in list_packages(str(root)):
+        if p["status"] == "planned":
+            assert not list(_P(p["path"]).glob("*.md")), p["name"]
 
 
 def test_repo_research_package_is_complete_draft():
@@ -464,6 +463,24 @@ def test_repo_research_package_is_complete_draft():
     assert "researcher" in roles
     pkgs = {p["name"]: p for p in list_packages(str(root))}
     assert pkgs["research"]["status"] == "draft"
+
+
+def _package_is_complete_draft(name: str, domain_roles: set):
+    # 027: 師匠承認済みの役割設計どおりの自己完結（4ポジション完備）＋draft の現物検査。
+    from pathlib import Path as _P
+    from mu.role_kb import list_packages, load_roles, missing_positions
+    root = _P(__file__).resolve().parent.parent / "roles"
+    roles = load_roles(str(root / name))
+    assert missing_positions(roles) == ()
+    assert domain_roles <= set(roles)
+    pkgs = {p["name"]: p for p in list_packages(str(root))}
+    assert pkgs[name]["status"] == "draft"
+    return roles
+
+
+def test_repo_secretary_package_is_complete_draft():
+    # 秘書業務は一人が通しで持つ設計（分割は文脈と確認責任を壊す）→ ドメイン役割は1役。
+    _package_is_complete_draft("secretary", {"secretary"})
 
 
 def test_repo_coding_package_is_listed_verified():
