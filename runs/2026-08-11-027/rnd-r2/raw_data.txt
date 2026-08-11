@@ -1,0 +1,9 @@
+Python version: 3.13.7 (tags/v3.13.7:bcee1c3, Aug 14 2025, 14:15:11) [MSC v.1944 64 bit (AMD64)]
+OS: Windows 11 10.0.26200
+Processor: AMD64 Family 23 Model 49 Stepping 0, AuthenticAMD
+----------------------------------------------------------------------
+     Scale |  list.insert(0) (seconds) | deque.appendleft (seconds)
+----------------------------------------------------------------------
+     10000 |          0.017557 seconds |        0.000456 seconds
+    100000 |          1.727691 seconds |        0.003451 seconds
+   1000000 |         Too slow (O(n^2)) |        0.034389 seconds

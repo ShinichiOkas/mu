@@ -1,0 +1,27 @@
+# Analysis of Speed Factor: list.insert(0) vs deque.appendleft
+
+## Raw Data Extraction
+Extracted from `raw_data.txt` (using the most consistent data points for each scale):
+
+- For n = 1,000:
+    - list.insert(0): 0.000186s
+    - deque.appendleft: 0.000035s
+- For n = 10,000:
+    - list.insert(0): 0.017027s
+    - deque.appendleft: 0.000301s
+- For n = 100,000:
+    - list.insert(0): 1.687704s
+    - deque.appendleft: 0.003133s
+
+## Speed Factor Calculation
+Speed Factor = (Time for list.insert(0)) / (Time for deque.appendleft)
+
+- n = 1,000:
+    0.000186 / 0.000035 ≈ 5.31x
+- n = 10,000:
+    0.017027 / 0.000301 ≈ 56.57x
+- n = 100,000:
+    1.687704 / 0.003133 ≈ 538.69x
+
+## Conclusion
+The speed factor increases significantly as the scale (n) grows, which aligns with the theoretical complexity: O(n) for list.insert(0) and O(1) for deque.appendleft. At n = 100,000, deque.appendleft is approximately 538.7 times faster than list.insert(0).

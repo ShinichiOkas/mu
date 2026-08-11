@@ -483,6 +483,12 @@ def test_repo_secretary_package_is_complete_draft():
     _package_is_complete_draft("secretary", {"secretary"})
 
 
+def test_repo_rnd_package_is_complete_draft():
+    # 研究開発の最重要の継ぎ目は設計/実施の間（実施者が設計を曲げない）→ scientist と
+    # experimenter の2役。評価の独立は qa＋judge が床（分析役の分離は失敗観測待ち）。
+    _package_is_complete_draft("rnd", {"scientist", "experimenter"})
+
+
 def test_repo_coding_package_is_listed_verified():
     # 026 A の現物検査: リポジトリの coding パッケージがマニフェスト付きで存在し、
     # 検証状態 verified（019〜025 の実走群が根拠）で列挙される。

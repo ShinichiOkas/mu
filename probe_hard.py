@@ -8,6 +8,8 @@ r"""probe_hard.py — 難課題セット（H1〜H6）で L5（目的）＋L4（�
     .\.venv\Scripts\python.exe probe_hard.py <case> <model> <workdir> [qa_model]
 case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf | schedule | action
       | f1 | sales（005 由来の原点2題材。probe_l4 から統合——023）
+      | rnd | book（027 拡張・非コーディングパッケージの実証実験用。MU_ROLES_DIR で
+        roles/rnd・roles/book を指して走らせる想定——課題自体はパッケージ非依存）
 
 schedule / action（021 拡張・師匠の指示でバリエーションを拡大）:
   schedule — Outlook 風モック（probe_fixtures/outlook.py）越しの複数人予定調整。
@@ -312,6 +314,27 @@ CASES = {
         ),
         "files": {"maintenance.ps1": _fixture("maintenance.ps1")},
         "protect": ["maintenance.ps1"],
+    },
+    # 027: 非コーディングパッケージの実証実験用（rnd＝実験で決着する問い／book＝掌編制作）
+    "rnd": {
+        "purpose": (
+            "Python でリストの先頭に要素を大量に挿入するとき、list.insert(0, x) と "
+            "collections.deque の appendleft のどちらがどの程度速いかを、実験で決着させてくれ。"
+            "仮説を立て、計測実験を設計・実施し、結果の数値に基づいて評価した報告書 report.md に"
+            "まとめること。計測は再現可能なスクリプトとして残し、報告書に載せる数値は"
+            "そのスクリプトの実出力と一致していること。"
+        ),
+        "files": {},
+        "protect": [],
+    },
+    "book": {
+        "purpose": (
+            "テーマ『修理』の掌編小説を書いてほしい。分量は800〜1200字。"
+            "読者が結末で認識の反転（それまでの見え方が変わる驚き）を得られること。"
+            "執筆と、編集者の指摘を受けた改稿を経た最終稿を story.md として納品すること。"
+        ),
+        "files": {},
+        "protect": [],
     },
     # F1 原文（docs/experiment-2026-07-20-f1.md）。偽・完遂を2走とも出した題材。
     "f1": {

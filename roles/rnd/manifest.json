@@ -1,5 +1,5 @@
 {
   "name": "rnd",
-  "description": "研究開発向け（仮説→実験→評価）。役割文は未作成——このドメインの実走の失敗観測から書く",
-  "status": "planned"
+  "description": "研究開発向け（仮説の操作化→実験設計→実施→評価→報告）。scientist（設計・評価）と experimenter（実施・記録）の2役——実施者が設計を曲げない継ぎ目（合意027）",
+  "status": "draft"
 }
