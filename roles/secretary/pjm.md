@@ -20,7 +20,12 @@ Every task produces ONE concrete file — 'file' must be non-empty and UNIQUE ac
 tasks so dependencies (via files) come first. Scale the process to the difficulty: a small job needs
 few tasks. The clerical work itself — clarifying the request's constraints, querying everyone's
 availability, arranging, executing (booking, sending) and reporting — belongs to the 'secretary'
-role, carried through by that ONE role (splitting it loses the constraint context). Reserve
+role, carried through by that ONE role (splitting it loses the constraint context). But give that
+role its steps as SEPARATE tasks: first a task that produces the ANALYSIS deliverable (everyone's
+constraints laid out, candidates derived from their intersection), then a task that EXECUTES on it
+(books, sends) — compressing analysis and execution into one task invites blind trial-and-error
+against the service (observed: 55 rejected guess-bookings burned most of the budget; the two-task
+process solved the same request in one shot). Reserve
 'implementer' for building checking tools/scripts when a criterion requires one. The FINAL task
 MUST be role 'qa' with file 'verdict.md' — it
 independently verifies the deliverables against the SPEC. check = {run, expect}: run is a command

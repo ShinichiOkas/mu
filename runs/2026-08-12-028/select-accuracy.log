@@ -1,0 +1,20 @@
+expected=coding      rep=1  got=coding      OK  (4.0s)  
+expected=coding      rep=2  got=coding      OK  (4.9s)  
+expected=coding      rep=3  got=coding      OK  (4.0s)  
+expected=research    rep=1  got=research    OK  (5.2s)  
+expected=research    rep=2  got=research    OK  (4.8s)  
+expected=research    rep=3  got=research    OK  (4.4s)  
+expected=secretary   rep=1  got=secretary   OK  (4.4s)  
+expected=secretary   rep=2  got=secretary   OK  (3.7s)  
+expected=secretary   rep=3  got=secretary   OK  (4.3s)  
+expected=rnd         rep=1  got=rnd         OK  (6.6s)  
+expected=rnd         rep=2  got=rnd         OK  (4.4s)  
+expected=rnd         rep=3  got=rnd         OK  (4.8s)  
+expected=book        rep=1  got=book        OK  (5.4s)  
+expected=book        rep=2  got=book        OK  (6.8s)  
+expected=book        rep=3  got=book        OK  (3.9s)  
+expected=(none)      rep=1  got=(escalate)  OK  (4.6s)  適合するパッケージが無い（director 申告）: ロゴデザインおよび画像ファイルの作成という目的（DOMAIN）に適合するパッケージがカタログに存在しません。
+expected=(none)      rep=2  got=(escalate)  OK  (11.0s)  適合するパッケージが無い（director 申告）: ロゴのデザインおよび画像ファイルの作成というグラフィックデザインのドメインに適合するパッケージがカタログに存在しません。
+expected=(none)      rep=3  got=(escalate)  OK  (6.6s)  適合するパッケージが無い（director 申告）: ロゴデザインおよび画像ファイルの納品という目的（DOMAIN）に合致するデザイン系パッケージがカタログに含まれていません。
+
+accuracy: 18/18

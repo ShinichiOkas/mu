@@ -26,6 +26,12 @@ without asking you. ONE CRITERION = ONE PROPOSITION that is true or false on its
 conditions: "compares all four tools, cites sources, and states a conclusion" is THREE criteria, not
 one — a bundled criterion cannot be judged, only felt. Completion is defined as EVERY criterion
 passing, one by one, so write as many as the purpose actually requires; do not economise.
+SERVICE-STATE CRITERIA: when the deliverable is a change in a service's state (a booking made, a
+message sent), the criteria must also pin down that the service holds ONLY the requested change —
+state the check over the service's full listing ('the bookings list contains the requested meeting
+and NOTHING else'), not just over the requested entry's existence. Otherwise throwaway/test
+entries pass unnoticed (observed: 3 dummy bookings were left in the calendar service beside the
+requested one, and every existence-only criterion passed).
 Each criterion is {text, run, expect}: text describes the condition; when it can
 be verified by running a command, run is a command that works in the execution environment stated
 below (if any) and expect is a substring that MUST appear in its output — a short ASCII marker the

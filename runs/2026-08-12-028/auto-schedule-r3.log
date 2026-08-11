@@ -1,0 +1,260 @@
+[roles] パッケージ自動選択（MU_ROLES_DIR=auto）——カタログ:
+  - book（draft）: 書籍執筆向け（構成→執筆→編集指摘→改稿）。writer と editor の2役——editor は指摘のみで本文を書き直せない（合意027）。挿絵役は画像生成ツール整備後
+  - coding（verified）: コーディング向け（設計→実装→テスト→QA）。architect / implementer をドメイン役割に持つ
+  - research（draft）: 調査レポート向け（調査→報告書→QA）。researcher をドメイン役割に持つ。pdm/qa は 020 の失敗（量化子弱化）への対策を含む調整版
+  - rnd（draft）: 研究開発向け（仮説の操作化→実験設計→実施→評価→報告）。scientist（設計・評価）と experimenter（実施・記録）の2役——実施者が設計を曲げない継ぎ目（合意02…
+  - secretary（draft）: 秘書業務向け（依頼把握→照会→調整→実行→報告）。secretary 1役が一気通貫で担う設計（合意027）。予定表等のサービスはツール環境に依存
+probe_hard case=schedule model=gemma4:31b-cloud pool=['gemma4:31b-cloud', 'qwen3.5:9b'] workdir=runs\2026-08-12-028\auto-schedule-r3
+purpose: 佐藤・鈴木・高橋の3人が全員参加できる60分の会議『企画会議』を、2026-08-17〜2026-08-21 の営業時間（9:00-17:00）内で見つけて予約してくれ。この環境の予定表サービスは outlook.py（Outlook 風の CLI）で、予定の照会と予約は必ず `python outlook.py` を通すこと（引数なしで実行すると使い方が表示される）。全員の既存の予定と重ならない枠であることが必須。
+protected: ['outlook.py', 'calendar_data.json']  time_budget: 1500s
+  [L5] 構造化出力を生成中… (1.4s, 69 tok)
+  [L5] パッケージを自選: secretary :: The purpose involves scheduling a meeting, checking availability, and executing a reservation via a service (outlook.py), which directly mat…
+   [L4] 入力の実物を PdM に接地:
+   [L4]   - calendar_data.json (2016 bytes) — 先頭:
+   [L4]       {
+   [L4]         "佐藤": [
+   [L4]           {"date": "2026-08-17", "start": "09:00", "end": "12:00", "title": "四半期レビュー"},
+   [L4]           {"date": "2026-08-17", "start": "13:00", "end": "17:00", "title": "顧客訪問"},
+   [L4]           {"date": "2026-08-18", "start": "11:00", "end": "17:00", "title": "採用面接"},
+   [L4]   - outlook.py (4334 bytes) — 自己記述（スクリプト冒頭の説明。コマンド・引数はここに書かれた形だけを使うこと）:
+   [L4]       outlook.py — Outlook 風の予定表サービスのモック（検証用の擬似サービス。変更禁止）。
+   [L4]       
+   [L4]       予定の照会・登録は必ずこの CLI を通すこと:
+   [L4]       
+   [L4]           python outlook.py people                                        参加者の一覧
+  [L5] 構造化出力を生成中… (7.8s, 797 tok)
+── PdM が定めた仕様（SPEC.md に書き出し済み。直接編集も可）──
+  定義: 営業時間 = 各営業日の 09:00 から 17:00 までの時間帯。
+  定義: 全員参加できる60分の会議 = 佐藤、鈴木、高橋の3名全員が、既存の予定（`python outlook.py busy` で出力される内容）および他の予約と重複せず、連続して60分間の空き時間を有している状態。
+  受入基準: 『企画会議』というタイトルの予約が、2026-08-17から2026-08-21の間の営業時間内に作成されていること。
+    検査: python outlook.py bookings → 「企画会議」
+  受入基準: 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること。
+    検査: python outlook.py bookings → 「佐藤」
+  受入基準: 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（鈴木の確認）。
+    検査: python outlook.py bookings → 「鈴木」
+  受入基準: 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（高橋の確認）。
+    検査: python outlook.py bookings → 「高橋」
+  受入基準: 予約済みリストに、今回の『企画会議』以外の不要な予約（テスト用などのダミーデータ）が含まれていないこと。
+    検査: python outlook.py bookings
+  仕様: 目的：佐藤・鈴木・高橋の3名全員が参加可能な60分の枠を2026-08-17〜2026-08-21の営業時間（09:00-17:00）内で特定し、予約する。  制約・定義： - 営業時間：09:00-17:00 - 会議名：企画会議 - 所要時間：60分 - 参加者：佐藤、鈴木、高橋 - 必須条件：3名全員の既存予定および他の予約と一切重複しないこと。 - 操作手段：必ず `python outl…
+   [L4] プロセスを編成中（PjM: 役割・人選・順序）… (6.1s, 465 tok)
+── PjM が編んだプロセス（PROCESS.md に書き出し済み。直接編集も可）──
+  1. [ ] (secretary) analysis.md: Run `python outlook.py busy` for 佐藤, 鈴木, and 高橋 for the period 2026-08-17 to 202…
+  2. [ ] (secretary) execution_log.txt: Execute the booking command using the identified slot from analysis.md: `python …
+  3. [ ] (qa @qwen3.5:9b) verdict.md: Verify that '企画会議' is correctly booked for the 3 specified participants within t…
+     [L3] Plan/再計画を作成中… (3.3s, 283 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] busy_logs.txt: Run the busy check for Sato, Suzuki, and Takahashi for the period 2026-08-17 to …
+     [L3]   2. [ ] analysis.md: Analyze the busy schedules from busy_logs.txt to find a common 60-minute free sl…
+        [L1] 思考中（次の行動を決定）… (2.0s, 27 tok)
+          [tool] list_dir(limit=100, offset=, path=.)
+          [tool]   -> file calendar_data.json (2016 bytes) file outlook.py (4334 bytes) file PROCESS.md (2291 bytes) file SPEC.md (3235 bytes)
+        [L1] 思考中（次の行動を決定）… (1.5s, 24 tok)
+          [tool] execute_command(command=python outlook.py --help)
+          [tool]   -> exit=1 ERROR unknown command: --help outlook.py — Outlook 風の予定表サービスのモック（検証用の擬似サービス。変更禁止）。  予定の照会・登録は必ずこの CLI を通すこと:     …
+        [L1] 思考中（次の行動を決定）… (1.5s, 87 tok)
+          [tool] execute_command(command=python outlook.py busy Sato | Out-File -FilePath busy_logs.t…)
+          [tool]   -> exit=1 
+        [L1] 思考中（次の行動を決定）… (1.2s, 56 tok)
+          [tool] execute_command(command=python outlook.py busy Sato > busy_logs.txt; python outlook.…)
+          [tool]   -> exit=1 
+        [L1] 思考中（次の行動を決定）… (1.5s, 24 tok)
+          [tool] execute_command(command=python outlook.py busy Sato)
+          [tool]   -> exit=1 ERROR unknown person: Sato 
+        [L1] 思考中（次の行動を決定）… (2.3s, 23 tok)
+          [tool] execute_command(command=python outlook.py people)
+          [tool]   -> exit=0 佐藤 鈴木 高橋 
+        [L1] 思考中（次の行動を決定）… (2.1s, 59 tok)
+          [tool] execute_command(command=python outlook.py busy 佐藤 > busy_logs.txt; python outlook.py…)
+          [tool]   -> exit=0 
+        [L1] 思考中（次の行動を決定）… (2.6s, 26 tok)
+          [tool] execute_command(command=Get-Content busy_logs.txt)
+          [tool]   -> exit=0 2026-08-17 09:00-12:00 四半期レビュー 2026-08-17 13:00-17:00 顧客訪問 2026-08-18 11:00-17:00 採用面接 2026-08-19 09:00-17:00 終日:…
+        [L1] 思考中（次の行動を決定）… (3.3s, 171 tok)
+       [L2] Reflect（合否）判定中… (3.6s, 142 tok)
+       [L2]   -> passed=False :: The agent claims to have written the output to 'busy_logs.txt', but there is no evidence in the transcript of a file bei…
+       [L2]   next: Run the commands to write the output of the busy checks for 佐藤, 鈴木, and 高橋 to busy_logs.txt, then read the file back to …
+        [L1] 思考中（次の行動を決定）… (2.4s, 64 tok)
+          [tool] execute_command(command=python outlook.py busy 佐藤 > busy_logs.txt; python outlook.py…)
+          [tool]   -> exit=0 2026-08-17 09:00-12:00 四半期レビュー 2026-08-17 13:00-17:00 顧客訪問 2026-08-18 11:00-17:00 採用面接 2026-08-19 09:00-17:00 終日:…
+        [L1] 思考中（次の行動を決定）… (2.3s, 150 tok)
+       [L2] Reflect（合否）判定中… (2.0s, 114 tok)
+       [L2]   -> passed=True :: The agent correctly identified the Japanese names (佐藤, 鈴木, 高橋) for the requested individuals, executed the `busy` check …
+          [tool] execute_command(Get-Content busy_logs.txt)
+          [tool]   -> exit=0 2026-08-17 09:00-12:00 四半期レビュー 2026-08-17 13:00-17:00 顧客訪問 2026-08-18 11:00-17:00 採用面接 2026-08-19 09:00-17:00 終日:…
+     [L3] [x] UNIT DONE  : busy_logs.txt
+        [L1] 思考中（次の行動を決定）… (1.4s, 27 tok)
+          [tool] list_dir(limit=100, offset=, path=.)
+          [tool]   -> file busy_logs.txt (880 bytes) file calendar_data.json (2016 bytes) file outlook.py (4334 bytes) file PROCESS.md (2291 b…
+        [L1] 思考中（次の行動を決定）… (1.1s, 35 tok)
+          [tool] read_file(limit=100, offset=, path=busy_logs.txt)
+          [tool]   -> 2026-08-17 09:00-12:00 四半期レビュー 2026-08-17 13:00-17:00 顧客訪問 2026-08-18 11:00-17:00 採用面接 2026-08-19 09:00-17:00 終日: 出張 202…
+        [L1] 思考中（次の行動を決定）… (7.9s, 1011 tok)
+          [tool] write_file(content=# Busy Schedules Analysis  ## Busy Slots Based on `busy_logs…, mode=overwrite, path=analysis.md)
+          [tool]   -> wrote 1520 bytes to analysis.md
+        [L1] 思考中（次の行動を決定）… (1.5s, 24 tok)
+          [tool] execute_command(command=Get-Content analysis.md)
+          [tool]   -> exit=0 # Busy Schedules Analysis  ## Busy Slots Based on `busy_logs.txt`, the busy schedules for the three members are a…
+        [L1] 思考中（次の行動を決定）… (2.8s, 171 tok)
+       [L2] Reflect（合否）判定中… (3.5s, 107 tok)
+       [L2]   -> passed=True :: The agent successfully analyzed the busy_logs.txt, identified a common 60-minute free slot (2026-08-20 15:00-16:00), wro…
+          [tool] execute_command(Get-Content analysis.md)
+          [tool]   -> exit=0 # Busy Schedules Analysis  ## Busy Slots Based on `busy_logs.txt`, the busy schedules for the three members are a…
+     [L3] [x] UNIT DONE  : analysis.md
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (secretary) analysis.md
+     [L3] Plan/再計画を作成中… (2.0s, 147 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] execution_log.txt: Read analysis.md to extract the selected slot (date, start_time, end_time) and t…
+        [L1] 思考中（次の行動を決定）… (1.9s, 29 tok)
+          [tool] read_file(limit=100, offset=, path=analysis.md)
+          [tool]   -> # Busy Schedules Analysis  ## Busy Slots Based on `busy_logs.txt`, the busy schedules for the three members are as follo…
+        [L1] 思考中（次の行動を決定）… (1.9s, 24 tok)
+          [tool] execute_command(command=python outlook.py --help)
+          [tool]   -> exit=1 ERROR unknown command: --help outlook.py — Outlook 風の予定表サービスのモック（検証用の擬似サービス。変更禁止）。  予定の照会・登録は必ずこの CLI を通すこと:     …
+        [L1] 思考中（次の行動を決定）… (1.4s, 23 tok)
+          [tool] execute_command(command=python outlook.py people)
+          [tool]   -> exit=0 佐藤 鈴木 高橋 
+        [L1] 思考中（次の行動を決定）… (2.3s, 66 tok)
+          [tool] execute_command(command=python outlook.py book "企画会議" 2026-08-20 15:00 16:00 佐藤 鈴木 高…)
+          [tool]   -> exit=0 
+        [L1] 思考中（次の行動を決定）… (2.7s, 26 tok)
+          [tool] execute_command(command=Get-Content execution_log.txt)
+          [tool]   -> exit=0 BOOKED MTG-001 2026-08-20 15:00-16:00 
+        [L1] 思考中（次の行動を決定）… (1.3s, 23 tok)
+          [tool] execute_command(command=python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+        [L1] 思考中（次の行動を決定）… (5.3s, 106 tok)
+          [tool] write_file(content=BOOKED MTG-001 2026-08-20 15:00-16:00 MTG-001 2026-08-20 15:…, mode=overwrite, path=execution_log.txt)
+          [tool]   -> wrote 113 bytes to execution_log.txt
+        [L1] 思考中（次の行動を決定）… (4.0s, 209 tok)
+       [L2] Reflect（合否）判定中… (3.8s, 99 tok)
+       [L2]   -> passed=False :: The agent wrote to execution_log.txt, but the transcript does not show the actual content of the file via a read_file or…
+       [L2]   next: Read the content of execution_log.txt to verify it contains the successful confirmation output for '企画会議'.
+        [L1] 思考中（次の行動を決定）… (8.7s, 22 tok)
+          [tool] execute_command(command=Get-Content execution_log.txt)
+          [tool]   -> exit=0 BOOKED MTG-001 2026-08-20 15:00-16:00 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+        [L1] 思考中（次の行動を決定）… (7.9s, 154 tok)
+       [L2] Reflect（合否）判定中… (1.6s, 84 tok)
+       [L2]   -> passed=True :: The agent extracted the correct slot from analysis.md, executed the booking command for '企画会議', and saved the confirmati…
+          [tool] execute_command(Get-Content execution_log.txt)
+          [tool]   -> exit=0 BOOKED MTG-001 2026-08-20 15:00-16:00 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+     [L3] [x] UNIT DONE  : execution_log.txt
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (secretary) execution_log.txt
+   [L4] [-] ツール非配布: (qa) edit_file
+   [L4] [-] ツール非配布: (qa) web_search
+   [L4] [-] ツール非配布: (qa) fetch_url
+     [L3] Plan/再計画を作成中… (6.6s, 818 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] verdict.md: Generate verdict.md by evaluating each criterion from SPEC.md: assign PASS if cr…
+        [L1] 思考中（次の行動を決定）… (2.1s, 193 tok)
+          [tool] list_dir(path=S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3, offset=, limit=50)
+          [tool]   -> file analysis.md (1520 bytes) file bookings.json (214 bytes) file busy_logs.txt (880 bytes) file calendar_data.json (201…
+        [L1] 思考中（次の行動を決定）… (1.1s, 95 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3\SPEC…, offset=, limit=50)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） 佐藤・鈴木・高橋の3人が全員参加できる60分の会議『企画会議』を、2026-08…
+        [L1] 思考中（次の行動を決定）… (1.9s, 190 tok)
+          [tool] execute_command(command=cd S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3 ;…)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+        [L1] 思考中（次の行動を決定）… (1.6s, 168 tok)
+       [L2] Reflect（合否）判定中… (1.5s, 123 tok)
+       [L2]   -> passed=False :: The transcript shows the creation of a meeting (MTG-001) but does not contain `write_file` or evidence that 'verdict.md'…
+       [L2]   next: read file content if verdict.md exists; otherwise write it using the results from execution_log.txt (which shows MTG-001…
+        [L1] 思考中（次の行動を決定）… (5.5s, 686 tok)
+          [tool] write_file(S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3\verd…, content=# 判定書  ITEM 1: PASS — `python outlook.py bookings` の出力で「企画会議…, mode=overwrite)
+          [tool]   -> wrote 657 bytes to S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3\verdict.md
+        [L1] 思考中（次の行動を決定）… (1.0s, 71 tok)
+       [L2] Reflect（合否）判定中… (1.5s, 118 tok)
+       [L2]   -> passed=False :: The transcript shows verdict.md was written but does not display its content. The GOAL requires a GAP section for failur…
+       [L2]   next: (calls read_file) [action=read path=S:\work\develop\mu\runs\2026-08-12-028\auto-schedule-r3\verdict.md]
+        [L1] 思考中（次の行動を決定）… (2.1s, 223 tok)
+       [L2] Reflect（合否）判定中… (1.0s, 71 tok)
+       [L2]   -> passed=True :: The transcript shows the file verdict.md was written (write_file ok). The user specified a required string 'ITEM 1:' in …
+          [tool] execute_command(Get-Content "verdict.md")
+          [tool]   -> exit=0 # 判定書  ITEM 1: PASS — `python outlook.py bookings` の出力で「企画会議」が確認できた (MTG-001 2026-08-20 15:00-16:00)  ITEM 2: PAS…
+     [L3] [x] UNIT DONE  : verdict.md
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (qa) verdict.md
+          [tool] execute_command(python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+          [tool] execute_command(python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+          [tool] execute_command(python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+          [tool] execute_command(python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+          [tool] execute_command(python outlook.py bookings)
+          [tool]   -> exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4] 検査[ok] 『企画会議』というタイトルの予約が、2026-08-17から2026-08-21の間の営業時間内に作成されていること。 :: exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4] 検査[ok] 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること。 :: exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4] 検査[ok] 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（鈴木の確認）。 :: exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4] 検査[ok] 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（高橋の確認）。 :: exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4] 検査[ok] 予約済みリストに、今回の『企画会議』以外の不要な予約（テスト用などのダミーデータ）が含まれていないこと。 :: exit=0 MTG-001 2026-08-20 15:00-16:00 企画会議 attendees=佐藤,鈴木,高橋 
+   [L4]   [PASS] #1 『企画会議』というタイトルの予約が、2026-08-17から2026-08-21の間の営業時間内に作成されていること。 :: `python outlook.py bookings` の出力で「企画会議」が確認できた (MTG-001 2026-08-20 15:00-16:00)
+   [L4]   [PASS] #2 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること。 :: `python outlook.py bookings` の出力に「佐藤」が含まれていることを確認可能
+   [L4]   [PASS] #3 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（鈴木の確認）。 :: `python outlook.py bookings` の出力に「鈴木」が含まれていることを確認
+   [L4]   [PASS] #4 予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（高橋の確認）。 :: `python outlook.py bookings` の出力に「高橋」が含まれていることを確認
+   [L4]   [PASS] #5 予約済みリストに、今回の『企画会議』以外の不要な予約（テスト用などのダミーデータ）が含まれていないこと。 :: booking コマンドの出力で企画会議以外の予約（MTG-001 only）が存在せず、不要なダミーデータなしと判定可能
+   [L4] QA 判定（集約はコード）: yes :: 受入基準 5 項目すべて PASS
+   [L4]   gap: なし
+=== RESULT ===
+{
+  "achieved": true,
+  "escalated": false,
+  "escalation_reason": "",
+  "assessment": {
+    "achieved": "yes",
+    "reason": "受入基準 5 項目すべて PASS",
+    "gap": "なし",
+    "items": [
+      {
+        "n": 1,
+        "text": "『企画会議』というタイトルの予約が、2026-08-17から2026-08-21の間の営業時間内に作成されていること。",
+        "verdict": "pass",
+        "evidence": "`python outlook.py bookings` の出力で「企画会議」が確認できた (MTG-001 2026-08-20 15:00-16:00)"
+      },
+      {
+        "n": 2,
+        "text": "予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること。",
+        "verdict": "pass",
+        "evidence": "`python outlook.py bookings` の出力に「佐藤」が含まれていることを確認可能"
+      },
+      {
+        "n": 3,
+        "text": "予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（鈴木の確認）。",
+        "verdict": "pass",
+        "evidence": "`python outlook.py bookings` の出力に「鈴木」が含まれていることを確認"
+      },
+      {
+        "n": 4,
+        "text": "予約された会議の参加者に、佐藤、鈴木、高橋の3名全員が含まれていること（高橋の確認）。",
+        "verdict": "pass",
+        "evidence": "`python outlook.py bookings` の出力に「高橋」が含まれていることを確認"
+      },
+      {
+        "n": 5,
+        "text": "予約済みリストに、今回の『企画会議』以外の不要な予約（テスト用などのダミーデータ）が含まれていないこと。",
+        "verdict": "pass",
+        "evidence": "booking コマンドの出力で企画会議以外の予約（MTG-001 only）が存在せず、不要なダミーデータなしと判定可能"
+      }
+    ]
+  },
+  "rounds": 1,
+  "l4_rounds": 1
+}
+  [x] (secretary) analysis.md
+  [x] (secretary) execution_log.txt
+  [x] (qa @qwen3.5:9b) verdict.md
+elapsed: 150s
+protection violations: none
+files in workdir:
+  analysis.md (1520 bytes)
+  bookings.json (214 bytes)
+  busy_logs.txt (880 bytes)
+  calendar_data.json (2016 bytes)
+  execution_log.txt (113 bytes)
+  outlook.py (4334 bytes)
+  PROCESS.md (2291 bytes)
+  SPEC.md (3235 bytes)
+  verdict.md (657 bytes)
