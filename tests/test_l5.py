@@ -453,6 +453,19 @@ def test_repo_planned_packages_are_placeholders():
         assert not list(_P(pkgs[name]["path"]).glob("*.md"))   # 役割文はまだ無い
 
 
+def test_repo_research_package_is_complete_draft():
+    # 026 C: 2ドメイン目（調査レポート）。自己完結（4ポジション完備）＋researcher を持ち、
+    # 検証状態は draft で出発する——verified への昇格は実走検証の後、師匠の承認事項。
+    from pathlib import Path as _P
+    from mu.role_kb import list_packages, load_roles, missing_positions
+    root = _P(__file__).resolve().parent.parent / "roles"
+    roles = load_roles(str(root / "research"))
+    assert missing_positions(roles) == ()
+    assert "researcher" in roles
+    pkgs = {p["name"]: p for p in list_packages(str(root))}
+    assert pkgs["research"]["status"] == "draft"
+
+
 def test_repo_coding_package_is_listed_verified():
     # 026 A の現物検査: リポジトリの coding パッケージがマニフェスト付きで存在し、
     # 検証状態 verified（019〜025 の実走群が根拠）で列挙される。

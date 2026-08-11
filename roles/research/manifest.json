@@ -1,0 +1,5 @@
+{
+  "name": "research",
+  "description": "調査レポート向け（調査→報告書→QA）。researcher をドメイン役割に持つ。pdm/qa は 020 の失敗（量化子弱化）への対策を含む調整版",
+  "status": "draft"
+}
