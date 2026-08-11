@@ -359,6 +359,19 @@ def test_process_prompt_lists_roles_and_models(tmp_path, monkeypatch):
     assert "qwen-x" in process_user
 
 
+def test_process_prompt_staffing_list_excludes_l4_positions(tmp_path, monkeypatch):
+    # 025 継ぎ目修理: pjm.md は「listed role names だけを使え」と言う——一覧（見せる範囲）は
+    # 人選の検証（task_roles＝有効な範囲）と一致していなければならない。pdm/pjm を載せると
+    # 人選しても implementer へ静かにフォールバックするだけの罠になる。
+    roles = dict(ROLES, pdm="PDM-POSITION-MARKER 目的を仕様に", pjm="PJM-POSITION-MARKER 進行を管理")
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, roles=roles)
+    process_user = agent._l0.calls[1]["messages"][1]["content"]
+    assert "architect" in process_user and "qa" in process_user   # 人選対象は載る
+    assert "PDM-POSITION-MARKER" not in process_user              # ポジションは載せない
+    assert "PJM-POSITION-MARKER" not in process_user
+
+
 # --- C1（合意007）: 検出した矛盾を独断解決させない -----------------------------
 #
 # 難課題 H3 の観測: PdM は矛盾（完全除去 かつ 1文字も変えるな）を検出しながら

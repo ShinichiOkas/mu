@@ -37,7 +37,7 @@ from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
     task_contract, task_goal, verdict_check, write_process, process_note,
 )
-from .role_kb import role_perms, role_prompt, role_tools, task_roles
+from .role_kb import role_perms, role_prompt, role_tools, staffing_lines, task_roles
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -317,9 +317,8 @@ class Manager:
         self, model: str, spec: dict, roles: dict, pool: list, log: Callable,
         system: str | None = None,
     ) -> list:
-        roles_s = "\n".join(
-            f"- {name}: {_first_line(role_prompt(doc))}" for name, doc in roles.items()
-        ) or "(none)"
+        # 一覧は人選対象だけ（見せる範囲＝有効な範囲。合意025。人間向け表示と同じ関数）
+        roles_s = staffing_lines(roles)
         user = (
             f"SPEC:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
             f"ROLES (your knowledge base):\n{roles_s}\n\n"
@@ -384,13 +383,6 @@ def _shape_line(schema: dict) -> str:
         for name, spec in schema.get("properties", {}).items()
     )
     return "Reply as JSON: {" + body + "}  ('?' = optional)."
-
-
-def _first_line(text: str) -> str:
-    for line in text.splitlines():
-        if line.strip():
-            return line.strip().lstrip("# ")
-    return ""
 
 
 def _failure_facts(failed_checks: list) -> str:

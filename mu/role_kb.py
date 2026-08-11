@@ -89,6 +89,26 @@ def task_roles(roles: dict) -> dict:
     return {name: doc for name, doc in roles.items() if name not in L4_ROLES}
 
 
+def staffing_lines(roles: dict) -> str:
+    """人選対象の役割一覧（1行＝「- 名前: 職掌の1行目」）。
+
+    PjM の process プロンプトに載る一覧と、CLI が人間に見せる一覧を**同じ関数**から
+    出す（合意025——構成と表示の一致を構造で保証する）。pjm.md は「listed role names
+    だけを使え」と言う——見せる範囲は人選の検証（task_roles）と一致していなければ
+    ならず、L4 のポジション（pdm/pjm）は人選できないので載せない。
+    """
+    lines = [f"- {name}: {_first_line(role_prompt(doc))}"
+             for name, doc in task_roles(roles).items()]
+    return "\n".join(lines) or "(none)"
+
+
+def _first_line(text: str) -> str:
+    for line in text.splitlines():
+        if line.strip():
+            return line.strip().lstrip("# ")
+    return ""
+
+
 def role_prompt(doc: Any, section: str | None = None) -> str:
     """role 定義の本文。旧形式（素の文字列）も受ける。
 
