@@ -1,0 +1,49 @@
+# Research Notes: Local LLM Runtimes Comparison
+
+## 1. Ollama
+- **Ease of Setup**: Very High. Provided as a simple installer/binary for macOS, Linux, and Windows. Quickstart allows running models with a single command (e.g., `ollama run llama3`).
+  - Source: https://docs.ollama.com/index
+- **API Compatibility**: High. Provides its own REST API and an OpenAI-compatible API for seamless integration with existing tools.
+  - Source: https://docs.ollama.com/api/usage
+- **Resource Consumption**: Moderate. Optimized for consumer hardware (laptops/desktops) using llama.cpp under the hood, supporting GGUF quantization.
+  - Source: https://ollama.com/
+- **Model Deployment Effort**: Low. Models are managed via a "Modelfile" and simple CLI commands (`pull`, `run`, `create`).
+  - Source: https://docs.ollama.com/index
+- **Inference Speed**: Good for single-user local use. However, lower throughput compared to production-grade engines like vLLM under concurrent load.
+  - Source: https://llmconfigurator.com/en/guides/vllm-setup-guide (Comparative mention)
+
+## 2. llama.cpp
+- **Ease of Setup**: Moderate. Can be installed via pre-built binaries, Docker, or by building from source. Building from source requires a C++ compiler and optional GPU SDKs (CUDA, Metal, etc.).
+  - Source: https://github.com/ggml-org/llama.cpp/blob/master/README.md
+- **API Compatibility**: Moderate to High. Includes `llama-server` which provides an OpenAI-compatible REST API.
+  - Source: https://github.com/ggml-org/llama.cpp/blob/master/README.md
+- **Resource Consumption**: Low. Extremely efficient; designed to run on minimal hardware (including CPU-only) using 1.5-bit to 8-bit quantization.
+  - Source: https://github.com/ggml-org/llama.cpp/blob/master/README.md
+- **Model Deployment Effort**: Moderate. Requires downloading GGUF formatted models (often from Hugging Face) and configuring specific flags for GPU offloading.
+  - Source: https://github.com/ggml-org/llama.cpp/blob/master/README.md
+- **Inference Speed**: High for local/single-user scenarios on diverse hardware (Apple Silicon, x86, etc.) due to specialized kernels.
+  - Source: https://github.com/ggml-org/llama.cpp/blob/master/README.md
+
+## 3. vLLM
+- **Ease of Setup**: Moderate. Requires a Python environment (3.9-3.12) or Docker. Installation is typically via `pip` or `uv`. Primarily targets Linux.
+  - Source: https://docs.vllm.cc/en/latest/getting_started/quickstart.html
+- **API Compatibility**: Very High. Built specifically for serving, providing a fully OpenAI-compatible server.
+  - Source: https://docs.vllm.ai/en/stable/usage/
+- **Resource Consumption**: High. Designed for GPU-heavy environments. Uses PagedAttention to manage KV cache efficiently, but typically requires dedicated VRAM.
+  - Source: https://vllm.ai/
+- **Model Deployment Effort**: Moderate. Focuses on Hugging Face model integration; deployment can be scaled using Docker or Kubernetes.
+  - Source: https://docs.vllm.ai/en/stable/usage/
+- **Inference Speed**: Extremely High. Specialized for high-throughput production serving with continuous batching and PagedAttention. Can be 5-20x faster than Ollama under concurrent load.
+  - Source: https://llmconfigurator.com/en/guides/vllm-setup-guide
+
+## 4. LM Studio
+- **Ease of Setup**: Very High. Desktop application (GUI) for Windows, macOS, and Linux. No CLI or environment setup required for basic use.
+  - Source: https://lmstudio.ai/docs/developer
+- **API Compatibility**: High. One-click "Start Server" provides OpenAI-compatible and Anthropic-compatible REST endpoints.
+  - Source: https://lmstudio.ai/docs/developer/rest
+- **Resource Consumption**: Moderate. Similar to Ollama/llama.cpp as it targets local consumer hardware and utilizes GGUF/GPU offloading.
+  - Source: https://lmstudio.co.com/performance.html
+- **Model Deployment Effort**: Very Low. Integrated GUI for searching and downloading models directly from Hugging Face.
+  - Source: https://lmstudio.ai/docs/developer
+- **Inference Speed**: Good for local use. Speed depends on GPU layer offloading and hardware configuration tuned via the GUI.
+  - Source: https://lmstudio.co.com/performance.html

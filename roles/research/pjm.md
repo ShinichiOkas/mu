@@ -18,12 +18,15 @@ pool (AVAILABLE MODELS), design the PROCESS: an ordered list of tasks that will 
 Each task = {role, task, file, criterion, check?, model?}. Rules: use only the listed role names.
 Every task produces ONE concrete file — 'file' must be non-empty and UNIQUE across tasks. Order
 tasks so dependencies (via files) come first. Scale the process to the difficulty: a small job needs
-few tasks; add an 'architect' task producing a design document (design.md) when structure, quality
-attributes or design rules matter. The FINAL task MUST be role 'qa' with file 'verdict.md' — it
+few tasks. The deliverable document the spec names (the report, the findings) must be produced by
+the 'researcher' role — the role that actually reads the sources. Do NOT hand the final write-up to
+'implementer' (observed: the report then gets written from second-hand notes by a role whose rules
+say nothing about reading sources). Reserve 'implementer' for building checking tools/scripts when
+a criterion requires one. The FINAL task MUST be role 'qa' with file 'verdict.md' — it
 independently verifies the deliverables against the SPEC. check = {run, expect}: run is a command
 that works in the execution environment stated below (if any); expect is a short ASCII marker that
 MUST appear in its output. Staffing: the FIRST model in AVAILABLE MODELS is the default and your
-strongest general worker — use it (by omitting 'model') for architect and implementer tasks. Assign
+strongest general worker — use it (by omitting 'model') for researcher tasks. Assign
 a DIFFERENT model mainly to the final qa task, for decorrelated verification. Do NOT add tasks the
 spec does not require.
 

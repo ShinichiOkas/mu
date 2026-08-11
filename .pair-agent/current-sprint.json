@@ -1,9 +1,9 @@
 {
   "sprint_id": "026-role-packages",
-  "status": "executing",
-  "agreed_at": "2026-08-11T00:00:00+09:00",
+  "status": "retrospecting",
   "goal": "目的別ロールパッケージ——検証済み役割セットをパッケージ単位（コーディング／調査レポート／研究開発／秘書業務／書籍執筆など）で切り替え、専門エージェントとして機能させる",
   "created_at": "2026-08-11T00:00:00+09:00",
+  "agreed_at": "2026-08-11T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/026-role-packages.md",
-  "note": "実行中。A 移動＋器（TDD）→ B 切替面＋回帰スモーク → C 研究パッケージ初版 → D 実走検証。前置宣言5件は合意ドキュメント参照"
+  "note": "4フェーズ完了（A 3749053 / B a1edba9 / C 8a19d04 / D）。coding 回帰＋research 実走ループ4走・全 achieved・violations none。research は draft のまま（昇格は師匠判断）。残課題はリサーチの深さの仕様化（LONGTERM_TODO）。振り返り待ち"
 }
