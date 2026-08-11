@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 from chat_common import (
-    ROLES_DIR, VerboseL0, env_preamble, log, short, utf8_console, verbose_tools,
+    ROLES_DIR, VerboseL0, env_preamble, log, short, show_roles, utf8_console, verbose_tools,
     L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -71,7 +71,8 @@ def main() -> None:
     l3 = Orchestrator(VerboseL0(l0, _L3), Agent(VerboseL0(l0, _L2), ToolLoop(VerboseL0(l0, _L1))))
     manager = Manager(VerboseL0(l0, _L4), l3)
 
-    print(f"L4 chat / model={model}  pool={pool}  roles={sorted(roles)}  l4_max={L4_MAX}")
+    print(f"L4 chat / model={model}  pool={pool}  l4_max={L4_MAX}")
+    show_roles(roles)
     print(f"spec: {spec_file}")
     print(f"  {short(spec['spec'], 200)}")
     try:

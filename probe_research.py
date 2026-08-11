@@ -21,7 +21,7 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    ROLES_DIR, VerboseL0, env_preamble, log, verbose_tools,
+    ROLES_DIR, VerboseL0, env_preamble, log, show_roles, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -99,6 +99,7 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     l4 = Manager(VerboseL0(l0, _L4), l3)
     director = Director(VerboseL0(l0, _L5), l4)
     roles = load_roles(ROLES_DIR)
+    show_roles(roles)
     # judge（LLM 検査器）は実行体とモデルの注入が要るので、ここで組んで渡す（環境接地は caller の責務）。
     # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
     # 独立性を作っているのはモデル差ではなく**文脈非共有**の方である（合意015）。

@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 import tools as tools_mod
+from mu.role_kb import L4_ROLES, missing_positions, staffing_lines
 
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
 ROLES_DIR = str(Path(__file__).resolve().parent / "roles")
@@ -78,6 +79,21 @@ def env_preamble() -> str:
             "script that does — adapt all work to their actual content."
         )
     return "\n".join(lines)
+
+
+def show_roles(roles: dict) -> None:
+    """ロード済み役割の表示（合意025——バインディングの透明化）。
+
+    人選対象の一覧は PjM の process プロンプトに載るものと**同じ関数**
+    （`staffing_lines`）から出す——人間が見るものと LLM が見るものの一致を構造で保証する。
+    渡した役割の集合＝人選の範囲そのもの。4ポジションの定義書不足があれば添える。
+    """
+    print("[roles] 人選対象（PjM が見る一覧と同一）:")
+    for line in staffing_lines(roles).splitlines():
+        print(f"  {line}")
+    missing = missing_positions(roles)
+    print(f"[roles] ポジション（人選対象外）: {', '.join(L4_ROLES)}"
+          + (f" ／ 定義書の不足: {', '.join(missing)}" if missing else ""))
 
 
 # --- 実況（表示は CLI の責務。mu の層は無変更・無関知） ------------------------

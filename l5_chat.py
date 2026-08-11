@@ -40,7 +40,7 @@ import sys
 
 import tools as tools_mod
 from chat_common import (
-    Abort, ROLES_DIR, VerboseL0, env_preamble, log, short, utf8_console, verbose_tools,
+    Abort, ROLES_DIR, VerboseL0, env_preamble, log, short, show_roles, utf8_console, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -107,7 +107,8 @@ def main() -> None:
     director = Director(VerboseL0(l0, _L5), l4)
     tools = verbose_tools(TOOLS)
 
-    print(f"L5 chat / model={model}  pool={pool}  roles={sorted(roles)}  l5_max={L5_MAX} l4_max={L4_MAX}")
+    print(f"L5 chat / model={model}  pool={pool}  l5_max={L5_MAX} l4_max={L4_MAX}")
+    show_roles(roles)
     print(f"  cwd={os.getcwd()}  <- 成果物・SPEC.md・PROCESS.md・verdict.md はここに作られます")
     print("  環境:", platform.system(), platform.release(), "/ execute_command=PowerShell")
     print("  (目的を入力 / /exit で終了)")

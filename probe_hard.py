@@ -26,7 +26,7 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    ROLES_DIR, VerboseL0, env_preamble, log, verbose_tools,
+    ROLES_DIR, VerboseL0, env_preamble, log, show_roles, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -341,6 +341,7 @@ def main() -> None:
     # 「役割は認識しているが知識が無い」状態の対照走になる。
     roles_dir = os.environ.get("MU_ROLES_DIR", ROLES_DIR)
     roles = load_roles(roles_dir)
+    show_roles(roles)
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     for rel, content in spec["files"].items():
