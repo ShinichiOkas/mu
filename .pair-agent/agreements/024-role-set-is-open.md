@@ -1,6 +1,6 @@
 # 合意 024 — 役割集合は開いている（汎用性の契約の明文化）
 
-status: executing
+status: completed（2026-08-11。振り返り実施——違和感3件を vision/024 に記録）
 created: 2026-08-11
 approved: 師匠「(b)ですね。implementerは気になりますが、許容範囲でしょう」（2026-08-11）
 

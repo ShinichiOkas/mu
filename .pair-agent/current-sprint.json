@@ -1,9 +1,10 @@
 {
   "sprint_id": "024-role-set-is-open",
-  "status": "executing",
+  "status": "completed",
+  "completed_at": "2026-08-11T00:00:00+09:00",
   "goal": "汎用性の契約の明文化——役割集合は開いている（コア契約は pdm/pjm/qa/implementer の4ポジション名のみ。ドメインが増えるごとに役割を足す）。ドキュメントのみ・挙動変更なし",
   "created_at": "2026-08-11T00:00:00+09:00",
   "agreed_at": "2026-08-11T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/024-role-set-is-open.md",
-  "note": "師匠が (b)（明文化・温存）を選択。ビジョン: 小説なら編集者・執筆者・挿絵師が登場すべき"
+  "note": "振り返り実施済み（違和感3件→vision/024: バインディング不透明・パッケージ単位・セット選択のL5内在化）。次スプリント候補 025（継ぎ目修理＋合成ローダーと床）未合意"
 }
