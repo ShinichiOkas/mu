@@ -1,0 +1,254 @@
+[roles] 人選対象（PjM が見る一覧と同一）:
+  - architect: role: architect（アーキテクト）
+  - implementer: role: implementer（実装者）
+  - qa: role: qa（品質保証）
+[roles] ポジション（人選対象外）: pdm, pjm
+probe_hard case=bugfix model=gemma4:31b-cloud pool=['gemma4:31b-cloud', 'qwen3.5:9b'] workdir=runs\2026-08-11-025\bugfix
+roles: ['architect', 'implementer', 'pdm', 'pjm', 'qa'] from S:\work\develop\mu\roles
+purpose: buggy_stats.py には複数のバグがある。test_stats.py を一切変更せずに、すべてのテストが通るように buggy_stats.py を修正してくれ。python test_stats.py の実行で OK が出ること。
+protected: ['test_stats.py']  time_budget: 1500s
+   [L4] 入力の実物を PdM に接地:
+   [L4]   - buggy_stats.py (433 bytes) — 自己記述（スクリプト冒頭の説明。コマンド・引数はここに書かれた形だけを使うこと）:
+   [L4]       簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。
+   [L4]   - test_stats.py (1270 bytes) — 自己記述（スクリプト冒頭の説明。コマンド・引数はここに書かれた形だけを使うこと）:
+   [L4]       stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。
+  [L5] 構造化出力を生成中… (3.8s, 405 tok)
+── PdM が定めた仕様（SPEC.md に書き出し済み。直接編集も可）──
+  定義: すべてのテストが通る = PowerShell で `python test_stats.py` を実行し、標準出力に文字列 『OK』 が含まれている状態でプロセスが正常終了すること
+  受入基準: test_stats.py が変更されていないこと
+    検査: Get-Content test_stats.py
+  受入基準: buggy_stats.py の修正後、test_stats.py を実行して OK が出力されること
+    検査: python test_stats.py → 「OK」
+  仕様: 【目的】 `buggy_stats.py` に含まれるバグを修正し、`test_stats.py` による検証をすべてパスさせる。  【制約】 - `test_stats.py` は読み取り専用であり、一切の変更を禁止する。 - 修正は `buggy_stats.py` の内部実装のみで行う。  【完了定義】 以下の基準をすべて満たしたとき、本タスクは完了とする。 1. `test_stats.p…
+   [L4] プロセスを編成中（PjM: 役割・人選・順序）… (3.1s, 336 tok)
+── PjM が編んだプロセス（PROCESS.md に書き出し済み。直接編集も可）──
+  1. [ ] (architect) design.md: Analyze the bug in buggy_stats.py by examining its code and the failure logs fro…
+  2. [ ] (implementer) buggy_stats.py: Implement the fix in buggy_stats.py based on the design.md. Ensure that only the…
+  3. [ ] (qa @qwen3.5:9b) verdict.md: Verify that the final deliverable meets all criteria: 1. test_stats.py remains u…
+     [L3] Plan/再計画を作成中… (3.9s, 206 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] analysis.md: Analyze the failure logs of test_stats.py and the implementation of buggy_stats.…
+     [L3]   2. [ ] design.md: Create a design document specifying the structural changes and logic fixes for b…
+        [L1] 思考中（次の行動を決定）… (1.6s, 27 tok)
+          [tool] list_dir(limit=100, offset=, path=.)
+          [tool]   -> file buggy_stats.py (433 bytes) file PROCESS.md (1711 bytes) file SPEC.md (1694 bytes) file test_stats.py (1270 bytes)
+        [L1] 思考中（次の行動を決定）… (2.1s, 36 tok)
+          [tool] read_file(limit=100, offset=, path=buggy_stats.py)
+          [tool]   -> """簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean(xs):     if not xs:         return 0     return sum(xs) / l…
+        [L1] 思考中（次の行動を決定）… (2.3s, 31 tok)
+          [tool] read_file(limit=100, offset=, path=test_stats.py)
+          [tool]   -> """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, median, variance, value_range…
+        [L1] 思考中（次の行動を決定）… (1.0s, 24 tok)
+          [tool] execute_command(command=python test_stats.py)
+          [tool]   -> exit=1 .FFF.F.FF ====================================================================== FAIL: test_mean_empty_raises (__…
+        [L1] 思考中（次の行動を決定）… (4.3s, 701 tok)
+          [tool] write_file(content=# Root Cause Analysis: buggy_stats.py  The analysis of `bugg…, mode=overwrite, path=analysis.md)
+          [tool]   -> wrote 2608 bytes to analysis.md
+        [L1] 思考中（次の行動を決定）… (6.6s, 207 tok)
+       [L2] Reflect（合否）判定中… (2.5s, 66 tok)
+       [L2]   -> passed=True :: The agent analyzed the failure logs of test_stats.py and the implementation of buggy_stats.py, identified the root cause…
+     [L3] [x] UNIT DONE  : analysis.md
+        [L1] 思考中（次の行動を決定）… (1.6s, 27 tok)
+          [tool] list_dir(limit=100, offset=, path=.)
+          [tool]   -> dir  __pycache__/ file analysis.md (2608 bytes) file buggy_stats.py (433 bytes) file PROCESS.md (1711 bytes) file SPEC.m…
+        [L1] 思考中（次の行動を決定）… (3.2s, 33 tok)
+          [tool] read_file(limit=100, offset=, path=SPEC.md)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） buggy_stats.py には複数のバグがある。test_stats.py …
+        [L1] 思考中（次の行動を決定）… (1.4s, 36 tok)
+          [tool] read_file(limit=100, offset=, path=buggy_stats.py)
+          [tool]   -> """簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean(xs):     if not xs:         return 0     return sum(xs) / l…
+        [L1] 思考中（次の行動を決定）… (2.0s, 31 tok)
+          [tool] read_file(limit=100, offset=, path=test_stats.py)
+          [tool]   -> """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, median, variance, value_range…
+        [L1] 思考中（次の行動を決定）… (4.8s, 931 tok)
+          [tool] write_file(content=# Design Document: Fix for `buggy_stats.py`  ## 1. Bug Analy…, mode=overwrite, path=design.md)
+          [tool]   -> wrote 3127 bytes to design.md
+        [L1] 思考中（次の行動を決定）… (2.3s, 211 tok)
+       [L2] Reflect（合否）判定中… (2.3s, 107 tok)
+       [L2]   -> passed=False :: The agent wrote the 'design.md' file, but the content of the file was never read back or displayed in the transcript. I …
+       [L2]   next: Read the content of 'design.md' and display it to verify the requirements are met.
+        [L1] 思考中（次の行動を決定）… (2.3s, 29 tok)
+          [tool] read_file(limit=100, offset=, path=design.md)
+          [tool]   -> # Design Document: Fix for `buggy_stats.py`  ## 1. Bug Analysis The current implementation of `buggy_stats.py` contains …
+        [L1] 思考中（次の行動を決定）… (3.9s, 182 tok)
+       [L2] Reflect（合否）判定中… (2.3s, 98 tok)
+       [L2]   -> passed=True :: The agent created 'design.md' which contains the exact cause of the bugs (Bug Analysis table), the required code changes…
+     [L3] [x] UNIT DONE  : design.md
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (architect) design.md
+     [L3] Plan/再計画を作成中… (2.1s, 126 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] buggy_stats.py: Implement the bug fixes in buggy_stats.py based on the design.md specifications,…
+        [L1] 思考中（次の行動を決定）… (3.2s, 27 tok)
+          [tool] list_dir(limit=100, offset=, path=.)
+          [tool]   -> dir  __pycache__/ file analysis.md (2608 bytes) file buggy_stats.py (433 bytes) file design.md (3127 bytes) file PROCESS…
+        [L1] 思考中（次の行動を決定）… (1.8s, 33 tok)
+          [tool] read_file(limit=100, offset=, path=design.md)
+          [tool]   -> # Design Document: Fix for `buggy_stats.py`  ## 1. Bug Analysis The current implementation of `buggy_stats.py` contains …
+        [L1] 思考中（次の行動を決定）… (1.4s, 36 tok)
+          [tool] read_file(limit=100, offset=, path=buggy_stats.py)
+          [tool]   -> """簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean(xs):     if not xs:         return 0     return sum(xs) / l…
+        [L1] 思考中（次の行動を決定）… (1.6s, 20 tok)
+          [tool] execute_command(command=python test_stats.py)
+          [tool]   -> exit=1 .FFF.F.FF ====================================================================== FAIL: test_mean_empty_raises (__…
+        [L1] 思考中（次の行動を決定）… (3.4s, 277 tok)
+          [tool] write_file(content="""簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean…, mode=overwrite, path=buggy_stats.py)
+          [tool]   -> wrote 741 bytes to buggy_stats.py
+        [L1] 思考中（次の行動を決定）… (2.9s, 20 tok)
+          [tool] execute_command(command=python test_stats.py)
+          [tool]   -> exit=0 ......... ---------------------------------------------------------------------- Ran 9 tests in 0.000s  OK 
+        [L1] 思考中（次の行動を決定）… (2.9s, 246 tok)
+       [L2] Reflect（合否）判定中… (3.8s, 58 tok)
+       [L2]   -> passed=True :: The agent modified buggy_stats.py and ran the verification command 'python test_stats.py', which produced the required o…
+          [tool] execute_command(python test_stats.py)
+          [tool]   -> exit=0 ......... ---------------------------------------------------------------------- Ran 9 tests in 0.000s  OK 
+     [L3] [x] UNIT DONE  : buggy_stats.py
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (implementer) buggy_stats.py
+   [L4] [-] ツール非配布: (qa) edit_file
+   [L4] [-] ツール非配布: (qa) web_search
+   [L4] [-] ツール非配布: (qa) fetch_url
+     [L3] Plan/再計画を作成中… (17.9s, 652 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] verdict.md: Read execution result and generate verdict.md with line-by-line verification of …
+     [L3]   2. [ ] : (Final confirmation step implicit in output): Ensure that the file test_stats.py…
+        [L1] 思考中（次の行動を決定）… (2.6s, 217 tok)
+          [tool] list_dir(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix, offset=, limit=50)
+          [tool]   -> dir  __pycache__/ file analysis.md (2608 bytes) file buggy_stats.py (741 bytes) file design.md (3127 bytes) file PROCESS…
+        [L1] 思考中（次の行動を決定）… (1.5s, 111 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\SPEC.md, offset=, limit=50)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） buggy_stats.py には複数のバグがある。test_stats.py …
+        [L1] 思考中（次の行動を決定）… (1.8s, 146 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\analysis.md, offset=, limit=30)
+          [tool]   -> # Root Cause Analysis: buggy_stats.py  The analysis of `buggy_stats.py` against the requirements defined in `test_stats.…
+        [L1] 思考中（次の行動を決定）… (1.8s, 146 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\analysis.md, offset=30, limit=20)
+          [tool]   -> - **Root Cause**: Implementation missing the subtraction of the minimum value (`max(xs) - min(xs)`). - **Bug B (Empty Li…
+        [L1] 思考中（次の行動を決定）… (3.8s, 381 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\test_stats.py, offset=, limit=30)
+          [tool]   -> """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, median, variance, value_range…
+        [L1] 思考中（次の行動を決定）… (1.5s, 113 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\test_stats.py, offset=30, limit=20)
+          [tool]   ->             variance([5])      def test_value_range(self):         self.assertEqual(value_range([4, 1, 7]), 6)      def …
+        [L1] 思考中（次の行動を決定）… (1.4s, 99 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\buggy_stats.py, offset=, limit=30)
+          [tool]   -> """簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean(xs):     if not xs:         raise ValueError("Empty list") …
+        [L1] 思考中（次の行動を決定）… (2.1s, 187 tok)
+          [tool] execute_command(command=python "S:\work\develop\mu\runs\2026-08-11-025\bugfix\test_s…)
+          [tool]   -> exit=0  OK  
+        [L1] 思考中（次の行動を決定）… (3.6s, 352 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\SPEC_extract.t…, offset=, limit=30)
+          [tool]   -> error: [Errno 2] No such file or directory: 'S:\\work\\develop\\mu\\runs\\2026-08-11-025\\bugfix\\SPEC_extract.txt'
+        [L1] 思考中（次の行動を決定）… (2.6s, 225 tok)
+          [tool] execute_command(command=Get-Content "S:\work\develop\mu\runs\2026-08-11-025\bugfix\t…)
+          [tool]   -> exit=0  Lines Words Characters Property ----- ----- ---------- --------    29                    
+       [L2] Reflect（合否）判定中… (1.9s, 117 tok)
+       [L2]   -> passed=False :: verdict.md was not created in the transcript. The goal requires reading execution results to generate this specific file…
+       [L2]   next: [write_file ok path=verdict.md bytes=n content='ITEM 1: PASS — corrected code for mean now raises ValueError on empty li…
+        [L1] 思考中（次の行動を決定）… (5.8s, 544 tok)
+          [tool] write_file(S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md, content=ITEM 1: PASS — test_stats.py の内容が原文のまま（読み取り専用ファイルとして保持されている）…, mode=overwrite)
+          [tool]   -> wrote 547 bytes to S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md
+        [L1] 思考中（次の行動を決定）… (1.3s, 85 tok)
+       [L2] Reflect（合否）判定中… (2.1s, 148 tok)
+       [L2]   -> passed=False :: The transcript shows the agent attempted to write `verdict.md` but FAILED when trying to read `SPEC_extract.txt`, which …
+       [L2]   next: read_file('S:\work\develop\mu\runs\2026-08-11-025\bugfix\SPEC_extract.txt')
+        [L1] 思考中（次の行動を決定）… (6.0s, 567 tok)
+          [tool] execute_command(command=Get-ChildItem "S:\work\develop\mu" -Recurse -Filter "*SPEC*"…)
+          [tool]   -> exit=0  FullName                                                                                                Length -…
+        [L1] 思考中（次の行動を決定）… (2.1s, 141 tok)
+       [L2] Reflect（合否）判定中… (2.1s, 134 tok)
+       [L2]   -> passed=False :: The write_file tool reported success (547 bytes written) but the actual content of verdict.md was not displayed in the t…
+       [L2]   next: [tool read_file ok | action=read path='S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md']
+        [L1] 思考中（次の行動を決定）… (4.7s, 400 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md, offset=, limit=30)
+          [tool]   -> ITEM 1: PASS — test_stats.py の内容が原文のまま（読み取り専用ファイルとして保持されている）。test_stats.py はユニットテストの記述のみを含み、修正前と同一。  ITEM 2: PASS — `pyt…
+        [L1] 思考中（次の行動を決定）… (2.0s, 158 tok)
+       [L2] Reflect（合否）判定中… (1.7s, 89 tok)
+       [L2]   -> passed=True :: TRANSCRIPT shows write_file ok (bytes=547) to the required path 'S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.m…
+          [tool] execute_command(Get-Content "verdict.md")
+          [tool]   -> exit=0 ITEM 1: PASS — test_stats.py の内容が原文のまま（読み取り専用ファイルとして保持されている）。test_stats.py はユニットテストの記述のみを含み、修正前と同一。  ITEM 2: PASS…
+     [L3] [x] UNIT DONE  : verdict.md
+        [L1] 思考中（次の行動を決定）… (3.0s, 276 tok)
+          [tool] execute_command(command=Get-FileHash -Path "S:\work\develop\mu\runs\2026-08-11-025\b…)
+          [tool]   -> exit=0  Hash                                                             Path ----                                      …
+        [L1] 思考中（次の行動を決定）… (1.5s, 115 tok)
+          [tool] list_dir(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix, limit=50, offset=)
+          [tool]   -> dir  __pycache__/ file analysis.md (2608 bytes) file buggy_stats.py (741 bytes) file design.md (3127 bytes) file PROCESS…
+        [L1] 思考中（次の行動を決定）… (1.8s, 154 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\SPEC.md, offset=, limit=50)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） buggy_stats.py には複数のバグがある。test_stats.py …
+        [L1] 思考中（次の行動を決定）… (37.6s, 4382 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\SPEC.md, offset=9, limit=20)
+          [tool]   -> ## 受入基準 1. [ ] test_stats.py が変更されていないこと（検査: `Get-Content test_stats.py`） 2. [ ] buggy_stats.py の修正後、test_stats.py を実行して…
+        [L1] 思考中（次の行動を決定）… (6.5s, 725 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\buggy_stats.py, offset=, limit=30)
+          [tool]   -> """簡易統計モジュール（バグあり）。test_stats.py を通るように修正すること。"""   def mean(xs):     if not xs:         raise ValueError("Empty list") …
+        [L1] 思考中（次の行動を決定）… (1.3s, 104 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\buggy_stats.py, offset=30, limit=10)
+          [tool]   ->     return max(xs) - min(xs) 
+        [L1] 思考中（次の行動を決定）… (2.6s, 270 tok)
+          [tool] read_file(path=S:\work\develop\mu\runs\2026-08-11-025\bugfix\test_stats.py, offset=, limit=30)
+          [tool]   -> """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, median, variance, value_range…
+        [L1] 思考中（次の行動を決定）… (2.1s, 208 tok)
+          [tool] execute_command(command=python "S:\work\develop\mu\runs\2026-08-11-025\bugfix\test_s…)
+          [tool]   -> exit=0 ......... ---------------------------------------------------------------------- Ran 9 tests in 0.000s  OK 
+        [L1] 思考中（次の行動を決定）… (3.3s, 371 tok)
+          [tool] write_file(S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md, content=ITEM 1: PASS — test_stats.py のファイル内容が修正前と同一であること：ハッシュ値 E085C…, mode=overwrite)
+          [tool]   -> wrote 579 bytes to S:\work\develop\mu\runs\2026-08-11-025\bugfix\verdict.md
+        [L1] 思考中（次の行動を決定）… (2.1s, 216 tok)
+       [L2] Reflect（合否）判定中… (1.5s, 84 tok)
+       [L2]   -> passed=True :: The transcript confirms that `test_stats.py` was read (showing it exists and has content) but never written to or modifi…
+     [L3] [?] UNIT CHECK SKIP:  (no check command)
+     [L3] [x] UNIT DONE  : 
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [x] TASK DONE  : (qa) verdict.md
+          [tool] execute_command(Get-Content test_stats.py)
+          [tool]   -> exit=0 """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, median, variance, valu…
+          [tool] execute_command(python test_stats.py)
+          [tool]   -> exit=0 ......... ---------------------------------------------------------------------- Ran 9 tests in 0.000s  OK 
+   [L4] 検査[ok] test_stats.py が変更されていないこと :: exit=0 """stats の仕様を定めるテスト。このファイルは変更禁止（読み取り専用）。""" import unittest  from buggy_stats import mean, me…
+   [L4] 検査[ok] buggy_stats.py の修正後、test_stats.py を実行して OK が出力されること :: exit=0 ......... ---------------------------------------------------------------------- Ran 9 tests …
+   [L4]   [PASS] #1 test_stats.py が変更されていないこと :: test_stats.py のファイル内容が修正前と同一であること：ハッシュ値 E085C2B5C620E7FFF767F56201D19F8C7CF90395…
+   [L4]   [PASS] #2 buggy_stats.py の修正後、test_stats.py を実行して OK が出力されること :: python test_stats.py の実行結果に『OK』が含まれ正常終了(exit=0)、標準出力が '.........\n--------------…
+   [L4] QA 判定（集約はコード）: yes :: 受入基準 2 項目すべて PASS
+   [L4]   gap: なし（すべての受入基準を満たしている）
+=== RESULT ===
+{
+  "achieved": true,
+  "escalated": false,
+  "escalation_reason": "",
+  "assessment": {
+    "achieved": "yes",
+    "reason": "受入基準 2 項目すべて PASS",
+    "gap": "なし（すべての受入基準を満たしている）",
+    "items": [
+      {
+        "n": 1,
+        "text": "test_stats.py が変更されていないこと",
+        "verdict": "pass",
+        "evidence": "test_stats.py のファイル内容が修正前と同一であること：ハッシュ値 E085C2B5C620E7FFF767F56201D19F8C7CF903956DA1EC43DBFF10BADFFBD79B で確認、読み取り専用ファイルとして保持されている。"
+      },
+      {
+        "n": 2,
+        "text": "buggy_stats.py の修正後、test_stats.py を実行して OK が出力されること",
+        "verdict": "pass",
+        "evidence": "python test_stats.py の実行結果に『OK』が含まれ正常終了(exit=0)、標準出力が '.........\\n----------------------------------------------------------------------\\nRan 9 tests in 0.000s\\n\\nOK' と表示されたことを確認。"
+      }
+    ]
+  },
+  "rounds": 1,
+  "l4_rounds": 1
+}
+  [x] (architect) design.md
+  [x] (implementer) buggy_stats.py
+  [x] (qa @qwen3.5:9b) verdict.md
+elapsed: 221s
+protection violations: none
+files in workdir:
+  analysis.md (2608 bytes)
+  buggy_stats.py (741 bytes)
+  design.md (3127 bytes)
+  PROCESS.md (1711 bytes)
+  SPEC.md (1694 bytes)
+  test_stats.py (1270 bytes)
+  verdict.md (579 bytes)

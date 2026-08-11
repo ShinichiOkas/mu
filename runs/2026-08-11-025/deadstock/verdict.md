@@ -1,0 +1,9 @@
+ITEM 1: PASS — deadstock_report.txt exists. Verified via Test-Path execution returning True, and read_file offset=0 confirms file presence at S:/work/develop/mu/runs/2026-08-11-025/deadstock/. This satisfies SPEC acceptance criteria requirement #1 that states "deadstock_report.txt が存在すること".
+
+ITEM 2: PASS — deadstock_report.txt contains '死に筋商品リスト' as first line. Verified via read_file output for S:/work/develop/mu/runs/2026-08-11-025/deadstock/deadstock_report.txt which shows "死に筋商品リスト" at offset=0 (first line). This satisfies SPEC acceptance criteria requirement #2 stating files must contain "'死に筋商品リスト'" header.
+
+ITEM 3: PASS — deadstock_report.txt contains '純売上数量' string in output for listed products P007 and P010. Verified via read_file at offset=1 showing lines like "商品コード：P007, ... , 純売上数量：0" and "商品コード：P010, ... , 純売上数量：0". This satisfies SPEC acceptance criteria requirement #3 requiring "'『純売上数量』の文字列が含まれていること'.
+
+ITEM 4: PASS — All product codes from inventory.csv were processed as evaluation targets. Evidence from analyze_deadstock.py code at offset=29-35 shows loop "for code, name in inventory.items()" iterating all products with uppercase normalization (code.upper()) to handle mixed-case sales/returns CSV entries (e.g., p008 lowercase). deadstock_report.txt lists P007 and P010 because they meet deadstock definition '純売上数量 ≤ 0': P007 has no sales/return records giving net_sales=0; P010 similarly yields 0. Other products (P001-P006, P008-P009) had positive net_sales so correctly excluded per SPEC definition "純売上数量为 0 以下". This satisfies SPEC acceptance criteria #4 requiring 'inventory.csv に存在する商品コードが漏れなく判定対象となっていること'.
+
+GAP: なし — All items PASS with valid evidence.
