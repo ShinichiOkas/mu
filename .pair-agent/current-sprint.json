@@ -1,9 +1,9 @@
 {
   "sprint_id": "027-remaining-role-packages",
-  "status": "executing",
+  "status": "retrospecting",
   "agreed_at": "2026-08-11T00:00:00+09:00",
   "goal": "未定義の3パッケージ（rnd／secretary／book）の役割を作成し、実証実験（実走ループ）で検証する",
   "created_at": "2026-08-11T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/027-remaining-role-packages.md",
-  "note": "実行中。役割設計は師匠承認済み（secretary 1役／rnd: scientist+experimenter／book: writer+editor・挿絵なし）。A secretary（schedule 課題・021 比較）→ B rnd（課題追加）→ C book（課題追加）→ D coding スモーク＋記録"
+  "note": "4フェーズ完了（A e8f7497 / B e1cc634 / C a3fa0e4 / D）。3ドメインとも実走達成・偽・達成ゼロ維持・coding スモーク合格。5パッケージ体制（coding verified＋4 draft）。振り返り待ち"
 }
