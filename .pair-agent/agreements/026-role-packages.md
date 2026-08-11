@@ -1,6 +1,6 @@
 # 合意 026 — 目的別ロールパッケージ（器＋研究1本実走）
 
-status: retrospecting（2026-08-11。4フェーズ完了・320 green・coding 回帰＋research 実走ループ4走。振り返り待ち）
+status: completed（2026-08-11。4フェーズ完了・320 green・coding 回帰＋research 実走ループ4走・振り返り実施済み）
 created: 2026-08-11
 
 ## 背景（師匠の言葉・原文）
