@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 import tools as tools_mod
-from mu.role_kb import L4_ROLES, missing_positions, staffing_lines
+from mu.role_kb import L4_ROLES, list_packages, missing_positions, parse_role_doc, staffing_lines
 
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
 ROLES_DIR = str(Path(__file__).resolve().parent / "roles" / "coding")   # 既定＝コーディングパッケージ（合意026）
@@ -38,6 +38,36 @@ def roles_paths() -> tuple:
     raw = os.environ.get("MU_ROLES_DIR", "")
     paths = tuple(p.strip() for p in raw.split(",") if p.strip())
     return paths or (ROLES_DIR,)
+
+
+# カタログの root（roles/ 直下＝パッケージたちと director.md の住所。合意028）。
+ROLES_ROOT = str(Path(__file__).resolve().parent / "roles")
+
+
+def roles_auto() -> bool:
+    """MU_ROLES_DIR=auto ——パッケージ選択を L5（Director）に委ねる意思表示（合意028。opt-in）。"""
+    return os.environ.get("MU_ROLES_DIR", "").strip().lower() == "auto"
+
+
+def auto_catalog(root: str = ROLES_ROOT) -> tuple:
+    """自動選択モードの (カタログ, selector)。
+
+    カタログは `list_packages` の出力から **planned（役割文ゼロの枠）を除外**したもの
+    （知識ゼロのチームは選ばせない。カタログは呼び出し側規定なので、これはこの表面の既定）。
+    selector はカタログ級定義書 `<root>/director.md`（無ければ None＝知識ゼロで判断。
+    不足は L5 側の role_doc_missing で可視化される）。
+    """
+    packages = [p for p in list_packages(root) if p.get("status") != "planned"]
+    doc = Path(root) / "director.md"
+    selector = parse_role_doc(doc.read_text(encoding="utf-8")) if doc.is_file() else None
+    return packages, selector
+
+
+def show_catalog(packages: list) -> None:
+    """自動選択モードの起動表示: どの範囲から選ばれるか（＝カタログ）を人間にも見せる。"""
+    print("[roles] パッケージ自動選択（MU_ROLES_DIR=auto）——カタログ:")
+    for p in packages:
+        print(f"  - {p.get('name')}（{p.get('status', '?')}）: {short(p.get('description'), 90)}")
 
 # 全層タワー（l4_chat / l5_chat / probe）の層ラベル。浅いタワーの CLI（l3_chat）は
 # 自分のインデントを自分で定義する（表示は呼び出し側の持ち物）。
@@ -250,7 +280,9 @@ def _show_process(tasks: list, process_path: str) -> None:
 
 def log(event: tuple) -> None:
     kind = event[0]
-    if kind == "spec":
+    if kind == "package":                 # 合意028: L5 がカタログから自選したパッケージ
+        print(f"{L5} パッケージを自選: {event[1]} :: {short(event[2], 140)}")
+    elif kind == "spec":
         if len(event) > 2:
             _show_spec(event[1], event[2])
     elif kind == "spec_fallback":

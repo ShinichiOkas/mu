@@ -28,7 +28,8 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    VerboseL0, env_preamble, log, roles_paths, show_roles, verbose_tools,
+    VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, show_catalog,
+    show_roles, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -362,8 +363,13 @@ def main() -> None:
     spec = CASES[case]
     # 役割定義書の出所は差し替え可能（合意008）。空ディレクトリを指せば
     # 「役割は認識しているが知識が無い」状態の対照走になる。
-    roles = load_roles(*roles_paths())   # 切替は MU_ROLES_DIR（合意026。カンマ区切り合成可）
-    show_roles(roles, roles_paths())
+    # 切替は MU_ROLES_DIR（合意026。カンマ区切り合成可）。auto＝L5 の自動選択（合意028）。
+    if roles_auto():
+        roles, (packages, selector) = {}, auto_catalog()
+        show_catalog(packages)
+    else:
+        roles, packages, selector = load_roles(*roles_paths()), (), None
+        show_roles(roles, roles_paths())
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     for rel, content in spec["files"].items():
@@ -394,7 +400,7 @@ def main() -> None:
     try:
         result = director.run(
             model, spec["purpose"], verbose_tools([*TOOLS, judge_tool]),
-            roles=roles, models=pool,
+            roles=roles, packages=packages, selector=selector, models=pool,
             log=log, system=env_preamble(),
             guard=tools_mod.protection_violations,   # 破れたら周・タスク境界で止める（合意016→018）
             deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）

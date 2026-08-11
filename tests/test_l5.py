@@ -478,6 +478,34 @@ def _package_is_complete_draft(name: str, domain_roles: set):
     return roles
 
 
+def test_roles_auto_flag(monkeypatch):
+    # 028 B: MU_ROLES_DIR=auto が自動選択モードの意思表示（opt-in。既定は変えない）。
+    from chat_common import roles_auto
+    monkeypatch.setenv("MU_ROLES_DIR", "auto")
+    assert roles_auto() is True
+    monkeypatch.setenv("MU_ROLES_DIR", "roles/coding")
+    assert roles_auto() is False
+    monkeypatch.delenv("MU_ROLES_DIR")
+    assert roles_auto() is False
+
+
+def test_auto_catalog_filters_planned_and_loads_selector(tmp_path):
+    # 028 B: 表面が渡す既定カタログは planned（役割文ゼロ）を除外し、
+    # カタログ級定義書 director.md を selector としてロードする。
+    import json as _json
+    from chat_common import auto_catalog
+    root = tmp_path / "roles"
+    for name, status in (("coding", "verified"), ("stub", "planned")):
+        d = root / name
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(
+            _json.dumps({"name": name, "description": "x", "status": status}), encoding="utf-8")
+    (root / "director.md").write_text("SELECT-MARKER 選び方", encoding="utf-8")
+    packages, selector = auto_catalog(str(root))
+    assert [p["name"] for p in packages] == ["coding"]
+    assert "SELECT-MARKER" in selector["prompt"]
+
+
 def test_repo_secretary_package_is_complete_draft():
     # 秘書業務は一人が通しで持つ設計（分割は文脈と確認責任を壊す）→ ドメイン役割は1役。
     _package_is_complete_draft("secretary", {"secretary"})
