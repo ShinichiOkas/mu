@@ -1,10 +1,9 @@
 {
-  "sprint_id": "027-remaining-role-packages",
-  "status": "completed",
-  "goal": "未定義の3パッケージ（rnd／secretary／book）の役割を作成し、実証実験（実走ループ）で検証する",
+  "sprint_id": "028-l5-package-selection",
+  "status": "executing",
+  "goal": "L5 によるパッケージ自動選択の内在化——カタログ（呼び出し側規定）から Director が目的に適合するパッケージを1判断で選ぶ。適合なしは escalate",
   "created_at": "2026-08-11T00:00:00+09:00",
-  "agreed_at": "2026-08-11T00:00:00+09:00",
-  "completed_at": "2026-08-11T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/027-remaining-role-packages.md",
-  "note": "振り返り実施済み（vision/027・Skill 2件承認）。師匠の現在地認識: 骨格の Mu はほぼ完成に近い——重心は中身（役割定義の設計と品質・検証語彙）へ。5パッケージ体制（coding verified＋4 draft、昇格は師匠判断）。次スプリント未協議——候補: L5 パッケージ自動選択（条件が揃いつつある）／リサーチの深さの仕様化／検証語彙の構造化（言語必須欄など）"
+  "agreed_at": "2026-08-12T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/028-l5-package-selection.md",
+  "note": "実行中。設計は師匠承認済み（roles/director.md＝カタログ級の5つ目の名前を含む）。A 機構（TDD）→ B 表面 MU_ROLES_DIR=auto＋director.md → C 実証実験（選択のみ精度6目的×3＋e2e 2本＋スモーク）"
 }

@@ -506,6 +506,83 @@ def test_repo_coding_package_is_listed_verified():
     assert "coding" in pkgs and pkgs["coding"]["status"] == "verified"
 
 
+def _catalog(tmp_path):
+    """028 用の使い捨てカタログ: novel（役割文あり）と hollow（役割文ゼロ＝planned 相当）。"""
+    novel = tmp_path / "cat" / "novel"
+    novel.mkdir(parents=True)
+    (novel / "novelist.md").write_text("NOVELIST-MARKER 物語を書く", encoding="utf-8")
+    (novel / "qa.md").write_text("QA-DOC 判定する", encoding="utf-8")
+    hollow = tmp_path / "cat" / "hollow"
+    hollow.mkdir()
+    return [
+        {"name": "novel", "description": "小説向け", "status": "draft", "path": str(novel)},
+        {"name": "hollow", "description": "枠だけ", "status": "planned", "path": str(hollow)},
+    ]
+
+
+SELECT_NOVEL = {"package": "novel", "reason": "物語の目的に適合"}
+PROC_NOVEL = {"tasks": [{"role": "novelist", "task": "書く", "file": "story.md", "criterion": "ある"}]}
+
+
+def test_run_with_packages_selects_loads_and_runs(tmp_path, monkeypatch):
+    # 028 A: roles 無し＋packages 有り → specify の前に選択の1判断 → 選択パッケージを
+    # load して以降は従来どおり。結果契約に package 欄（選択の正しさを機械検査できる）。
+    monkeypatch.chdir(tmp_path)
+    agent = make([SELECT_NOVEL, SPEC, PROC_NOVEL],
+                 [{"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]}])
+    result = agent.run("m", "掌編小説を書いてくれ", [], packages=_catalog(tmp_path), models=["m"])
+    assert result["achieved"] is True
+    assert result["package"] == "novel"
+    select_user = agent._l0.calls[0]["messages"][-1]["content"]
+    assert "CATALOG" in select_user and "novel" in select_user and "小説向け" in select_user
+    process_user = agent._l0.calls[2]["messages"][-1]["content"]
+    assert "NOVELIST-MARKER" in process_user   # 選択パッケージの役割が人選一覧に載る
+
+
+def test_manual_roles_win_over_packages(tmp_path, monkeypatch):
+    # L6（呼び出し側の roles 明示）が常に優先——選択の判断は挟まらない。
+    agent = make([SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch, packages=_catalog(tmp_path))
+    assert result["achieved"] is True
+    assert result["package"] == ""
+    fmt = agent._l0.calls[0]["format"]
+    assert set(fmt["properties"]) == set(_SPECIFY_PROPS)   # 1発目が specify（選択ではない）
+
+
+_SPECIFY_PROPS = ("definitions", "criteria", "spec", "feasible", "conflicts")
+
+
+def test_no_fit_escalates_without_running(tmp_path, monkeypatch):
+    # 床①: 適合なしの申告 → 黙って別パッケージを当てず escalate（vision/024 の規律）。
+    monkeypatch.chdir(tmp_path)
+    agent = make([{"package": "", "reason": "どのパッケージの職掌でもない"}])
+    result = agent.run("m", "衛星を打ち上げてくれ", [], packages=_catalog(tmp_path))
+    assert result["escalated"] is True and result["achieved"] is False
+    assert result["package"] == ""
+    assert "適合" in result["escalation_reason"]
+    assert agent._l4._l3.calls == []   # L4 は一切動いていない
+
+
+def test_unknown_package_name_escalates(tmp_path, monkeypatch):
+    # 床②: カタログに無い名前の発明 → 名指しで escalate。
+    monkeypatch.chdir(tmp_path)
+    agent = make([{"package": "ghost", "reason": "これがよい"}])
+    result = agent.run("m", "何かしてくれ", [], packages=_catalog(tmp_path))
+    assert result["escalated"] is True
+    assert "ghost" in result["escalation_reason"]
+    assert agent._l4._l3.calls == []
+
+
+def test_selected_empty_package_escalates(tmp_path, monkeypatch):
+    # 床③: 役割文ゼロのパッケージ（planned の枠）を選んだ → 知識ゼロで走らせず escalate。
+    monkeypatch.chdir(tmp_path)
+    agent = make([{"package": "hollow", "reason": "枠を選ぶ"}])
+    result = agent.run("m", "何かしてくれ", [], packages=_catalog(tmp_path))
+    assert result["escalated"] is True
+    assert "hollow" in result["escalation_reason"]
+    assert agent._l4._l3.calls == []
+
+
 def test_specify_and_process_prompts_carry_env(tmp_path, monkeypatch):
     agent = make([SPEC, PROCESS3], ok3())
     run(agent, tmp_path, monkeypatch, system="ENV-PS-MARKER")

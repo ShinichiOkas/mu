@@ -29,7 +29,7 @@ from typing import Any, Callable, Sequence
 from .l1 import Tool
 from .l3 import noop, structured
 from .l4 import Manager, TIME_UP, lifeline_system
-from .role_kb import role_section
+from .role_kb import load_roles, role_section
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -65,6 +65,14 @@ _SPECIFY_SCHEMA = {
 
 _SPEC_NOTE = "（L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）"
 
+# 028: パッケージ選択の1判断（カタログは呼び出し側が規定・vision/024 の規律）。
+# 適合するものが無ければ package は空文字——無理に合わせない申告の経路。
+_SELECT_SCHEMA = {
+    "type": "object",
+    "properties": {"package": {"type": "string"}, "reason": {"type": "string"}},
+    "required": ["package", "reason"],
+}
+
 
 
 _NO_VERDICT = {"achieved": "uncertain", "reason": "no verdict (QA task not completed)", "gap": ""}
@@ -80,7 +88,7 @@ def _with_check_facts(reason: str, checks: list) -> str:
 
 
 def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds,
-          l4_rounds: int = 0, escalation_reason: str = "") -> dict:
+          l4_rounds: int = 0, escalation_reason: str = "", package: str = "") -> dict:
     """呼び出し側への返り値。`rounds` は**この層の**周回（respec サイクル）、
     `l4_rounds` は最後に回した L4（PjM サイクル）の周回——予算は各層が自分で持つ（合意009）。
 
@@ -93,6 +101,9 @@ def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path,
         "spec": spec, "spec_path": spec_path, "tasks": tasks,
         "process_path": process_path, "rounds": rounds, "l4_rounds": l4_rounds,
         "escalation_reason": escalation_reason,
+        # 028: 自動選択されたパッケージ名（手動 roles・選択前の停止は空文字）。
+        # 選択の正しさを呼び出し側が機械検査できる観測面。
+        "package": package,
     }
 
 
@@ -286,6 +297,8 @@ class Director:
         tools: Sequence[Tool],
         *,
         roles: dict | None = None,
+        packages: Sequence[dict] | None = None,
+        selector: Any = None,
         models: Sequence[str] | None = None,
         spec_path: str = "SPEC.md",
         process_path: str = "PROCESS.md",
@@ -302,6 +315,20 @@ class Director:
         protected: Sequence[str] | None = None,
     ) -> dict:
         roles = roles or {}
+        package = ""
+        # 028: roles 明示（L6 手動）が常に優先。無いときだけカタログから1判断で選ぶ。
+        if not roles and packages:
+            sel = self._select_package(model, purpose, packages, selector, log, system)
+            if "escalate" in sel:
+                # 黙って別パッケージを当てない（vision/024 の規律）——選択の失敗は人間へ。
+                assessment = {"achieved": "uncertain",
+                              "reason": "パッケージ選択で停止。人間の判断が要る",
+                              "gap": sel["escalate"]}
+                empty = {"definitions": [], "criteria": [], "spec": "",
+                         "feasible": True, "conflicts": []}
+                return _done(False, True, assessment, empty, spec_path, [], process_path,
+                             0, escalation_reason=sel["escalate"])
+            roles, package = sel["roles"], sel["package"]
         inputs = _input_grounding(                                    # 入力の実物（合意007 C2）
             str(Path(spec_path).parent), {Path(spec_path).name, Path(process_path).name}
         )
@@ -309,7 +336,8 @@ class Director:
             log(("inputs", inputs))
         spec = self._specify(model, purpose, roles, log, system, inputs)
         if _infeasible(spec):                                         # 充足不能なら人間へ（合意007）
-            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log)
+            return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log,
+                                         package)
 
         rounds, l4_rounds, tasks, assessment = 0, 0, [], _NO_VERDICT
         for _ in range(max_rounds):
@@ -319,7 +347,8 @@ class Director:
             if deadline and deadline():
                 assessment = {"achieved": "uncertain", "reason": TIME_UP, "gap": ""}
                 return _done(False, True, assessment, spec, spec_path, tasks,
-                             process_path, rounds, l4_rounds, escalation_reason=TIME_UP)
+                             process_path, rounds, l4_rounds, escalation_reason=TIME_UP,
+                             package=package)
             _write_spec(spec_path, purpose, spec, _spec_note(roles))
             log(("spec", spec, spec_path))
 
@@ -348,30 +377,73 @@ class Director:
                 )
                 if _infeasible(spec):
                     return self._stop_infeasible(
-                        purpose, spec, spec_path, process_path, tasks, rounds, roles, log
+                        purpose, spec, spec_path, process_path, tasks, rounds, roles, log, package
                     )
                 continue
 
             decision = review(report)                                  # A: 判断は外へ（既定は自動）
             if decision.get("accept"):
-                return _done(True, False, assessment, spec, spec_path, tasks, process_path, rounds, l4_rounds)
+                return _done(True, False, assessment, spec, spec_path, tasks, process_path,
+                             rounds, l4_rounds, package=package)
             feedback = str(decision.get("feedback") or "")
             if not feedback:
                 # 受理されず指示も無い＝人間へ。下の層の申告理由を結果契約で持ち上げる（修正③）。
                 return _done(False, True, assessment, spec, spec_path, tasks, process_path,
-                             rounds, l4_rounds, escalation_reason=str(outcome.get("reason") or ""))
+                             rounds, l4_rounds, escalation_reason=str(outcome.get("reason") or ""),
+                             package=package)
             spec = self._respecify(model, purpose, spec, feedback, roles, log, system, inputs)
             if _infeasible(spec):
                 return self._stop_infeasible(
-                    purpose, spec, spec_path, process_path, tasks, rounds, roles, log
+                    purpose, spec, spec_path, process_path, tasks, rounds, roles, log, package
                 )
 
         return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds,
-                     l4_rounds, escalation_reason="respec 予算切れ（この層の周回を使い切った）")
+                     l4_rounds, escalation_reason="respec 予算切れ（この層の周回を使い切った）",
+                     package=package)
+
+    def _select_package(
+        self, model: str, purpose: str, packages: Sequence[dict], selector: Any,
+        log: Callable, system: str | None,
+    ) -> dict:
+        """カタログから目的に適合する役割パッケージを1判断で選ぶ（合意028）。
+
+        判断（どれが合うか・どれも合わないか）は LLM。床はコード:
+        ①適合なしの申告（空文字）②カタログに無い名前 ③役割文ゼロのパッケージ——
+        いずれも黙って別パッケージを当てず、呼び出し側（run）が escalate する。
+        「やり方」はカタログ級の定義書（roles/director.md）を呼び出し側が selector として
+        渡す。無ければ知識ゼロで判断する（不足は role_doc_missing で可視化——既存哲学）。
+        選択の材料（各パッケージが何者か）はカタログの description（データ）が担う。
+        """
+        catalog = "\n".join(
+            f"- {p.get('name')} ({p.get('status', '?')}): {p.get('description', '')}"
+            for p in packages
+        )
+        data = structured(
+            self._l0, model,
+            lifeline_system({"director": selector} if selector else {}, "director",
+                            "select", _SELECT_SCHEMA, system, log),
+            f"PURPOSE:\n{purpose}\n\nCATALOG (available role packages):\n{catalog}",
+            _SELECT_SCHEMA,
+        )
+        name = str(data.get("package") or "").strip()
+        reason = str(data.get("reason") or "")
+        if not name:
+            return {"escalate": f"適合するパッケージが無い（director 申告）: {reason}"}
+        entry = next((p for p in packages if p.get("name") == name), None)
+        if entry is None:
+            return {"escalate": f"director がカタログに無いパッケージ '{name}' を選んだ: {reason}"}
+        roles = load_roles(str(entry.get("path", "")))
+        if not roles:
+            return {"escalate": (
+                f"選択されたパッケージ '{name}' に役割定義書が無い"
+                f"（status: {entry.get('status', '?')}）——知識ゼロでは走らせない"
+            )}
+        log(("package", name, reason))
+        return {"roles": roles, "package": name}
 
     def _stop_infeasible(
         self, purpose: str, spec: dict, spec_path: str, process_path: str,
-        tasks: list, rounds: int, roles: dict, log: Callable,
+        tasks: list, rounds: int, roles: dict, log: Callable, package: str = "",
     ) -> dict:
         """PdM が「目的は充足不能」と申告したとき、仕様を作らせず人間へ上げる（合意007 C1-(d)）。
 
@@ -388,7 +460,7 @@ class Director:
             "gap": "; ".join(conflicts),
         }
         return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds,
-                     escalation_reason="PdM が目的を充足不能と申告した")
+                     escalation_reason="PdM が目的を充足不能と申告した", package=package)
 
     # --- 生命線の LLM 呼び出し（やり方は roles/pdm.md、形はスキーマ） ---
     def _specify(
