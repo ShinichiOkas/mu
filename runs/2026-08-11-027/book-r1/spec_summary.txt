@@ -1,0 +1,18 @@
+# Summary of Requirements (SPEC.md)
+
+## Theme
+- Theme: Repair (修理)
+
+## Story Requirements
+- Type: Flash fiction with a single completed story.
+- Core Device: "Recognition Inversion" (認識の反転) - The ending must reveal a new fact that completely flips the reader's previous understanding of the situation or characters.
+
+## Quantitative Constraints
+- Length: 800 to 1200 characters (including spaces/newlines).
+- Measurement Method: `(Get-Content story.md -Raw).Length` via PowerShell.
+
+## Process Requirements
+- The final version in `story.md` must be the result of an iterative process: drafting and then revising based on feedback from an editor.
+
+## Final Deliverable
+- `story.md`

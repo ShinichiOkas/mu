@@ -489,6 +489,13 @@ def test_repo_rnd_package_is_complete_draft():
     _package_is_complete_draft("rnd", {"scientist", "experimenter"})
 
 
+def test_repo_book_package_is_complete_draft():
+    # 書く人と直させる人を分ける——editor は指摘のみ（write_scope: own で本文を
+    # 書き直せない。「QA は成果物を直さない」哲学の編集版）。挿絵役は置かない（設計の帰結）。
+    roles = _package_is_complete_draft("book", {"writer", "editor"})
+    assert roles["editor"]["write_scope"] == "own"
+
+
 def test_repo_coding_package_is_listed_verified():
     # 026 A の現物検査: リポジトリの coding パッケージがマニフェスト付きで存在し、
     # 検証状態 verified（019〜025 の実走群が根拠）で列挙される。
