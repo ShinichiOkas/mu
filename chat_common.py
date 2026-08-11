@@ -25,7 +25,7 @@ import tools as tools_mod
 from mu.role_kb import L4_ROLES, missing_positions, staffing_lines
 
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
-ROLES_DIR = str(Path(__file__).resolve().parent / "roles")
+ROLES_DIR = str(Path(__file__).resolve().parent / "roles" / "coding")   # 既定＝コーディングパッケージ（合意026）
 
 # 全層タワー（l4_chat / l5_chat / probe）の層ラベル。浅いタワーの CLI（l3_chat）は
 # 自分のインデントを自分で定義する（表示は呼び出し側の持ち物）。

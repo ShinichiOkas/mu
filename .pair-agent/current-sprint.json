@@ -1,10 +1,9 @@
 {
-  "sprint_id": "025-role-binding-transparency",
-  "status": "completed",
-  "goal": "役割バインディングの透明化——継ぎ目の不整合修理（PjM の一覧を人選対象に絞る）・合成ローダーと床（同名衝突エラー・4ポジション不足の可視化）・透明性の表面（PjM と人間が同じ一覧を見る）・明文化",
-  "created_at": "2026-08-11T00:00:00+09:00",
+  "sprint_id": "026-role-packages",
+  "status": "executing",
   "agreed_at": "2026-08-11T00:00:00+09:00",
-  "completed_at": "2026-08-11T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/025-role-binding-transparency.md",
-  "note": "クローズ前スモーク（runs/2026-08-11-025）4/4 期待どおり・性能低下なし。次スプリント未協議——候補は LONGTERM_TODO（2ドメイン目の役割セット実走／リサーチの深さの仕様化／QA 理路の観測など）"
+  "goal": "目的別ロールパッケージ——検証済み役割セットをパッケージ単位（コーディング／調査レポート／研究開発／秘書業務／書籍執筆など）で切り替え、専門エージェントとして機能させる",
+  "created_at": "2026-08-11T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/026-role-packages.md",
+  "note": "実行中。A 移動＋器（TDD）→ B 切替面＋回帰スモーク → C 研究パッケージ初版 → D 実走検証。前置宣言5件は合意ドキュメント参照"
 }

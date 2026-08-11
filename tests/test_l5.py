@@ -381,8 +381,62 @@ def test_missing_positions_reports_undefined_core_names(tmp_path):
     (d / "qa.md").write_text("QA-DOC", encoding="utf-8")
     (d / "writer.md").write_text("WRITER-DOC", encoding="utf-8")   # ポジション外は無関係
     assert missing_positions(load_roles(str(d))) == ("pdm", "pjm", "implementer")
-    repo_roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    repo_roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles" / "coding"))
     assert missing_positions(repo_roles) == ()
+
+
+def test_load_roles_default_is_coding_package(tmp_path, monkeypatch):
+    # 026 A: 既定は roles/coding（コーディングパッケージ）。roles/ 直下の *.md は
+    # もう既定では読まない（パッケージ移動後の迷い込みを既定が拾わないこと）。
+    from mu.role_kb import load_roles
+    monkeypatch.chdir(tmp_path)
+    coding = tmp_path / "roles" / "coding"
+    coding.mkdir(parents=True)
+    (coding / "qa.md").write_text("QA-DOC", encoding="utf-8")
+    (tmp_path / "roles" / "stray.md").write_text("STRAY", encoding="utf-8")
+    assert set(load_roles()) == {"qa"}
+
+
+def test_list_packages_reads_manifests(tmp_path):
+    # 026 A: パッケージの列挙はマニフェスト（manifest.json）を持つディレクトリだけ。
+    # マニフェストの無いディレクトリは「パッケージを名乗っていない」ので載せない。
+    import json
+    from mu.role_kb import list_packages
+    root = tmp_path / "roles"
+    for name, status in (("coding", "verified"), ("research", "draft")):
+        d = root / name
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(
+            json.dumps({"name": name, "description": f"{name}用", "status": status}),
+            encoding="utf-8")
+    (root / "nopkg").mkdir()
+    (root / "nopkg" / "x.md").write_text("X", encoding="utf-8")
+    pkgs = list_packages(str(root))
+    assert [(p["name"], p["status"]) for p in pkgs] == [
+        ("coding", "verified"), ("research", "draft")]
+    assert pkgs[0]["path"] == str(root / "coding")
+
+
+def test_list_packages_broken_manifest_is_loud(tmp_path):
+    # 静かなスキップは 025 で取り除いた不透明さと同種——壊れたマニフェストは名指しで落とす。
+    import pytest
+    from mu.role_kb import list_packages
+    d = tmp_path / "roles" / "coding"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text("{broken", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        list_packages(str(tmp_path / "roles"))
+    assert "manifest.json" in str(e.value)
+
+
+def test_repo_coding_package_is_listed_verified():
+    # 026 A の現物検査: リポジトリの coding パッケージがマニフェスト付きで存在し、
+    # 検証状態 verified（019〜025 の実走群が根拠）で列挙される。
+    from pathlib import Path as _P
+    from mu.role_kb import list_packages
+    root = str(_P(__file__).resolve().parent.parent / "roles")
+    pkgs = {p["name"]: p for p in list_packages(root)}
+    assert "coding" in pkgs and pkgs["coding"]["status"] == "verified"
 
 
 def test_specify_and_process_prompts_carry_env(tmp_path, monkeypatch):
@@ -481,7 +535,7 @@ def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
     # 合意008 以降、規範は**やり方**なので KB（roles/pdm.md）にあり、コードは形だけを供給する。
     from pathlib import Path as _P
     from mu.role_kb import load_roles
-    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles" / "coding"))
     assert "weaken" in roles["pdm"]["prompt"].lower()        # 規範は KB にある
 
     agent = make([SPEC, PROCESS3], ok3())
@@ -668,7 +722,7 @@ def test_repo_role_kb_declares_the_qa_guard():
     # 実際のナレッジベース（roles/）が QA の権限を宣言していること。
     from pathlib import Path as _P
     from mu.role_kb import load_roles
-    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles" / "coding"))
     assert roles["qa"]["write_scope"] == "own"
     assert "edit_file" not in (roles["qa"]["tools"] or [])
     assert roles["implementer"]["write_scope"] == "any"
@@ -751,7 +805,7 @@ def test_role_docs_do_not_declare_the_json_shape():
     # 実 KB の規律: 形はスキーマが唯一の出所。定義書が二重に宣言しない。
     from pathlib import Path as _P
     from mu.role_kb import load_roles
-    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles" / "coding"))
     assert {"pdm", "pjm", "architect", "implementer", "qa"} <= set(roles)
     for name, doc in roles.items():
         assert "Reply as JSON" not in doc["prompt"], name
@@ -850,7 +904,7 @@ def test_role_kb_does_not_restate_the_verdict_contract():
     # 実 KB の規律: 契約はコードが唯一の出所。qa.md に書式を二重に書かない。
     from pathlib import Path as _P
     from mu.role_kb import load_roles
-    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles"))
+    roles = load_roles(str(_P(__file__).resolve().parent.parent / "roles" / "coding"))
     assert "ACHIEVED: yes | no | uncertain" not in roles["qa"]["prompt"]
 
 
@@ -974,13 +1028,13 @@ def test_repo_pdm_forbids_assumed_answers_in_expect():
     # 018 実走: PdM が入力の先頭5行から「P003 は死に筋のはず」と推測して expect に焼き込み、
     # 自己矛盾した報告書が機械検査を通過した。答えの仮定はマーカーに置かせない。
     from pathlib import Path as _P
-    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/pdm.md").read_text(encoding="utf-8")
     assert "PREDICTED RESULT" in text
 
 
 def test_repo_qa_declares_honest_fail_as_success():
     from pathlib import Path as _P
-    text = _P("roles/qa.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/qa.md").read_text(encoding="utf-8")
     assert "正直な FAIL" in text
 
 
@@ -988,7 +1042,7 @@ def test_repo_pdm_requires_criteria_to_be_deliverable_properties():
     # 019 実走: 「全商品が計算に含まれていること」（計算の性質）は成果物を読んでも判定できず、
     # QA が商品コード単位の ITEM に流れて read_verdict と噛み合わなかった。
     from pathlib import Path as _P
-    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/pdm.md").read_text(encoding="utf-8")
     assert "OF THE DELIVERABLE" in text
 
 
@@ -997,7 +1051,7 @@ def test_repo_pdm_forbids_arithmetic_on_the_excerpt():
     # 焼き込んだ（答え仮定の漏れ先が expect→基準テキスト→仕様本文と移動した3例目）。
     # 根は「抜粋しか見ていないのに算術をする」こと自体——数えるな・足すな。
     from pathlib import Path as _P
-    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/pdm.md").read_text(encoding="utf-8")
     assert "arithmetic on an excerpt" in text
 
 
@@ -1007,14 +1061,14 @@ def test_repo_pdm_forbids_arithmetic_on_the_excerpt():
 def test_repo_pdm_forbids_inventing_unseen_invocations():
     # PdM が存在しないサブコマンド `list` を発明（2走とも再現）。見た形だけを使う。
     from pathlib import Path as _P
-    text = _P("roles/pdm.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/pdm.md").read_text(encoding="utf-8")
     assert "actually seen" in text
 
 
 def test_repo_pjm_treats_broken_check_commands_as_spec_defects():
     # PjM は「検査コマンド自体が壊れている」と診断しながら rerun を3回選んだ。
     from pathlib import Path as _P
-    text = _P("roles/pjm.md").read_text(encoding="utf-8")
+    text = _P("roles/coding/pjm.md").read_text(encoding="utf-8")
     assert "CHECK COMMAND itself" in text
 
 

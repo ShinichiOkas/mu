@@ -1,0 +1,6 @@
+{
+  "name": "coding",
+  "description": "コーディング向け（設計→実装→テスト→QA）。architect / implementer をドメイン役割に持つ",
+  "status": "verified",
+  "verified_by": "runs/ 019p6〜025 の実走群（偽・達成ゼロ維持、9課題×11走 ほか）"
+}

@@ -2,8 +2,14 @@
 
 L4 は「そこに役割が居る」ことだけを知り、**どういう役割か**はここが供給する（合意008）。
 この分離の要点は、**定義書の"形"だけが契約であり、"出所"は差し替え可能**なこと——
-いまはリポジトリの `roles/*.md` を読むが、将来 DB・API・別リポジトリに移しても、
+いまはリポジトリの `roles/<package>/*.md` を読むが、将来 DB・API・別リポジトリに移しても、
 同じ形の dict を返す loader を用意すれば L4 は無変更で動く。
+
+**役割は目的別パッケージに束ねる**（合意026）。1パッケージ＝1ディレクトリ
+（`roles/coding/`, `roles/research/`, …）で、各パッケージは**自己完結**——4ポジションの
+定義書＋ドメイン役割の全部を自分で持つ（ドメイン間の干渉ゼロを優先し、重複は許容する）。
+パッケージの素性は同じディレクトリの `manifest.json`（name / description / status）が名乗り、
+`list_packages` が列挙する。どのパッケージで動くかは呼び出し側が選ぶ（L6。起動時指定）。
 
 **役割集合は開いている**（合意024）。コードが名前を知るポジションは4つだけ——
 `pdm` / `pjm`（L4/L5 の内部ポジション。人選対象外）、`qa`（プロセス末尾に必ず立つ
@@ -27,6 +33,7 @@ L4 は「そこに役割が居る」ことだけを知り、**どういう役割
 
 from __future__ import annotations
 
+import json
 import re
 from functools import wraps
 from pathlib import Path
@@ -42,14 +49,15 @@ POSITIONS = (*L4_ROLES, "qa", "implementer")
 
 
 def load_roles(*paths: str) -> dict:
-    """role 定義書（PjM のナレッジベース）をディレクトリから読む。引数なし＝ "roles"。
+    """role 定義書（PjM のナレッジベース）をディレクトリから読む。引数なし＝ "roles/coding"。
 
     返り値は `{role名: {"prompt": 本文, "tools": [...]|None, "write_scope": "own"|"any"}}`。
     **この dict が人選の範囲そのもの**（合意025）——PjM はここに載る役割からしか選べない。
-    「この範囲で選んでほしい」の意思表示は、どのセット（ディレクトリ）をロードするかで行う:
+    「この範囲で選んでほしい」の意思表示は、どのパッケージ（ディレクトリ）をロードするかで行う:
 
-        load_roles()                          # 既定の roles/ 一式
-        load_roles("roles", "roles-novel")    # セットの合成（役割はドメインごとに足していく）
+        load_roles()                                    # 既定＝コーディングパッケージ
+        load_roles("roles/research")                    # パッケージの切り替え（合意026）
+        load_roles("roles/coding", "roles-extra")       # セットの合成（役割は足していく）
 
     合成時の床: **同名役割の衝突はエラー**（静かな上書きはしない。両方の出所を名指しする）。
     存在しないディレクトリは空集合として扱う（定義書が無い役割は「知識が無い状態」で動く
@@ -67,7 +75,7 @@ def load_roles(*paths: str) -> dict:
     """
     roles: dict = {}
     origin: dict = {}
-    for path in paths or ("roles",):
+    for path in paths or ("roles/coding",):
         p = Path(path)
         if not p.is_dir():
             continue
@@ -89,6 +97,29 @@ def missing_positions(roles: dict) -> tuple:
     の哲学のまま、不足を呼び出し側に**見える**ようにするだけの床。
     """
     return tuple(name for name in POSITIONS if name not in roles)
+
+
+def list_packages(root: str = "roles") -> list:
+    """役割パッケージの列挙（合意026）。`<root>/<pkg>/manifest.json` を持つディレクトリだけ。
+
+    返り値はディレクトリ名順の `[{"name", "description", "status", "path", ...}]`。
+    `path` はそのまま `load_roles` に渡せる。マニフェストの無いディレクトリは
+    「パッケージを名乗っていない」ので載せない（load_roles で直接読むことは妨げない）。
+    壊れたマニフェストは名指しで落とす——静かなスキップは 025 で取り除いた不透明さと同種。
+
+    status の語彙: verified（実走群で検証済み。昇格は師匠の承認事項）/ draft（実走前・調整中）/
+    planned（枠だけ。役割文はまだ無い）。
+    """
+    packages = []
+    for f in sorted(Path(root).glob("*/manifest.json")):
+        try:
+            manifest = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError as e:
+            raise ValueError(f"パッケージマニフェストが壊れている: {f}: {e}") from e
+        manifest.setdefault("name", f.parent.name)
+        manifest["path"] = str(f.parent)
+        packages.append(manifest)
+    return packages
 
 
 def parse_role_doc(text: str) -> dict:
