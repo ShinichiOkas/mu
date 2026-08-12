@@ -1,9 +1,10 @@
 {
   "sprint_id": "028-l5-package-selection",
-  "status": "retrospecting",
+  "status": "completed",
   "goal": "L5 によるパッケージ自動選択の内在化——カタログ（呼び出し側規定）から Director が目的に適合するパッケージを1判断で選ぶ。適合なしは escalate",
   "created_at": "2026-08-11T00:00:00+09:00",
   "agreed_at": "2026-08-12T00:00:00+09:00",
+  "completed_at": "2026-08-12T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/028-l5-package-selection.md",
-  "note": "3フェーズ完了（A 4a61bf5 / B 4eb6a89 / C）。選択のみ精度 18/18・auto e2e 収束（book 一発・schedule 3走で 1667s→150s・清浄）・coding 回帰合格・330 green。秘書ドメインの新失敗クラス2件（当て推量試行・サービス状態の試し書き）を発見・修理。振り返り待ち"
+  "note": "振り返り実施済み（vision/028・Skill 3件承認: draft 1・forming 1・confirmed 昇格 1）。骨格の既知ピースはこれで完了——目的を渡すだけでチームを自選して働く形に到達。次スプリント未協議——候補: リサーチの深さの仕様化／サービス状態 diff の観測（probe 構造対処）／draft パッケージの検証蓄積・verified 昇格"
 }
