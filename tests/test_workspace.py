@@ -92,6 +92,31 @@ def test_absolute_paths_outside_the_tray_are_refused(tmp_path, monkeypatch):
     assert ("tray_denied", "read_file", str(tmp_path / "secret.txt")) in events
 
 
+def test_cwd_qualified_paths_into_the_tray_are_understood(tmp_path, monkeypatch):
+    # 030 bugfix 実走: モデルは共有 cwd からの相対で「work/implementer/task-1/out.md」と
+    # tray を名指しした。tray 起点で解決すると二重入れ子になり、Reflect の書き直しループを
+    # 生んだ（1003s の主因）。どちらの解釈でも tray 内しか採らないので、閉じ込めは弱まらない。
+    monkeypatch.chdir(tmp_path)
+    tray = task_tray("work", "implementer", 0)
+    write = _wrapped(tray, "write_file")
+    assert write("work/implementer/task-1/out.md", "本文").ok
+    assert (Path(tray) / "out.md").read_text(encoding="utf-8") == "本文"
+    assert not (Path(tray) / "work").exists()          # 二重入れ子を作らない
+
+
+def test_cwd_qualified_paths_to_other_trays_stay_confined(tmp_path, monkeypatch):
+    # cwd 起点の解釈を許すのは**自分の tray に落ちるときだけ**。他タスクの tray は名指し
+    # できない（tray 起点の解決に落ち、自分の区画内の scratch になる）。
+    monkeypatch.chdir(tmp_path)
+    tray = task_tray("work", "implementer", 0)
+    other = task_tray("work", "qa", 1)
+    (Path(other) / "verdict.md").write_text("他人の成果物", encoding="utf-8")
+    write = _wrapped(tray, "write_file")
+    assert write("work/qa/task-2/verdict.md", "改竄").ok   # 書けるが——
+    assert (Path(other) / "verdict.md").read_text(encoding="utf-8") == "他人の成果物"  # 原本は無傷
+    assert (Path(tray) / "work" / "qa" / "task-2" / "verdict.md").is_file()  # 自区画内の scratch
+
+
 def test_reads_of_the_system_temp_dir_stay_allowed(tmp_path, monkeypatch):
     # 合意010 の観測契約: execute_command の長い出力は一時ファイルに保存され
     # read_file で辿る。閉じ込めがこの経路を殺してはならない。

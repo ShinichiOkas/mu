@@ -135,8 +135,19 @@ def _confined(func: Callable, tray: str, log: Callable) -> Callable:
     @wraps(func)
     def confined(path: str = ".", *args, **kwargs):
         p = Path(path)
-        resolved = p.resolve() if p.is_absolute() else (Path(tray) / p).resolve()
-        allowed = _within(resolved, Path(tray).resolve()) or (
+        base = Path(tray).resolve()
+        if p.is_absolute():
+            resolved = p.resolve()
+        else:
+            # 030 bugfix 実走の観測: モデルは作業ディレクトリの案内を見て、共有 cwd からの
+            # 相対で「.mu-work/<role>/task-N/file」と tray を名指しすることがある。tray 起点で
+            # 解決すると二重入れ子（tray/.mu-work/.../file）になり、書けてしまう（tray 内なので
+            # 拒否されない）が置き場所が違い、Reflect の書き直しループを生む。
+            # 共有 cwd 起点の解決が tray 内に落ちるならそれを意図とみなす——採るのはどちらの
+            # 解釈でも tray 内だけなので、閉じ込めは弱まらない。
+            alt = (Path.cwd() / p).resolve()
+            resolved = alt if _within(alt, base) else (Path(tray) / p).resolve()
+        allowed = _within(resolved, base) or (
             temp_ok and resolved.parent == Path(tempfile.gettempdir()).resolve()
         )
         if not allowed:

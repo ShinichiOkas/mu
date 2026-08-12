@@ -342,8 +342,9 @@ class Manager:
             # ままにする（019 で確立した「再計画で薄まらない経路」の順序を動かさない）。
             tray_env = (
                 f"作業ディレクトリ: {tray}（このタスク専用。参照ファイルは写しが置かれている。"
-                f"相対パスで読み書きし、成果物 {t['file']} をここに書けば完了時にコードが"
-                "共有空間へ発行する）"
+                f"ファイルはディレクトリを付けず名前だけで読み書きすること——例: "
+                f"read_file(\"{(t['needs'] or [spec_path])[0]}\")・write_file(\"{t['file']}\", ...)。"
+                f"成果物 {t['file']} は完了時にコードが共有空間へ発行する）"
             ) if tray else ""
             task_system = "\n\n".join(
                 s for s in (role_prompt(doc), skill_text(skills or {}, t["role"], log),
