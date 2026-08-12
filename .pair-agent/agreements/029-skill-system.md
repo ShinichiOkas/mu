@@ -1,7 +1,8 @@
 # 合意 029 — skill システムの導入（役割定義書からの知識の分離）
 
-status: retrospecting（2026-08-12。3フェーズ完了・364 green・文言不変を実測・
-回帰スモーク合格 105s・②の e2e 成立。振り返り待ち）
+status: completed（2026-08-12。3フェーズ完了・364 green・文言不変を実測・回帰スモーク合格 105s・
+②の e2e 成立・振り返り実施済み——ビジョン記録／Skill 5件処理: confirmed 新規1・draft 新規2・
+confirmed 昇格1・精緻化1）
 created: 2026-08-12
 
 ## 背景
@@ -190,3 +191,5 @@ skill パーサも同じにする。すると `origin:` `evidence:` `proposed_by
 - v2 [2026-08-12]: フェーズ A 実行時の判断3件を追記（装着点を lifeline にも／maturity の門は
   opt-out／skills 省略時は 029 以前と同一合成）
 - v3 [2026-08-12]: フェーズ C 完了。結果を追記し status を retrospecting へ
+- v4 [2026-08-12]: 振り返り完了（前提崩壊 1回＝装着点の見落とし・より良い方法 0回）。
+  status を completed へ。スプリント記録は `.pair-agent/sprints/029-skill-system.md`

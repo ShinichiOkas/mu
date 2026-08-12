@@ -1,9 +1,10 @@
 {
   "sprint_id": "029-skill-system",
-  "status": "retrospecting",
+  "status": "completed",
   "goal": "skill システムの導入——役割定義書から「やり方」を独立単位に分離する。宛先は skill 側が名乗り（applies_to）、権限は持たない（絶対ルール）、confirmed だけが装着される",
   "created_at": "2026-08-12T00:00:00+09:00",
   "agreed_at": "2026-08-12T00:00:00+09:00",
+  "completed_at": "2026-08-12T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/029-skill-system.md",
-  "note": "3フェーズ完了（4613bfc / 1eb5406 / 本コミット）。364 green・移行の文言不変を実測・回帰スモーク合格（bugfix 105s・ハッシュ一致・violations none）・②の e2e 成立（プロジェクト側 skill が実装者のやり方を変えた）。振り返り待ち"
+  "note": "振り返り実施済み（vision/029・Skill 5件: confirmed 新規1『知識の器に権限を載せない』・draft 新規2・confirmed 昇格1・精緻化1）。師匠の把握: 既存 SKILL はやることに直接バインドするが、mu は やること→やる人→やり方 の連鎖が閉じた。次スプリント未協議——③（自己成長）は機構より先に『成長目標の在処』の協議が要る（レイヤーなのか？が未解決）。他候補: 装備量と context の関係の観測／(b) PjM による skill 選択／qa.md・pdm.md の共通部抽出"
 }
