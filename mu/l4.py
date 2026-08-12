@@ -39,6 +39,7 @@ from .process import (
 )
 from .role_kb import role_perms, role_prompt, role_tools, staffing_lines, task_roles
 from .skill_kb import skill_text
+from .workspace import copy_in, discard_stale_output, publish, task_tray, tray_tools
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -195,6 +196,7 @@ class Manager:
         guard: Callable[[], list] | None = None,
         deadline: Callable[[], bool] | None = None,
         protected: Sequence[str] | None = None,
+        workspace: str | None = None,
         max_rounds: int = 3,
         l3_max: int = 8,
         l2_max: int = 6,
@@ -205,6 +207,11 @@ class Manager:
             done     — 受入基準・verdict とも通った
             respec   — 仕様が悪いと PjM が判断した（この層では直せない）
             escalate — 人手が要る／予算が尽きた
+
+        `workspace` を渡すと、各タスクは自分の tray（作業区画）で走る（合意030。
+        copy-in / publish-out・ツールの閉じ込め・single-writer の発行ゲート）。
+        None なら従来どおり共有 cwd で走る——隔離は呼び出し側が規定する環境接地であり、
+        guard / protected / deadline と同じ注入の型。
         """
         roles = roles or {}
         skills = skills or {}
@@ -232,6 +239,7 @@ class Manager:
                 model, tasks, tools, roles, pool,
                 spec_path, purpose, system, log, limits,
                 guard=guard, deadline=deadline, protected=protected, skills=skills,
+                workspace=workspace,
             )
             if broken:      # タスク境界の検査で破れが出た（017: 1周が締切に収まらず周頭では遅い）
                 return _broken_outcome(broken, tasks, rounds, process_path, log)
@@ -281,11 +289,16 @@ class Manager:
         deadline: Callable[[], bool] | None = None,
         protected: Sequence[str] | None = None,
         skills: dict | None = None,
+        workspace: str | None = None,
     ) -> tuple[dict | None, list, bool]:
         """pending タスクを順に実行する。返り値は (最初に失敗したタスク | None, 破れ, 時間切れ)。
 
         guard / deadline は**タスク境界でも**見る（合意018 ③⑥）。017 再走では1周が締切に
         収まらず、周の頭だけの検査は一度も走らなかった——破壊はタスクの中で起きる。
+
+        `workspace` があれば各タスクは tray で走る（合意030）: needs＋SPEC を写して開始し、
+        ツールを tray に閉じ、完了時に宣言された出力だけを共有空間へ発行する。発行の
+        所有権ゲート（single-writer）で拒否されたタスクは、正直な失敗として PjM に乗る。
         """
         for i, t in enumerate(tasks):
             if t.get("done"):
@@ -308,16 +321,37 @@ class Manager:
                 log(("needs_unmet", t["file"], missing))
                 return t, [], False
             doc = roles.get(t["role"], "")
+            # tray（合意030）: needs＋SPEC を写して開始し、ツールを tray に閉じる。
+            # 未宣言の入力は tray に無い＝読めずに正直に失敗する（グラフは構成的に真）。
+            tray = None
+            if workspace:
+                tray = task_tray(workspace, t["role"], i)
+                discard_stale_output(tray, t["file"])   # 前回試行の残骸を発行させない
+                missing_in = copy_in(tray, t["needs"])
+                if missing_in:
+                    t["last_failure"] = (
+                        f"入力を作業区画へ写せない（コードが確認した事実）: {', '.join(missing_in)}"
+                    )
+                    log(("copy_in_missing", t["file"], missing_in))
+                    return t, [], False
+                if Path(spec_path).is_file():
+                    copy_in(tray, [spec_path])
             # 契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
             # 欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
             # 装備（skill）は職掌の直後・契約の手前に入る（合意029）——契約と環境は後ろの
             # ままにする（019 で確立した「再計画で薄まらない経路」の順序を動かさない）。
+            tray_env = (
+                f"作業ディレクトリ: {tray}（このタスク専用。参照ファイルは写しが置かれている。"
+                f"相対パスで読み書きし、成果物 {t['file']} をここに書けば完了時にコードが"
+                "共有空間へ発行する）"
+            ) if tray else ""
             task_system = "\n\n".join(
                 s for s in (role_prompt(doc), skill_text(skills or {}, t["role"], log),
-                            task_contract(t), system) if s
+                            task_contract(t), system, tray_env) if s
             )
             task_model = t.get("model") if t.get("model") in pool else model
-            task_tools = role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
+            base_tools = tray_tools(tools, tray, log) if tray else tools
+            task_tools = role_tools(base_tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
             result = self._l3.run(
                 task_model, task_goal(t, spec_path, purpose), task_tools,
                 approve=plan_lint(t, doc, protected, log),   # 計画のコード検査（合意018 ④⑤）
@@ -326,6 +360,17 @@ class Manager:
                 l2_l1_max=limits["l2_l1_max"],
             )
             t["done"] = bool(result.get("done"))
+            if t["done"] and tray:
+                # 発行（publish-out）。single-writer（師匠宣言）はここで強制される——
+                # 所有者は「そのファイルを最初に産出するタスクのロール」（宣言からの決定論）。
+                owner = next(p["role"] for p in tasks if p["file"] == t["file"])
+                published, reason = publish(tray, t["file"], t["role"], owner)
+                if published:
+                    log(("published", t["file"], tray))
+                else:
+                    t["done"] = False
+                    t["last_failure"] = f"発行できない（コードが確認した事実）: {reason}"
+                    log(("publish_refused", t["file"], reason))
             if t["done"]:
                 clear_failure(t)   # 通ったら前回の失敗は捨てる（持つのは直近1回だけ）
             log(("task_done", t) if t["done"] else ("task_failed", t))

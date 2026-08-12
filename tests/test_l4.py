@@ -41,6 +41,10 @@ class FakeL3:
         for path, content in r.get("writes", []):
             from pathlib import Path
             Path(path).write_text(content, encoding="utf-8")
+        for path, content in r.get("tool_writes", []):
+            # 渡されたツール経由で書く＝tray の閉じ込め（030）を通る実走に近い経路。
+            write = next(f for f, _ in tools if f.__name__ == "write_file")
+            write(path, content)
         return {"units": [], "done": r.get("done", True), "rounds": 1}
 
 
@@ -585,3 +589,110 @@ def test_task_goal_lists_needs_not_all_prior_files(tmp_path, monkeypatch):
     goal = mgr._l3.calls[2]["goal"]
     assert "SPEC.md, design.md" in goal
     assert "helper.py" not in goal                 # 宣言していないものは文脈に載せない
+
+
+# --- 030: 作業空間（tray）——copy-in / publish-out・閉じ込め・single-writer -------
+#
+# workspace を渡すと各タスクは tray で走る。needs＋SPEC は写しで渡り、宣言された
+# 出力だけが完了時に共有空間へ発行される。発行の所有権ゲートが single-writer を強制する。
+
+import tools as _tools
+
+
+def _ws_proc(needs=None):
+    return {"tasks": [
+        {"role": "implementer", "task": "実装", "file": "result.csv", "criterion": "出力",
+         **({"needs": needs} if needs else {})},
+        {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
+    ]}
+
+
+def _ws_run(mgr, tmp_path, monkeypatch, **kw):
+    kw.setdefault("workspace", str(tmp_path / "work"))
+    monkeypatch.chdir(tmp_path)
+    kw.setdefault("roles", ROLES)
+    return mgr.run("m", SPEC, list(_tools.TOOLS), **kw)
+
+
+def test_workspace_publishes_the_declared_output_to_the_shared_space(tmp_path, monkeypatch):
+    mgr = make([_ws_proc()], [
+        {"done": True, "tool_writes": [("result.csv", "a,b\n1,2\n")]},
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "done"
+    assert (tmp_path / "result.csv").read_text(encoding="utf-8") == "a,b\n1,2\n"
+    # tray にも実体が残る（観測のため）。共有空間の実体は発行されたコピー。
+    assert (tmp_path / "work" / "implementer" / "task-1" / "result.csv").is_file()
+
+
+def test_workspace_copies_declared_needs_into_the_tray(tmp_path, monkeypatch):
+    (tmp_path / "sales.csv").write_text("原本", encoding="utf-8")
+    mgr = make([_ws_proc(needs=["sales.csv"])], [
+        {"done": True, "tool_writes": [("result.csv", "x")]},
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "done"
+    copy = tmp_path / "work" / "implementer" / "task-1" / "sales.csv"
+    assert copy.read_text(encoding="utf-8") == "原本"
+    assert (tmp_path / "sales.csv").read_text(encoding="utf-8") == "原本"   # 原本は不変
+
+
+def test_workspace_fails_the_task_when_the_output_was_not_produced(tmp_path, monkeypatch):
+    # 宣言した出力を書かなかったタスクは done にならない（発行ゲート）。半端な状態が
+    # 共有空間に出ない——「done なのに実物が無い」が構造的に起きない。
+    decide = {"action": "escalate", "invalidate": [], "reason": "出力なし"}
+    mgr = make([_ws_proc(), decide], [{"done": True}])   # 書かずに done を名乗る
+    out = _ws_run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "escalate"
+    assert "産出していない" in out["tasks"][0].get("last_failure", "")
+    assert not (tmp_path / "result.csv").exists()
+
+
+def test_workspace_refuses_publish_by_a_nonowner_role(tmp_path, monkeypatch):
+    # single-writer（師匠宣言）: 同じ出力ファイルに別ロールのタスクが書くプロセスは、
+    # 発行の時点でコードが拒否する。所有者＝最初に産出するタスクのロール。
+    proc = {"tasks": [
+        {"role": "implementer", "task": "書く", "file": "report.md", "criterion": "ある"},
+        {"role": "researcher", "task": "書き直す", "file": "report.md", "criterion": "ある",
+         "needs": ["report.md"]},
+        {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
+    ]}
+    decide = {"action": "escalate", "invalidate": [], "reason": "プロセス不正"}
+    roles = dict(ROLES, researcher="RES-MARKER")
+    mgr = make([proc, decide], [
+        {"done": True, "tool_writes": [("report.md", "v1")]},
+        {"done": True, "tool_writes": [("report.md", "v2")]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch, roles=roles)
+    assert out["outcome"] == "escalate"
+    assert "固定" in out["tasks"][1].get("last_failure", "")
+    assert (tmp_path / "report.md").read_text(encoding="utf-8") == "v1"   # 共有空間は汚れない
+
+
+def test_workspace_same_role_revision_chain_publishes(tmp_path, monkeypatch):
+    # 改稿チェーン（027）: 同ロールの後続タスクが同じファイルを書き直すのは正当。
+    # needs に自分の出力を宣言すれば前の版が tray に写り、発行で共有空間が更新される。
+    proc = {"tasks": [
+        {"role": "implementer", "task": "初版", "file": "report.md", "criterion": "ある"},
+        {"role": "implementer", "task": "改稿", "file": "report.md", "criterion": "ある",
+         "needs": ["report.md"]},
+        {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
+    ]}
+    mgr = make([proc], [
+        {"done": True, "tool_writes": [("report.md", "v1")]},
+        {"done": True, "tool_writes": [("report.md", "v1 改稿")]},
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "done"
+    assert (tmp_path / "report.md").read_text(encoding="utf-8") == "v1 改稿"
+
+
+def test_workspace_off_keeps_the_previous_behavior(tmp_path, monkeypatch):
+    # workspace は注入（guard / deadline / protected と同じ型）。無指定なら従来どおり。
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "done"
+    assert not (tmp_path / "work").exists()
