@@ -201,3 +201,42 @@ def test_equipment_lines_show_the_reverse_lookup_with_all_normalized(tmp_path):
 
 def test_equipment_lines_say_none_when_empty():
     assert equipment_lines({}) == "(none)"
+
+
+# --- 029 フェーズB: リポジトリの skills/ が宣言していること（移行の固定） ----------
+#
+# 移行は「役割定義書から削って skill に移す」だけで、**文言は変えない**。
+# 知識が消えていないこと・役割定義書に対策文が残っていないことをここで固定する。
+
+def _repo(*parts):
+    from pathlib import Path
+    return str(Path(__file__).resolve().parent.parent.joinpath(*parts))
+
+
+def test_repo_implementer_role_doc_keeps_only_its_position():
+    # 役割定義書に残るのは職掌と権限だけ。やり方の対策文（箇条書き）は skill 側にある。
+    from mu.role_kb import load_roles
+    doc = load_roles(_repo("roles", "coding"))["implementer"]
+    assert doc["write_scope"] == "any"                      # 権限は role が持ち続ける
+    assert "職掌:" in doc["prompt"]
+    assert not [l for l in doc["prompt"].splitlines() if l.startswith("- ")]
+
+
+def test_repo_skills_carry_the_implementer_countermeasures():
+    # 移行で知識が消えていないこと（実走で調整済みの対策文がそのまま届く）。
+    worn = skill_text(load_skills(_repo("skills")), "implementer")
+    for marker in ("入力ファイルは読み取り専用", "品質ゲート実行", "余計なファイルを作らない",
+                   "検査器ではない", "既にある検査器を書き換えない", "judge"):
+        assert marker in worn
+
+
+def test_repo_skills_declare_no_permissions():
+    # 絶対ルールがリポジトリの実データでも守られている（ローダーは違反を例外で落とす）。
+    for name, doc in load_skills(_repo("skills")).items():
+        assert "tools" not in doc and "write_scope" not in doc, name
+
+
+def test_repo_skills_declare_a_description_and_maturity():
+    for name, doc in load_skills(_repo("skills")).items():
+        assert doc["description"], name              # 素性データ（将来の選択材料）
+        assert doc["maturity"] == "confirmed", name  # 移行分は実走調整済み

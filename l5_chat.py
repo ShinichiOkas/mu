@@ -41,7 +41,7 @@ import sys
 import tools as tools_mod
 from chat_common import (
     Abort, VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, short,
-    show_catalog, show_roles, utf8_console, verbose_tools,
+    show_catalog, show_roles, show_skills, skills_paths, utf8_console, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -51,6 +51,7 @@ from mu.l3 import Orchestrator
 from mu.l4 import Manager
 from mu.l5 import Director
 from mu.role_kb import load_roles
+from mu.skill_kb import load_skills
 from tools import TOOLS
 
 utf8_console()
@@ -104,6 +105,7 @@ def main() -> None:
         roles, (packages, selector) = {}, auto_catalog()
     else:
         roles, packages, selector = load_roles(*roles_paths()), (), None
+    skills = load_skills(*skills_paths())   # 宛先は4ポジションで指定できるので auto と独立
     l0 = OllamaInterface()
     l1 = ToolLoop(VerboseL0(l0, _L1))
     l2 = Agent(VerboseL0(l0, _L2), l1)
@@ -114,6 +116,7 @@ def main() -> None:
 
     print(f"L5 chat / model={model}  pool={pool}  l5_max={L5_MAX} l4_max={L4_MAX}")
     show_catalog(packages) if roles_auto() else show_roles(roles, roles_paths())
+    show_skills(skills, skills_paths(), roles)
     print(f"  cwd={os.getcwd()}  <- 成果物・SPEC.md・PROCESS.md・verdict.md はここに作られます")
     print("  環境:", platform.system(), platform.release(), "/ execute_command=PowerShell")
     print("  (目的を入力 / /exit で終了)")
@@ -131,7 +134,7 @@ def main() -> None:
         try:
             result = director.run(
                 model, purpose, tools,
-                roles=roles, packages=packages, selector=selector, models=pool,
+                roles=roles, skills=skills, packages=packages, selector=selector, models=pool,
                 review=_review, log=log, system=env_preamble(),
                 guard=tools_mod.protection_violations,  # 守られるべき入力の破れで即停止（合意016）
                 max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,

@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 
 from chat_common import (
-    VerboseL0, env_preamble, log, roles_paths, short, show_roles, utf8_console, verbose_tools,
+    VerboseL0, env_preamble, log, roles_paths, short, show_roles, show_skills, skills_paths,
+    utf8_console, verbose_tools,
     L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -32,6 +33,7 @@ from mu.l2 import Agent
 from mu.l3 import Orchestrator
 from mu.l4 import Manager
 from mu.role_kb import load_roles
+from mu.skill_kb import load_skills
 from tools import TOOLS
 
 utf8_console()
@@ -64,7 +66,8 @@ def main() -> None:
     spec_file = Path(sys.argv[1]).resolve()
     model = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_MODEL
     pool = [model, *sys.argv[3:]]
-    roles = load_roles(*roles_paths())   # 切替は MU_ROLES_DIR（合意026）
+    roles = load_roles(*roles_paths())     # 切替は MU_ROLES_DIR（合意026）
+    skills = load_skills(*skills_paths())  # 切替は MU_SKILLS_DIR（合意029）
     spec = _load_spec(spec_file)
 
     l0 = OllamaInterface()
@@ -73,12 +76,13 @@ def main() -> None:
 
     print(f"L4 chat / model={model}  pool={pool}  l4_max={L4_MAX}")
     show_roles(roles, roles_paths())
+    show_skills(skills, skills_paths(), roles)
     print(f"spec: {spec_file}")
     print(f"  {short(spec['spec'], 200)}")
     try:
         outcome = manager.run(
             model, spec, verbose_tools(TOOLS),
-            roles=roles, models=pool, log=log, system=env_preamble(),
+            roles=roles, skills=skills, models=pool, log=log, system=env_preamble(),
             max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
     except L0Error as e:

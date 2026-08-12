@@ -22,7 +22,7 @@ from pathlib import Path
 import tools as tools_mod
 from chat_common import (
     VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, show_catalog,
-    show_roles, verbose_tools,
+    show_roles, show_skills, skills_paths, verbose_tools,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -32,6 +32,7 @@ from mu.l3 import Orchestrator
 from mu.l4 import Manager
 from mu.l5 import Director
 from mu.role_kb import load_roles
+from mu.skill_kb import load_skills
 from tools import TOOLS
 
 L5_MAX = 2
@@ -106,6 +107,8 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     else:
         roles, packages, selector = load_roles(*roles_paths()), (), None
         show_roles(roles, roles_paths())
+    skills = load_skills(*skills_paths())   # 切替は MU_SKILLS_DIR（合意029）
+    show_skills(skills, skills_paths(), roles)
     # judge（LLM 検査器）は実行体とモデルの注入が要るので、ここで組んで渡す（環境接地は caller の責務）。
     # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
     # 独立性を作っているのはモデル差ではなく**文脈非共有**の方である（合意015）。
@@ -113,7 +116,8 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
     t0 = time.monotonic()
     return director.run(
         model, _RUNTIME_PURPOSE, verbose_tools([*TOOLS, judge_tool]),
-        roles=roles, packages=packages, selector=selector, models=[model, qa_model],
+        roles=roles, skills=skills, packages=packages, selector=selector,
+        models=[model, qa_model],
         log=log, system=env_preamble(),
         guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016→018）
         deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）

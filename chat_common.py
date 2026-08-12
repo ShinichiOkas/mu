@@ -23,6 +23,7 @@ from pathlib import Path
 
 import tools as tools_mod
 from mu.role_kb import L4_ROLES, list_packages, missing_positions, parse_role_doc, staffing_lines
+from mu.skill_kb import equipment_lines, unknown_targets
 
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
 ROLES_DIR = str(Path(__file__).resolve().parent / "roles" / "coding")   # 既定＝コーディングパッケージ（合意026）
@@ -38,6 +39,27 @@ def roles_paths() -> tuple:
     raw = os.environ.get("MU_ROLES_DIR", "")
     paths = tuple(p.strip() for p in raw.split(",") if p.strip())
     return paths or (ROLES_DIR,)
+
+
+# repo の skills/ を cwd に依らず指す（skill 定義書の出所。差し替え可能——合意029）。
+SKILLS_DIR = str(Path(__file__).resolve().parent / "skills")   # 既定＝同梱の共有ライブラリ
+
+
+def skills_paths() -> tuple:
+    """ロードする skill セットのパス（合意029）。意味論は `roles_paths` に揃える。
+
+    環境変数 `MU_SKILLS_DIR` で指定する（カンマ区切りで合成可）。無指定＝同梱の共有
+    ライブラリだけ。**プロジェクト方針（目的②）を足すときは共有側も明示する**——
+    roles と同じく、指定は置換であって追加ではない:
+
+        MU_SKILLS_DIR=skills,./.mu/skills
+
+    パッケージ選択（`MU_ROLES_DIR=auto`）とは独立である。skill の宛先は名前が動かない
+    4ポジションで指定できるので、どのパッケージが自選されても効き続ける。
+    """
+    raw = os.environ.get("MU_SKILLS_DIR", "")
+    paths = tuple(p.strip() for p in raw.split(",") if p.strip())
+    return paths or (SKILLS_DIR,)
 
 
 # カタログの root（roles/ 直下＝パッケージたちと director.md の住所。合意028）。
@@ -147,6 +169,31 @@ def show_roles(roles: dict, paths: tuple = ()) -> None:
     missing = missing_positions(roles)
     print(f"[roles] ポジション（人選対象外）: {', '.join(L4_ROLES)}"
           + (f" ／ 定義書の不足: {', '.join(missing)}" if missing else ""))
+
+
+def show_skills(skills: dict, paths: tuple = (), roles: dict | None = None) -> None:
+    """ロード済み skill の表示（合意029——装備の透明化）。
+
+    宛先を skill 側に一本化した代償は「役割定義書を見ても装備が分からない」ことなので、
+    起動時に**逆引き**（宛先 → skill 名）を見せる。省略された宛先も `all` として出る
+    （書き方の差を表示に持ち込まない）。装着されない draft はここに載らない
+    ——載る一覧＝実際に着る一覧、の一致を構造で保証する（`show_roles` と同じ型）。
+
+    宛先が役割セットに居ない skill は「書いたのに効かない」になるので名指しで警告する
+    （エラーにはしない。当たらない宛先はパッケージが違えば普通に起きる）。
+    """
+    print(f"[skills] 出所: {', '.join(paths) or '(なし)'}")
+    if not skills:
+        # 装備ゼロは異常ではない（知識が無ければ失敗するのが正常）が、静かにはしない。
+        print("  (skill なし——役割定義書の知識だけで走る)")
+        return
+    print("[skills] 装備（宛先 → skill。着るものと同一）:")
+    for line in equipment_lines(skills).splitlines():
+        print(f"  {line}")
+    stray = unknown_targets(skills, roles or {})
+    if stray:
+        print("[skills] 宛先が今の役割セットに居ない（この走では効かない）: "
+              + ", ".join(f"{name}→{target}" for name, target in stray))
 
 
 # --- 実況（表示は CLI の責務。mu の層は無変更・無関知） ------------------------
