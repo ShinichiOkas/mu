@@ -1,0 +1,50 @@
+# Analysis of Failures in buggy_stats.py
+
+The execution of `test_stats.py` revealed 6 failures. Below is the detailed analysis of each failure and the corresponding buggy code.
+
+## 1. `test_mean_empty_raises`
+- **Observed Failure**: `AssertionError: ValueError not raised`
+- **Root Cause**: The `mean` function returns `0` when the input list `xs` is empty, instead of raising a `ValueError`.
+- **Buggy Code**:
+  ```python
+  if not xs:
+      return 0
+  ```
+
+## 2. `test_median_empty_raises`
+- **Observed Failure**: `AssertionError: ValueError not raised`
+- **Root Cause**: The `median` function returns `0` when the input list `xs` is empty, instead of raising a `ValueError`.
+- **Buggy Code**:
+  ```python
+  if not xs:
+      return 0
+  ```
+
+## 3. `test_median_even_is_average_of_middle_two`
+- **Observed Failure**: `AssertionError: 3 != 2.5 within 7 places`
+- **Root Cause**: The `median` function always returns the element at `len(s) // 2`. For lists with an even number of elements, the median should be the average of the two middle elements.
+- **Buggy Code**:
+  ```python
+  return s[len(s) // 2]
+  ```
+
+## 4. `test_value_range`
+- **Observed Failure**: `AssertionError: 7 != 6` (Input: `[4, 1, 7]`, Expected: `7 - 1 = 6`)
+- **Root Cause**: The `value_range` function only returns the maximum value of the list instead of calculating the difference between the maximum and minimum values.
+- **Buggy Code**:
+  ```python
+  return max(xs)
+  ```
+
+## 5. `test_variance_is_sample_variance`
+- **Observed Failure**: `AssertionError: 1.25 != 1.6666666666666667`
+- **Root Cause**: The `variance` function implements population variance (dividing by `n`) instead of sample variance (dividing by `n - 1`).
+- **Buggy Code**:
+  ```python
+  return sum((x - m) ** 2 for x in xs) / len(xs)
+  ```
+
+## 6. `test_variance_single_raises`
+- **Observed Failure**: `AssertionError: ValueError not raised`
+- **Root Cause**: The `variance` function does not check if the input list has at least two elements. When `len(xs)` is 1, the sample variance should raise a `ValueError` (as division by `n-1` would be division by zero).
+- **Buggy Code**: (Missing check for `len(xs) < 2`)

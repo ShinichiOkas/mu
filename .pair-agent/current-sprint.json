@@ -1,9 +1,9 @@
 {
   "sprint_id": "029-skill-system",
-  "status": "executing",
+  "status": "retrospecting",
   "goal": "skill システムの導入——役割定義書から「やり方」を独立単位に分離する。宛先は skill 側が名乗り（applies_to）、権限は持たない（絶対ルール）、confirmed だけが装着される",
   "created_at": "2026-08-12T00:00:00+09:00",
   "agreed_at": "2026-08-12T00:00:00+09:00",
   "agreement_path": ".pair-agent/agreements/029-skill-system.md",
-  "note": "協議は 2026-08-12 の対話で実施（層の位置づけ・role との関係・装着方式・絶対ルール・目的①②③の切り分け）。フェーズ A（機構・TDD）から実行中"
+  "note": "3フェーズ完了（4613bfc / 1eb5406 / 本コミット）。364 green・移行の文言不変を実測・回帰スモーク合格（bugfix 105s・ハッシュ一致・violations none）・②の e2e 成立（プロジェクト側 skill が実装者のやり方を変えた）。振り返り待ち"
 }
