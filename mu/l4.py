@@ -28,6 +28,9 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor
+from concurrent.futures import wait as _futures_wait
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -197,6 +200,7 @@ class Manager:
         deadline: Callable[[], bool] | None = None,
         protected: Sequence[str] | None = None,
         workspace: str | None = None,
+        parallel: int = 1,
         max_rounds: int = 3,
         l3_max: int = 8,
         l2_max: int = 6,
@@ -212,6 +216,10 @@ class Manager:
         copy-in / publish-out・ツールの閉じ込め・single-writer の発行ゲート）。
         None なら従来どおり共有 cwd で走る——隔離は呼び出し側が規定する環境接地であり、
         guard / protected / deadline と同じ注入の型。
+
+        `parallel` は D（タスク実行）の同時実行数（合意031）。**既定 1 ＝完全に従来の
+        逐次**（既存の測定基準を動かさない床）。2以上で「dispatch 可能なタスクの同時実行」
+        になる——規則（needs ゲート・WAW/WAR・QA バリア）はコードの決定論（`_ready`）。
         """
         roles = roles or {}
         skills = skills or {}
@@ -235,11 +243,11 @@ class Manager:
             write_process(process_path, purpose, tasks, process_note(roles))
             log(("process", tasks, process_path))
 
-            failure, broken, timed_out = self._execute(                 # D（役割を着た L3 の逐次ループ）
+            failure, broken, timed_out = self._execute(                 # D（役割を着た L3 のループ）
                 model, tasks, tools, roles, pool,
                 spec_path, purpose, system, log, limits,
                 guard=guard, deadline=deadline, protected=protected, skills=skills,
-                workspace=workspace,
+                workspace=workspace, parallel=parallel,
             )
             if broken:      # タスク境界の検査で破れが出た（017: 1周が締切に収まらず周頭では遅い）
                 return _broken_outcome(broken, tasks, rounds, process_path, log)
@@ -290,16 +298,25 @@ class Manager:
         protected: Sequence[str] | None = None,
         skills: dict | None = None,
         workspace: str | None = None,
+        parallel: int = 1,
     ) -> tuple[dict | None, list, bool]:
-        """pending タスクを順に実行する。返り値は (最初に失敗したタスク | None, 破れ, 時間切れ)。
+        """pending タスクを実行する。返り値は (最初に失敗したタスク | None, 破れ, 時間切れ)。
 
-        guard / deadline は**タスク境界でも**見る（合意018 ③⑥）。017 再走では1周が締切に
-        収まらず、周の頭だけの検査は一度も走らなかった——破壊はタスクの中で起きる。
+        既定（parallel=1）は従来どおり**順に1つずつ**。guard / deadline は**タスク境界でも**
+        見る（合意018 ③⑥）。017 再走では1周が締切に収まらず、周の頭だけの検査は一度も
+        走らなかった——破壊はタスクの中で起きる。
 
         `workspace` があれば各タスクは tray で走る（合意030）: needs＋SPEC を写して開始し、
         ツールを tray に閉じ、完了時に宣言された出力だけを共有空間へ発行する。発行の
         所有権ゲート（single-writer）で拒否されたタスクは、正直な失敗として PjM に乗る。
+
+        `parallel` > 1 なら dispatch 可能なタスクを同時に最大 N（合意031。`_execute_parallel`）。
         """
+        if parallel > 1:
+            return self._execute_parallel(
+                model, tasks, tools, roles, pool, spec_path, purpose, system, log, limits,
+                guard, deadline, protected, skills, workspace, parallel,
+            )
         for i, t in enumerate(tasks):
             if t.get("done"):
                 continue
@@ -308,75 +325,220 @@ class Manager:
             broken = guard() if guard else []
             if broken:
                 return None, broken, False
-            # needs のゲート（合意030: 満たせなければタスクは実行できない）。内部依存は
-            # 産出タスクの done、外部ファイルは実在で見る。満たせないタスクは L3 に渡さず、
-            # コードが確認した事実を載せて正直に失敗させる——PjM の decide に乗る。
-            producers = {p["file"]: bool(p.get("done")) for p in tasks[:i]}
-            missing = unmet_needs(t, producers)
-            if missing:
-                t["last_failure"] = (
-                    f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
-                    "（先行タスクが産出していないか、外部ファイルの名前が違う）"
-                )
-                log(("needs_unmet", t["file"], missing))
+            tray, blocked = self._gate_and_tray(t, i, tasks, spec_path, workspace, log)
+            if blocked:
                 return t, [], False
-            doc = roles.get(t["role"], "")
-            # tray（合意030）: needs＋SPEC を写して開始し、ツールを tray に閉じる。
-            # 未宣言の入力は tray に無い＝読めずに正直に失敗する（グラフは構成的に真）。
-            tray = None
-            if workspace:
-                tray = task_tray(workspace, t["role"], i)
-                discard_stale_output(tray, t["file"])   # 前回試行の残骸を発行させない
-                missing_in = copy_in(tray, t["needs"])
-                if missing_in:
+            a = self._l3_args(t, tray, tools, roles, pool, model, spec_path, purpose,
+                              system, log, protected, skills, limits)
+            result = self._l3.run(a.pop("model"), a.pop("goal"), a.pop("tools"), log=log, **a)
+            if not self._finish(t, tasks, tray, result, log):
+                return t, [], False
+        return None, [], False
+
+    def _gate_and_tray(
+        self, t: dict, i: int, tasks: list, spec_path: str, workspace: str | None,
+        log: Callable,
+    ) -> tuple[str | None, bool]:
+        """needs のゲートと tray の準備（逐次・並列で共通）。返り値は (tray, 失敗したか)。
+
+        ゲート（合意030: 満たせなければタスクは実行できない）: 内部依存は産出タスクの done、
+        外部ファイルは実在で見る。満たせないタスクは L3 に渡さず、コードが確認した事実を
+        載せて正直に失敗させる——PjM の decide に乗る。
+
+        tray（合意030）: needs＋SPEC を写して開始し、ツールを tray に閉じる。未宣言の入力は
+        tray に無い＝読めずに正直に失敗する（グラフは構成的に真）。
+        """
+        producers = {p["file"]: bool(p.get("done")) for p in tasks[:i]}
+        missing = unmet_needs(t, producers)
+        if missing:
+            t["last_failure"] = (
+                f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
+                "（先行タスクが産出していないか、外部ファイルの名前が違う）"
+            )
+            log(("needs_unmet", t["file"], missing))
+            return None, True
+        if not workspace:
+            return None, False
+        tray = task_tray(workspace, t["role"], i)
+        discard_stale_output(tray, t["file"])   # 前回試行の残骸を発行させない
+        missing_in = copy_in(tray, t["needs"])
+        if missing_in:
+            t["last_failure"] = (
+                f"入力を作業区画へ写せない（コードが確認した事実）: {', '.join(missing_in)}"
+            )
+            log(("copy_in_missing", t["file"], missing_in))
+            return None, True
+        if Path(spec_path).is_file():
+            copy_in(tray, [spec_path])
+        return tray, False
+
+    def _l3_args(
+        self, t: dict, tray: str | None, tools: Sequence[Tool], roles: dict, pool: list,
+        model: str, spec_path: str, purpose: str, system: str | None, log: Callable,
+        protected: Sequence[str] | None, skills: dict | None, limits: dict,
+    ) -> dict:
+        """役割を着せた L3 呼び出しの引数を組む（逐次・並列で共通）。
+
+        契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
+        欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
+        装備（skill）は職掌の直後・契約の手前に入る（合意029）——契約と環境は後ろの
+        ままにする（019 で確立した「再計画で薄まらない経路」の順序を動かさない）。
+        """
+        doc = roles.get(t["role"], "")
+        tray_env = (
+            f"作業ディレクトリ: {tray}（このタスク専用。参照ファイルは写しが置かれている。"
+            f"ファイルはディレクトリを付けず名前だけで読み書きすること——例: "
+            f"read_file(\"{(t['needs'] or [spec_path])[0]}\")・write_file(\"{t['file']}\", ...)。"
+            f"成果物 {t['file']} は完了時にコードが共有空間へ発行する）"
+        ) if tray else ""
+        task_system = "\n\n".join(
+            s for s in (role_prompt(doc), skill_text(skills or {}, t["role"], log),
+                        task_contract(t), system, tray_env) if s
+        )
+        base_tools = tray_tools(tools, tray, log) if tray else tools
+        return dict(
+            model=t.get("model") if t.get("model") in pool else model,
+            goal=task_goal(t, spec_path, purpose),
+            tools=role_tools(base_tools, doc, t["file"], t["role"], log),  # 役割別の権限（B1）
+            approve=plan_lint(t, doc, protected, log),   # 計画のコード検査（合意018 ④⑤）
+            system=task_system or None,
+            max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
+            l2_l1_max=limits["l2_l1_max"],
+        )
+
+    def _finish(self, t: dict, tasks: list, tray: str | None, result: dict, log: Callable) -> bool:
+        """タスク完了処理（逐次・並列で共通）: 発行 → done → ログ。返り値は done。"""
+        t["done"] = bool(result.get("done"))
+        if t["done"] and tray:
+            # 発行（publish-out）。single-writer（師匠宣言）はここで強制される——
+            # 所有者は「そのファイルを最初に産出するタスクのロール」（宣言からの決定論）。
+            owner = next(p["role"] for p in tasks if p["file"] == t["file"])
+            published, reason = publish(tray, t["file"], t["role"], owner)
+            if published:
+                log(("published", t["file"], tray))
+            else:
+                t["done"] = False
+                t["last_failure"] = f"発行できない（コードが確認した事実）: {reason}"
+                log(("publish_refused", t["file"], reason))
+        if t["done"]:
+            clear_failure(t)   # 通ったら前回の失敗は捨てる（持つのは直近1回だけ）
+        log(("task_done", t) if t["done"] else ("task_failed", t))
+        return bool(t["done"])
+
+    @staticmethod
+    def _ready(i: int, tasks: list) -> bool:
+        """dispatch 規則（合意031。コードの決定論——判断は入らない）。
+
+        (a) needs ゲート通過（産出タスク done／外部実在）
+        (b) WAW: 同じ file を書く先行タスクがすべて done（改稿チェーンは列挙順で直列）
+        (c) WAR: 自分の file を needs に宣言している先行タスクがすべて done
+            （読み手が写しを取る前に上書きしない）
+        (d) QA バリア: 非 QA タスクが全部 done になるまで QA は走らない
+            （「検証を飛ばして完遂に到達できない」床を並列でも保つ）
+        """
+        t = tasks[i]
+        if t["role"] == "qa" and any(not p.get("done") for p in tasks if p["role"] != "qa"):
+            return False
+        earlier = tasks[:i]
+        producers = {p["file"]: bool(p.get("done")) for p in earlier}
+        if unmet_needs(t, producers):
+            return False
+        if any(p["file"] == t["file"] and not p.get("done") for p in earlier):
+            return False
+        if any(t["file"] in p.get("needs", ()) and not p.get("done") for p in earlier):
+            return False
+        return True
+
+    def _execute_parallel(
+        self, model: str, tasks: list, tools: Sequence[Tool], roles: dict,
+        pool: list, spec_path: str, purpose: str, system: str | None,
+        log: Callable, limits: dict,
+        guard: Callable[[], list] | None,
+        deadline: Callable[[], bool] | None,
+        protected: Sequence[str] | None,
+        skills: dict | None,
+        workspace: str | None,
+        parallel: int,
+    ) -> tuple[dict | None, list, bool]:
+        """dispatch 可能なタスクを同時に最大 `parallel` 実行する（合意031）。
+
+        - タスク列の状態変更・ゲート・copy-in・発行は**すべてこのスレッド**で行う。
+          worker が回すのは L3 だけ（tray ツールは per-task closure・共有状態に触れない）
+        - 失敗・締切・破れを見たら**新規 dispatch を止めて実行中を drain**（完走を待つ）。
+          実行中のタスクは中断しない——外部 kill が finally を飛ばして観測ゼロを生む轍
+          （017）を内部で踏まない
+        - log は行単位の lock で直列化する（並列で観測を殺さない）
+        - 誰も ready でないのに pending が残る停滞は、逐次と同じく最初の pending を
+          正直に失敗させる（黙って待ち続けない）
+        """
+        lock = threading.Lock()
+
+        def slog(event: Any) -> None:
+            with lock:
+                log(event)
+
+        running: dict = {}          # index -> (future, tray)
+        failures: list = []         # (index, task)
+        broken_seen: list = []
+        timed_out = False
+        draining = False
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            while True:
+                if not draining:    # 境界検査（dispatch 境界＝逐次のタスク境界と同じ粒度）
+                    if deadline and deadline():
+                        timed_out, draining = True, True
+                    else:
+                        broken = guard() if guard else []
+                        if broken:
+                            broken_seen, draining = broken, True
+                if not draining:
+                    for i, t in enumerate(tasks):
+                        if len(running) >= parallel:
+                            break
+                        if t.get("done") or i in running or not self._ready(i, tasks):
+                            continue
+                        tray, blocked = self._gate_and_tray(t, i, tasks, spec_path, workspace, slog)
+                        if blocked:
+                            failures.append((i, t))
+                            draining = True
+                            break
+                        a = self._l3_args(t, tray, tools, roles, pool, model, spec_path,
+                                          purpose, system, slog, protected, skills, limits)
+                        slog(("task_started", t))
+                        future = executor.submit(
+                            self._l3.run, a.pop("model"), a.pop("goal"), a.pop("tools"),
+                            log=slog, **a,
+                        )
+                        running[i] = (future, tray)
+                if not running:
+                    if draining or all(t.get("done") for t in tasks):
+                        break
+                    # 停滞: pending が残るのに誰も ready でない（外部 needs 不足・前方参照）。
+                    i, t = next((j, x) for j, x in enumerate(tasks) if not x.get("done"))
+                    producers = {p["file"]: bool(p.get("done")) for p in tasks[:i]}
+                    missing = unmet_needs(t, producers) or [t["file"]]
                     t["last_failure"] = (
-                        f"入力を作業区画へ写せない（コードが確認した事実）: {', '.join(missing_in)}"
+                        f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
+                        "（先行タスクが産出していないか、外部ファイルの名前が違う）"
                     )
-                    log(("copy_in_missing", t["file"], missing_in))
-                    return t, [], False
-                if Path(spec_path).is_file():
-                    copy_in(tray, [spec_path])
-            # 契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
-            # 欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
-            # 装備（skill）は職掌の直後・契約の手前に入る（合意029）——契約と環境は後ろの
-            # ままにする（019 で確立した「再計画で薄まらない経路」の順序を動かさない）。
-            tray_env = (
-                f"作業ディレクトリ: {tray}（このタスク専用。参照ファイルは写しが置かれている。"
-                f"ファイルはディレクトリを付けず名前だけで読み書きすること——例: "
-                f"read_file(\"{(t['needs'] or [spec_path])[0]}\")・write_file(\"{t['file']}\", ...)。"
-                f"成果物 {t['file']} は完了時にコードが共有空間へ発行する）"
-            ) if tray else ""
-            task_system = "\n\n".join(
-                s for s in (role_prompt(doc), skill_text(skills or {}, t["role"], log),
-                            task_contract(t), system, tray_env) if s
-            )
-            task_model = t.get("model") if t.get("model") in pool else model
-            base_tools = tray_tools(tools, tray, log) if tray else tools
-            task_tools = role_tools(base_tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
-            result = self._l3.run(
-                task_model, task_goal(t, spec_path, purpose), task_tools,
-                approve=plan_lint(t, doc, protected, log),   # 計画のコード検査（合意018 ④⑤）
-                log=log, system=task_system or None,
-                max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],
-                l2_l1_max=limits["l2_l1_max"],
-            )
-            t["done"] = bool(result.get("done"))
-            if t["done"] and tray:
-                # 発行（publish-out）。single-writer（師匠宣言）はここで強制される——
-                # 所有者は「そのファイルを最初に産出するタスクのロール」（宣言からの決定論）。
-                owner = next(p["role"] for p in tasks if p["file"] == t["file"])
-                published, reason = publish(tray, t["file"], t["role"], owner)
-                if published:
-                    log(("published", t["file"], tray))
-                else:
-                    t["done"] = False
-                    t["last_failure"] = f"発行できない（コードが確認した事実）: {reason}"
-                    log(("publish_refused", t["file"], reason))
-            if t["done"]:
-                clear_failure(t)   # 通ったら前回の失敗は捨てる（持つのは直近1回だけ）
-            log(("task_done", t) if t["done"] else ("task_failed", t))
-            if not t["done"]:
-                return t, [], False
+                    slog(("needs_unmet", t["file"], missing))
+                    failures.append((i, t))
+                    break
+                done_futures, _ = _futures_wait(
+                    [f for f, _ in running.values()], return_when=FIRST_COMPLETED
+                )
+                for i in [j for j, (f, _) in running.items() if f in done_futures]:
+                    future, tray = running.pop(i)
+                    result = future.result()   # L0Error 等は drain 後に伝播（executor が待つ）
+                    if not self._finish(tasks[i], tasks, tray, result, slog):
+                        failures.append((i, tasks[i]))
+                        draining = True
+        if broken_seen:
+            return None, broken_seen, False
+        if timed_out:
+            return None, [], True
+        if failures:
+            return sorted(failures, key=lambda x: x[0])[0][1], [], False
         return None, [], False
 
     # --- 生命線の LLM 呼び出し（構造化出力） ---

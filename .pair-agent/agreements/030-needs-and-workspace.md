@@ -1,8 +1,9 @@
 # 合意 030 — needs 宣言と作業空間の分離（並列化の前段・逐次で実証）
 
-status: retrospecting（2026-08-12。3フェーズ＋修理1件完了・399 green・実走4本すべて達成・
+status: completed（2026-08-12。3フェーズ＋修理1件完了・399 green・実走4本すべて達成・
 偽なし・宣言グラフ完全＝needs 未充足 0・lint 0・基準計測器 gemma4:31b-cloud で 198s＝
-028 同条件基準と同速）
+028 同条件基準と同速。**振り返りは師匠の判断で先送り**——記録は
+`.pair-agent/sprints/030-needs-and-workspace.md`）
 created: 2026-08-12
 
 ## 背景

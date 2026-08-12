@@ -315,6 +315,7 @@ class Director:
         deadline: Any = None,
         protected: Sequence[str] | None = None,
         workspace: str | None = None,
+        parallel: int = 1,
     ) -> dict:
         roles = roles or {}
         skills = skills or {}
@@ -359,7 +360,8 @@ class Director:
                 model, spec, tools, roles=roles, skills=skills, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
                 guard=guard, deadline=deadline, protected=protected, workspace=workspace,
-                # ↑ 破れ検査・締切・保護一覧・作業空間は呼び出し側が注入し、この層は素通しする
+                parallel=parallel,
+                # ↑ 破れ検査・締切・保護一覧・作業空間・同時実行数は呼び出し側が注入し、素通しする
                 max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
             )
             tasks = outcome["tasks"]

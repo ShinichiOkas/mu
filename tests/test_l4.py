@@ -696,3 +696,207 @@ def test_workspace_off_keeps_the_previous_behavior(tmp_path, monkeypatch):
     out = run(mgr, tmp_path, monkeypatch)
     assert out["outcome"] == "done"
     assert not (tmp_path / "work").exists()
+
+
+# --- 031: 並列スケジューラ——dispatch 規則・drain・逐次回帰 -----------------------
+#
+# parallel>1 で「dispatch 可能なタスクの同時実行」。規則（needs ゲート・WAW/WAR・
+# QA バリア）はコードの決定論。失敗・締切・破れは新規 dispatch を止めて drain。
+# 既定 parallel=1 は完全に従来の逐次（既存テスト群がそのまま床）。
+
+import re as _re
+import threading as _threading
+
+
+class ParallelFakeL3:
+    """並列テスト用の L3 代役。goal の「出力ファイル:」でタスクを特定し、
+    開始・終了の順序と同時実行数を記録する。results はファイル名 → 応答（列）。"""
+
+    def __init__(self, results, barrier_files=(), barrier_timeout=5.0):
+        self._results = {k: list(v) for k, v in results.items()}
+        self.events = []                 # ("start"|"end", file) の列
+        self.active = 0
+        self.max_active = 0
+        self._lock = _threading.Lock()
+        # barrier_files の全タスクが**同時に走っている**ことを証明する仕掛け。
+        # 直列化されていると wait がタイムアウトし、タスクは可視に失敗する。
+        self._barrier = (_threading.Barrier(len(barrier_files), timeout=barrier_timeout)
+                         if barrier_files else None)
+        self._barrier_files = set(barrier_files)
+
+    def run(self, model, goal, tools, **kwargs):
+        file = _re.search(r"出力ファイル: (\S+)", goal).group(1)
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.events.append(("start", file))
+        try:
+            if self._barrier and file in self._barrier_files:
+                try:
+                    self._barrier.wait()
+                except _threading.BrokenBarrierError:
+                    return {"units": [], "done": False, "rounds": 1}
+            r = (self._results.get(file) or [{}]).pop(0) if self._results.get(file) else {}
+            for path, content in r.get("writes", []):
+                from pathlib import Path
+                Path(path).write_text(content, encoding="utf-8")
+            for path, content in r.get("tool_writes", []):
+                write = next(f for f, _ in tools if f.__name__ == "write_file")
+                write(path, content)
+            return {"units": [], "done": r.get("done", True), "rounds": 1}
+        finally:
+            with self._lock:
+                self.active -= 1
+                self.events.append(("end", file))
+
+
+def _par_proc(*tasks):
+    return {"tasks": list(tasks)}
+
+
+def _impl(file, needs=None):
+    t = {"role": "implementer", "task": f"{file} を作る", "file": file, "criterion": "ある"}
+    if needs:
+        t["needs"] = needs
+    return t
+
+
+_QA = {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"}
+
+
+def test_independent_tasks_run_concurrently(tmp_path, monkeypatch):
+    # 独立な2タスクが本当に同時に走る（Barrier: 直列化されていると失敗が可視化される）。
+    fake = ParallelFakeL3(
+        {"a.md": [{"writes": [("a.md", "A")]}], "b.md": [{"writes": [("b.md", "B")]}],
+         "verdict.md": [{"writes": [("verdict.md", VERDICT_YES)]}]},
+        barrier_files=("a.md", "b.md"),
+    )
+    mgr = Manager(FakeL0([_par_proc(_impl("a.md"), _impl("b.md"), _QA)]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=2)
+    assert out["outcome"] == "done"
+    assert fake.max_active == 2
+
+
+def test_qa_waits_for_all_other_tasks(tmp_path, monkeypatch):
+    fake = ParallelFakeL3(
+        {"a.md": [{"writes": [("a.md", "A")]}], "b.md": [{"writes": [("b.md", "B")]}],
+         "verdict.md": [{"writes": [("verdict.md", VERDICT_YES)]}]},
+        barrier_files=("a.md", "b.md"),
+    )
+    mgr = Manager(FakeL0([_par_proc(_impl("a.md"), _impl("b.md"), _QA)]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    mgr.run("m", SPEC, [], roles=ROLES, parallel=3)
+    qa_start = fake.events.index(("start", "verdict.md"))
+    assert ("end", "a.md") in fake.events[:qa_start]
+    assert ("end", "b.md") in fake.events[:qa_start]
+
+
+def test_same_file_revision_chain_is_serialized(tmp_path, monkeypatch):
+    # WAW: 同じ file を書くタスクは列挙順で直列（同時に走らない）。
+    fake = ParallelFakeL3({
+        "story.md": [{"writes": [("story.md", "v1")]}, {"writes": [("story.md", "v2")]}],
+        "verdict.md": [{"writes": [("verdict.md", VERDICT_YES)]}],
+    })
+    proc = _par_proc(_impl("story.md"), _impl("story.md", needs=["story.md"]), _QA)
+    mgr = Manager(FakeL0([proc]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=2)
+    assert out["outcome"] == "done"
+    assert fake.max_active == 1          # 一度も並ばない
+    starts = [f for kind, f in fake.events if kind == "start"]
+    assert starts == ["story.md", "story.md", "verdict.md"]
+
+
+def test_a_later_writer_waits_for_an_earlier_reader(tmp_path, monkeypatch):
+    # WAR: report.md を読む先行タスク（summary.md）が終わるまで、report.md の改稿は走らない。
+    fake = ParallelFakeL3({
+        "report.md": [{"writes": [("report.md", "v1")]}, {"writes": [("report.md", "v2")]}],
+        "summary.md": [{"writes": [("summary.md", "S")]}],
+        "verdict.md": [{"writes": [("verdict.md", VERDICT_YES)]}],
+    })
+    proc = _par_proc(
+        _impl("report.md"),
+        _impl("summary.md", needs=["report.md"]),
+        _impl("report.md", needs=["report.md"]),
+        _QA,
+    )
+    mgr = Manager(FakeL0([proc]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=3)
+    assert out["outcome"] == "done"
+    idx_summary_end = fake.events.index(("end", "summary.md"))
+    idx_report2_start = [i for i, e in enumerate(fake.events) if e == ("start", "report.md")][1]
+    assert idx_report2_start > idx_summary_end
+
+
+def test_failure_stops_new_dispatch_and_drains(tmp_path, monkeypatch):
+    # a が失敗 → 実行中（b）は完走を待つが、c は新規に dispatch されない。
+    fake = ParallelFakeL3(
+        {"a.md": [{"done": False}], "b.md": [{"writes": [("b.md", "B")]}],
+         "c.md": [{"writes": [("c.md", "C")]}]},
+        barrier_files=("a.md", "b.md"),    # a と b は同時に開始している
+    )
+    decide = {"action": "escalate", "invalidate": [], "reason": "実装が失敗した"}
+    proc = _par_proc(_impl("a.md"), _impl("b.md"), _impl("c.md"), _QA)
+    mgr = Manager(FakeL0([proc, decide]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=2)
+    assert out["outcome"] == "escalate"
+    starts = [f for kind, f in fake.events if kind == "start"]
+    assert "c.md" not in starts          # 失敗後の新規 dispatch は無い
+    assert ("end", "b.md") in fake.events   # 実行中は中断されず完走した
+
+
+def test_unsatisfiable_needs_fail_honestly_in_parallel(tmp_path, monkeypatch):
+    # 停滞（誰も ready でない）は黙って待たず、最初の pending を正直に失敗させる。
+    decide = {"action": "escalate", "invalidate": [], "reason": "入力が無い"}
+    proc = _par_proc(_impl("a.md", needs=["nosuch.csv"]), _QA)
+    fake = ParallelFakeL3({})
+    mgr = Manager(FakeL0([proc, decide]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=2)
+    assert out["outcome"] == "escalate"
+    assert "nosuch.csv" in out["tasks"][0].get("last_failure", "")
+    assert fake.events == []             # 1タスクも走っていない
+
+
+def test_parallel_workspace_publishes_from_both_trays(tmp_path, monkeypatch):
+    # tray（030）と並列（031）の合成: 独立2タスクが各自の tray で書き、両方発行される。
+    fake = ParallelFakeL3(
+        {"a.md": [{"tool_writes": [("a.md", "A")]}], "b.md": [{"tool_writes": [("b.md", "B")]}],
+         "verdict.md": [{"tool_writes": [("verdict.md", VERDICT_YES)]}]},
+        barrier_files=("a.md", "b.md"),
+    )
+    mgr = Manager(FakeL0([_par_proc(_impl("a.md"), _impl("b.md"), _QA)]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, list(tools.TOOLS), roles=ROLES, parallel=2,
+                  workspace=str(tmp_path / "work"))
+    assert out["outcome"] == "done"
+    assert (tmp_path / "a.md").read_text(encoding="utf-8") == "A"
+    assert (tmp_path / "b.md").read_text(encoding="utf-8") == "B"
+    assert fake.max_active == 2
+
+
+def test_deadline_in_parallel_returns_before_dispatch(tmp_path, monkeypatch):
+    fake = ParallelFakeL3({})
+    mgr = Manager(FakeL0([_par_proc(_impl("a.md"), _QA)]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=2, deadline=lambda: True)
+    assert out["outcome"] == "escalate"
+    assert "時間" in out["reason"]
+    assert fake.events == []
+
+
+def test_parallel_one_keeps_the_sequential_order(tmp_path, monkeypatch):
+    # 既定（parallel=1）は従来の逐次コードパス——独立タスクでも列挙順に1つずつ。
+    fake = ParallelFakeL3({
+        "a.md": [{"writes": [("a.md", "A")]}], "b.md": [{"writes": [("b.md", "B")]}],
+        "verdict.md": [{"writes": [("verdict.md", VERDICT_YES)]}],
+    })
+    mgr = Manager(FakeL0([_par_proc(_impl("a.md"), _impl("b.md"), _QA)]), l3=fake)
+    monkeypatch.chdir(tmp_path)
+    out = mgr.run("m", SPEC, [], roles=ROLES, parallel=1)
+    assert out["outcome"] == "done"
+    assert fake.max_active == 1
+    assert [f for k, f in fake.events if k == "start"] == ["a.md", "b.md", "verdict.md"]

@@ -1,9 +1,9 @@
 {
-  "sprint_id": "030-needs-and-workspace",
-  "status": "retrospecting",
-  "goal": "needs 宣言（入力の明示・複数・外部含む）＋実行ゲート＋作業空間の分離（tray・copy-in/publish-out・single-writer）を逐次のまま導入し、依存グラフが構成的に真であることを実走で実証する。並列実行そのものは次スプリント",
-  "created_at": "2026-08-12T15:30:00+09:00",
-  "agreed_at": "2026-08-12T15:30:00+09:00",
-  "agreement_path": ".pair-agent/agreements/030-needs-and-workspace.md",
-  "note": "3フェーズ＋修理1件（C1: tray パス二重入れ子）完了。399 green・実走4本すべて達成・偽なし・宣言グラフ完全（needs 未充足 0・lint 0）・基準計測器 31b-cloud で 198s＝028 同条件基準と同速。次スプリント候補: 並列スケジューラ（ready 集合の dispatch・同時実行数・ツール大域状態 _PROTECTED の並列対応＝023 再訪・OLLAMA_NUM_PARALLEL 実測）"
+  "sprint_id": "031-parallel-scheduler",
+  "status": "executing",
+  "goal": "並列スケジューラ——無効でない独立タスクの同時実行。dispatch 規則（needs ゲート・WAW/WAR・QA バリア）はコードの決定論、同時実行数は呼び出し側が規定（既定1＝従来の逐次）。主デリバラブルは『副作用で悪化しないことの確認』（師匠の受け入れ枠）——速くならない観測も成果として記録",
+  "created_at": "2026-08-12T18:00:00+09:00",
+  "agreed_at": "2026-08-12T18:10:00+09:00",
+  "agreement_path": ".pair-agent/agreements/031-parallel-scheduler.md",
+  "note": "フェーズ: 0=L0並列プローブ・tools大域状態検査 → A=スケジューラ(TDD) → B=観測(タグ付きログ・MU_PARALLEL表示) → C=実測(31b-cloud非悪化・幅課題・ローカル12b×2)・クローズ"
 }
