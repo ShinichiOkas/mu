@@ -1,0 +1,25 @@
+Failing Test Cases and Root Causes:
+
+1. FAIL: test_mean_empty_raises
+   - Buggy Code: lines 6-7 (`if not xs: return 0`)
+   - Root Cause: Should raise ValueError for empty list instead of returning 0.
+
+2. FAIL: test_median_empty_raises
+   - Buggy Code: lines 12-13 (`if not xs: return 0`)
+   - Root Cause: Should raise ValueError for empty list instead of returning 0.
+
+3. FAIL: test_median_even_is_average_of_middle_two
+   - Buggy Code: line 15 (`return s[len(s) // 2]`)
+   - Root Cause: Always returns the upper middle element; should return the average of the two middle elements when the list length is even.
+
+4. FAIL: test_value_range
+   - Buggy Code: line 24 (`return max(xs)`)
+   - Root Cause: Returns only the maximum value; should return the range (max - min).
+
+5. FAIL: test_variance_is_sample_variance
+   - Buggy Code: line 21 (`return sum((x - m) ** 2 for x in xs) / len(xs)`)
+   - Root Cause: Uses population variance formula (divisor N); should use sample variance formula (divisor N-1).
+
+6. FAIL: test_variance_single_raises
+   - Buggy Code: line 21 (`return sum((x - m) ** 2 for x in xs) / len(xs)`)
+   - Root Cause: Does not handle the case where len(xs) == 1, which would lead to division by zero in sample variance or should explicitly raise ValueError as per test requirements.
