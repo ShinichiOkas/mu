@@ -4,16 +4,21 @@ L4（進行の層）が扱うデータ型と、その入出力をここに置く
 何を再実行するかを決めるのは PjM（LLM）であり、ここにあるのは決められた通りに
 状態を動かす決定論だけ（合意009）。
 
-    task = {role, task, file, criterion, check?, model?, done}
+    task = {role, task, file, criterion, needs, check?, model?, done}
 
 この層の床（コードが必ず守る不変条件）:
   - 末尾に QA タスクが無ければ**必ず足す**（検証を飛ばして完遂に到達できない）。
     文面・出力ファイル・成功条件は役割定義書で上書きできるが、**存在は上書きできない**
+  - **QA タスクの needs（全成果物）はコードが必ず供給する**（検証者が実物を見られない
+    プロセスを作れない。合意030）
   - 判定書の契約（ACHIEVED / REASON / GAP）を供給し、QA タスクの成功条件にも入れる
-  - 無効化はファイル依存で伝播し、**QA タスクは必ず再実行**（done を carry しない）
+  - 無効化は宣言された needs 辺で伝播し、**QA タスクは必ず再実行**（done を carry しない）
   - 判定書の読み手は装飾に寛容だが、**判定語 yes|no|uncertain は厳格**（曖昧な宣言は読めない扱い）
 
-依存グラフ（`invalidate` が使うファイル依存）は**並列可能性を判定するグラフと同一物**であり、
+入力は needs で**明示宣言**される（合意030。師匠「Input が暗黙というのはよろしくない」）。
+needs の意味論は**ゲート**——満たせなければタスクは実行できない（`unmet_needs`）。
+言及ベースの推定は依存の根拠ではなく**計画時 lint**（`normalize_tasks` 内）。
+依存グラフ（`invalidate` が使う needs 辺）は**並列可能性を判定するグラフと同一物**であり、
 並列実行を入れるときに触るのもここ（合意006）。
 """
 
@@ -108,7 +113,15 @@ def process_note(roles: dict) -> str:
 
 
 def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
-    """PjM 応答をタスク列に正規化する。末尾に QA タスクが無ければコードが必ず足す。"""
+    """PjM 応答をタスク列に正規化する。末尾に QA タスクが無ければコードが必ず足す。
+
+    030 で足した床と lint:
+      - `needs`（入力の宣言）を正規化する（文字列化・空を捨てる・順序保存の重複排除）
+      - QA タスクの needs は**全成果物をコードが供給**する（宣言の上乗せは残す）
+      - 出力の書き手が複数ロールに割れていたら名指しで可視化（single-writer。師匠宣言）
+      - 先行成果物への言及が needs に無ければ可視化（言及推定の新しい居場所＝計画時 lint。
+        依存の根拠にはしない——「依存が有る」しか言えず「無い」の保証が出ないため）
+    """
     tasks = []
     for t in raw:
         if not isinstance(t, dict):
@@ -123,7 +136,8 @@ def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
             role = "implementer"
         task = {
             "role": role, "task": text, "file": file,
-            "criterion": str(t.get("criterion", "")), "done": False,
+            "criterion": str(t.get("criterion", "")), "needs": _clean_needs(t.get("needs")),
+            "done": False,
         }
         check = t.get("check") or {}
         if isinstance(check, dict) and (check.get("run") or "").strip():
@@ -134,14 +148,76 @@ def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
     if not any(t["role"] == "qa" for t in tasks):
         qa = default_qa_task(roles)          # ミニマム＋定義書の宣言（存在自体は上書き不可）
         log(("qa_appended", qa["file"]))
-        tasks.append(dict(qa, done=False))
-    for t in tasks:                           # 判定書の契約は成功条件にも入れる（床）
-        if t["role"] == "qa" and "REASON" not in t["criterion"]:
-            t["criterion"] = (t["criterion"] + " / " if t["criterion"] else "") + _VERDICT_REQUIREMENT
+        tasks.append(dict(qa, needs=[], done=False))
+    outputs = [t["file"] for t in tasks if t["role"] != "qa"]
+    for t in tasks:
+        if t["role"] == "qa":
+            # 床: QA は全成果物を見る。宣言された上乗せ（照合用の外部入力等）は後ろに残す。
+            t["needs"] = outputs + [f for f in t["needs"] if f not in outputs]
+            if "REASON" not in t["criterion"]:   # 判定書の契約は成功条件にも入れる（床）
+                t["criterion"] = (
+                    (t["criterion"] + " / " if t["criterion"] else "") + _VERDICT_REQUIREMENT
+                )
+    _lint_tasks(tasks, log)
     return tasks
 
 
-def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") -> str:
+def _clean_needs(raw) -> list:
+    """needs の正規化。list でも カンマ区切り文字列でも受け、順序を保って重複排除する。"""
+    items = raw.split(",") if isinstance(raw, str) else (raw if isinstance(raw, list) else [])
+    out = []
+    for f in items:
+        name = str(f).strip()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _lint_tasks(tasks: list, log: Callable) -> None:
+    """計画時 lint（コードの決定論。エラーにせず名指しで可視化する）。
+
+    - single-writer: 出力ファイルの書き手は1ロールに固定（師匠宣言・合意030）。
+      発行の拒否（強制）は作業空間側のゲートが担い、ここは計画の時点で人間と PjM に見せる。
+    - needs_lint: 先行タスクの成果物に言及しているのに needs に無い——実行時に読めない
+      （tray のもとでは未宣言の入力は存在しない）ことを実行前に教える。
+    """
+    owner: dict = {}
+    for t in tasks:
+        role = owner.setdefault(t["file"], t["role"])
+        if role != t["role"]:
+            log(("single_writer_violation", t["file"], role, t["role"]))
+    produced: list = []
+    for t in tasks:
+        texts = " ".join([
+            t.get("task", ""), t.get("criterion", ""),
+            (t.get("check") or {}).get("run", ""), (t.get("check") or {}).get("expect", ""),
+        ])
+        hits = [f for f in produced
+                if f != t["file"] and f not in t["needs"] and f in texts]
+        if hits:
+            log(("needs_lint", t["file"], hits))
+        produced.append(t["file"])
+
+
+def unmet_needs(task: dict, producers: dict) -> list:
+    """needs のうち満たされていないもの（＝ゲート。合意030「満たせなければ実行できない」）。
+
+    `producers` は先行タスクの `{file: done}`。タスク列の中で産出されるファイルは
+    **産出タスクが done か**で判定し（内部依存）、産出タスクが居ないファイル（外部入力）だけ
+    実在で判定する（Make の source と同じ）。判定は存在であって鮮度ではない——
+    何を作り直すかの判断は PjM（invalidate）の領分。
+    """
+    out = []
+    for f in task.get("needs", ()):
+        if f in producers:
+            if not producers[f]:
+                out.append(f)
+        elif not Path(f).is_file():
+            out.append(f)
+    return out
+
+
+def task_goal(task: dict, spec_path: str, purpose: str = "") -> str:
     goal = (
         f"{task['task']}\n"
         f"役割: {task['role']}\n"
@@ -150,7 +226,9 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
     )
     goal += check_goal_lines(task.get("check"))          # 文面は L3 の単位と共通（023）
     goal += failure_goal_lines(task.get("last_failure") or "")
-    refs = [spec_path, *prior_files]
+    # 参照は SPEC＋宣言した needs（030）。「先行の done 全部」は完了タイミングで文脈が
+    # 変わる非決定性（合意021）であり、宣言に載せ替えて走が再現するようにする。
+    refs = [spec_path, *task.get("needs", ())]
     goal += f"\n参照できるファイル（read_file で読む）: {', '.join(refs)}"
     if task["role"] == "qa":
         goal += f"\n\n{_VERDICT_CONTRACT}"       # 契約はコードが供給する（合意008）
@@ -168,21 +246,20 @@ def task_goal(task: dict, spec_path: str, prior_files: list, purpose: str = "") 
 
 
 def invalidate(tasks: list, files: list, failure: str = "") -> None:
-    """指定ファイルのタスクを無効化し、依存（**後続**タスクの記述に現れるファイル）へ伝播する。
+    """指定ファイルのタスクを無効化し、**宣言された needs 辺**で後続へ伝播する（合意030）。
 
     QA タスクは必ず無効化する（部分再実行の経路から「検証を飛ばして完遂」に到達させない）。
     判断（どこを無効化するか）は PjM、伝播はここ（コードの決定論）。
 
-    伝播は**後続方向だけ**（合意014 B）。言及だけを根拠にすると依存が逆流する——013 の実走で、
-    検査器タスク（前段）が成果物名に言及していたために巻き込まれ、**PjM が凍結を守る判断を
-    していたのにコードが検査器を再生成させた**。プロセスは依存順に並ぶ契約（PjM プロンプト
-    「依存が先に来るよう並べよ」）なので、**前段は後段に依存しない**。これが限定の根拠。
+    伝播の根拠は needs だけ。言及ベースの推定は計画時 lint に降格した——needs は後ろから
+    前を指す辺なので、013 で実発火した依存の逆流（前段の検査器が成果物名への言及で
+    巻き込まれる）は構造的に起きない。tray（作業空間の分離）のもとでは未宣言の入力は
+    読めないため、needs に無い依存はそもそも存在できない——グラフは構成的に真である。
 
     `failure` を渡すと、無効化したタスクに「前回の失敗（コードが実行した事実）」として載せる。
     実行者は理由を知らされないと成果物でなく検査器を直しにいく（013 の実害・合意014 A）。
     """
     invalid = {str(f).strip() for f in files if str(f).strip()}
-    producer = {t["file"]: i for i, t in enumerate(tasks)}   # そのファイルを産むタスクの位置
     touched = set()
     changed = True
     while changed:  # 固定点まで伝播（invalid 集合は単調増加なので停止する）
@@ -194,13 +271,7 @@ def invalidate(tasks: list, files: list, failure: str = "") -> None:
                     changed = True
                 touched.add(idx)
                 continue
-            texts = " ".join([
-                t.get("task", ""), t.get("criterion", ""),
-                (t.get("check") or {}).get("run", ""), (t.get("check") or {}).get("expect", ""),
-            ])
-            # 言及＝依存とみなすのは、そのファイルを産むタスクが**自分より前**にいるときだけ。
-            # 産出タスクがタスク列に無いファイル（外部入力等）は保守的に依存とみなす。
-            if any(f in texts and producer.get(f, -1) < idx for f in invalid):
+            if any(f in invalid for f in t.get("needs", ())):
                 invalid.add(t["file"])
                 t["done"] = False
                 touched.add(idx)
@@ -321,6 +392,8 @@ def write_process(process_path: str, purpose: str, tasks: list, note: str = "") 
         model = f"（model: {t['model']}）" if t.get("model") else ""
         lines.append(f"{i}. [{mark}] **{t['role']}**{model} → `{t['file']}`")
         lines.append(f"   - task: {t['task']}")
+        if t.get("needs"):
+            lines.append(f"   - needs: {', '.join(t['needs'])}")
         lines.append(f"   - 成功条件: {t.get('criterion', '')}")
         check = t.get("check") or {}
         if check.get("run"):

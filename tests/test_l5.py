@@ -183,11 +183,12 @@ def test_verdict_no_triggers_pjm_partial_rerun(tmp_path, monkeypatch):
 
 
 def test_invalidation_propagates_along_file_dependencies(tmp_path, monkeypatch):
-    # design.md を無効化すると、design.md に依存する実装タスクも連鎖的に無効化される。
+    # design.md を無効化すると、design.md を needs に宣言した実装タスクも連鎖的に無効化される
+    # （030: 伝播の根拠は言及ではなく宣言された needs 辺）。
     proc = {"tasks": [
         {"role": "architect", "task": "設計する", "file": "design.md", "criterion": "規則"},
         {"role": "implementer", "task": "design.md に従い実装する", "file": "app.py",
-         "criterion": "design.md の規則に適合"},
+         "criterion": "design.md の規則に適合", "needs": ["design.md"]},
         {"role": "qa", "task": "検証", "file": "verdict.md", "criterion": "ACHIEVED"},
     ]}
     decide = {"action": "rerun", "invalidate": ["design.md"], "reason": "設計不備"}

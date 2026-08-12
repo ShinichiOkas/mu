@@ -35,7 +35,7 @@ from .l1 import Tool
 from .l3 import Orchestrator, noop, run_check, structured, with_env  # 層間共用ヘルパ
 from .process import (
     carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
-    task_contract, task_goal, verdict_check, write_process, process_note,
+    task_contract, task_goal, unmet_needs, verdict_check, write_process, process_note,
 )
 from .role_kb import role_perms, role_prompt, role_tools, staffing_lines, task_roles
 from .skill_kb import skill_text
@@ -54,6 +54,7 @@ _PROCESS_SCHEMA = {
                     "task": {"type": "string"},
                     "file": {"type": "string"},
                     "criterion": {"type": "string"},
+                    "needs": {"type": "array", "items": {"type": "string"}},
                     "check": {
                         "type": "object",
                         "properties": {"run": {"type": "string"}, "expect": {"type": "string"}},
@@ -294,6 +295,18 @@ class Manager:
             broken = guard() if guard else []
             if broken:
                 return None, broken, False
+            # needs のゲート（合意030: 満たせなければタスクは実行できない）。内部依存は
+            # 産出タスクの done、外部ファイルは実在で見る。満たせないタスクは L3 に渡さず、
+            # コードが確認した事実を載せて正直に失敗させる——PjM の decide に乗る。
+            producers = {p["file"]: bool(p.get("done")) for p in tasks[:i]}
+            missing = unmet_needs(t, producers)
+            if missing:
+                t["last_failure"] = (
+                    f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
+                    "（先行タスクが産出していないか、外部ファイルの名前が違う）"
+                )
+                log(("needs_unmet", t["file"], missing))
+                return t, [], False
             doc = roles.get(t["role"], "")
             # 契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
             # 欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
@@ -304,10 +317,9 @@ class Manager:
                             task_contract(t), system) if s
             )
             task_model = t.get("model") if t.get("model") in pool else model
-            prior = [p["file"] for p in tasks[:i] if p.get("done")]
             task_tools = role_tools(tools, doc, t["file"], t["role"], log)  # 役割別の権限（B1）
             result = self._l3.run(
-                task_model, task_goal(t, spec_path, prior, purpose), task_tools,
+                task_model, task_goal(t, spec_path, purpose), task_tools,
                 approve=plan_lint(t, doc, protected, log),   # 計画のコード検査（合意018 ④⑤）
                 log=log, system=task_system or None,
                 max_rounds=limits["max_rounds"], l2_max=limits["l2_max"],

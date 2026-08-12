@@ -521,3 +521,67 @@ def test_no_skills_leaves_the_task_system_unchanged(tmp_path, monkeypatch):
     run(bare, tmp_path, monkeypatch)
     run(empty, tmp_path, monkeypatch, skills={})
     assert bare._l3.calls[1]["kwargs"]["system"] == empty._l3.calls[1]["kwargs"]["system"]
+
+
+# --- 030: needs はゲート——満たせなければタスクは実行できない ---------------------
+#
+# 入力（needs）は宣言される。宣言が満たせないタスクは L3 に渡さず、正直な失敗として
+# PjM の decide（rerun / replan）に乗せる。QA の needs はコードが必ず供給する（床）。
+
+
+def test_a_task_with_unsatisfiable_needs_fails_before_l3_runs(tmp_path, monkeypatch):
+    proc = {"tasks": [
+        {"role": "implementer", "task": "実装", "file": "result.csv",
+         "criterion": "出力", "needs": ["nosuch.csv"]},
+    ]}
+    decide = {"action": "escalate", "invalidate": [], "reason": "入力が無い"}
+    mgr = make([proc, decide], [])
+    out = run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "escalate"
+    assert mgr._l3.calls == []                     # 満たせないタスクは L3 に渡さない
+    assert "nosuch.csv" in out["tasks"][0].get("last_failure", "")
+
+
+def test_a_declared_external_file_that_exists_satisfies_the_gate(tmp_path, monkeypatch):
+    (tmp_path / "sales.csv").write_text("data", encoding="utf-8")
+    proc = {"tasks": [
+        {"role": "implementer", "task": "実装", "file": "result.csv",
+         "criterion": "出力", "needs": ["sales.csv"]},
+        {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
+    ]}
+    mgr = make([proc], ok2())
+    out = run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "done"
+
+
+def test_qa_needs_are_wired_to_the_artifacts(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch)
+    assert out["tasks"][-1]["needs"] == ["result.csv"]
+
+
+def test_needs_field_is_offered_in_the_pjm_schema(tmp_path, monkeypatch):
+    # 形はスキーマが唯一の出所（合意008）。needs もスキーマ経由で PjM に見える。
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch)
+    assert "needs" in mgr._l0.calls[0]["messages"][0]["content"]
+
+
+def test_task_goal_lists_needs_not_all_prior_files(tmp_path, monkeypatch):
+    # 参照リストは「先行の done 全部」ではなく宣言した needs（＋SPEC）。
+    # 完了タイミングで文脈が変わる非決定性を消す（合意021 の再現性）。
+    proc = {"tasks": [
+        {"role": "implementer", "task": "設計", "file": "design.md", "criterion": "ある"},
+        {"role": "implementer", "task": "下ごしらえ", "file": "helper.py", "criterion": "ある"},
+        {"role": "implementer", "task": "実装", "file": "result.csv",
+         "criterion": "出力", "needs": ["design.md"]},
+        {"role": "qa", "task": "検証する", "file": "verdict.md", "criterion": "ITEM 行"},
+    ]}
+    mgr = make([proc], [
+        {"done": True}, {"done": True}, {"done": True},
+        {"done": True, "writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    run(mgr, tmp_path, monkeypatch)
+    goal = mgr._l3.calls[2]["goal"]
+    assert "SPEC.md, design.md" in goal
+    assert "helper.py" not in goal                 # 宣言していないものは文脈に載せない
