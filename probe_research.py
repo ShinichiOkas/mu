@@ -22,7 +22,7 @@ from pathlib import Path
 import tools as tools_mod
 from chat_common import (
     VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, show_catalog,
-    show_roles, show_skills, skills_paths, verbose_tools,
+    show_roles, show_skills, show_workspace, skills_paths, verbose_tools, workspace_root,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -109,6 +109,8 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
         show_roles(roles, roles_paths())
     skills = load_skills(*skills_paths())   # 切替は MU_SKILLS_DIR（合意029）
     show_skills(skills, skills_paths(), roles)
+    workspace = workspace_root()            # 切替は MU_WORKSPACE（合意030）
+    show_workspace(workspace)
     # judge（LLM 検査器）は実行体とモデルの注入が要るので、ここで組んで渡す（環境接地は caller の責務）。
     # 判定者は QA と同じモデルでよい——別モデルが使える環境かは環境依存であり、前提にしない。
     # 独立性を作っているのはモデル差ではなく**文脈非共有**の方である（合意015）。
@@ -120,6 +122,7 @@ def _run_runtime(model: str, qa_model: str, workdir: Path) -> dict:
         models=[model, qa_model],
         log=log, system=env_preamble(),
         guard=tools_mod.protection_violations,   # 守られるべき入力の破れで即停止（合意016→018）
+        workspace=workspace,                     # tray（合意030）
         deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
         max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
         l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,

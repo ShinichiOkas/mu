@@ -62,6 +62,28 @@ def skills_paths() -> tuple:
     return paths or (SKILLS_DIR,)
 
 
+def workspace_root() -> str | None:
+    """タスクの作業空間（tray）の root（合意030）。意味論は roles / skills に揃える。
+
+    環境変数 `MU_WORKSPACE` で指定する。無指定＝cwd の `.mu-work/`（既定で隔離が効く——
+    依存グラフが構成的に真になる床は、走らせた人が何もしなくても立つ）。
+    `MU_WORKSPACE=off` で無効化（従来どおり共有 cwd で走る。隔離なしで走っていることは
+    起動表示に出る）。
+    """
+    raw = os.environ.get("MU_WORKSPACE", "").strip()
+    if raw.lower() == "off":
+        return None
+    return raw or ".mu-work"
+
+
+def show_workspace(root: str | None) -> None:
+    """どの作業空間で走るかを人間に見せる（構成が見えないまま走らない——合意025 の型）。"""
+    if root:
+        print(f"[workspace] tray: {root}/<role>/task-N/（needs を写して実行・完了時に発行）")
+    else:
+        print("[workspace] off — 全タスクが共有 cwd で走る（隔離なし・030 以前の挙動）")
+
+
 # カタログの root（roles/ 直下＝パッケージたちと director.md の住所。合意028）。
 ROLES_ROOT = str(Path(__file__).resolve().parent / "roles")
 
@@ -354,6 +376,21 @@ def log(event: tuple) -> None:
         print(f"{L4} [-] ツール非配布: ({event[1]}) {event[2]}")
     elif kind == "role_fallback":
         print(f"{L4} [?] 未知の役割 {event[1]} を implementer に置換")
+    elif kind == "needs_lint":            # 030: 言及があるのに needs に無い（実行時に読めない）
+        print(f"{L4} [?] needs 未宣言の言及: {event[1]} が {', '.join(event[2])} に触れている")
+    elif kind == "single_writer_violation":   # 030: 出力の書き手は1ロール固定（師匠宣言）
+        print(f"{L4} [!] single-writer 違反: {event[1]} の書き手は {event[2]}"
+              f"（{event[3]} は発行できない）")
+    elif kind == "needs_unmet":           # 030: ゲート——満たせなければ実行できない
+        print(f"{L4} [!] needs 未充足: {event[1]} に {', '.join(event[2])} が無い")
+    elif kind == "copy_in_missing":
+        print(f"{L4} [!] 入力を写せない: {event[1]} <- {', '.join(event[2])}")
+    elif kind == "tray_denied":           # 030: 作業区画の外に触れようとした
+        print(f"{L4} [!] tray 外を拒否: {event[1]} {event[2]}")
+    elif kind == "published":
+        print(f"{L4} [>] 発行: {event[1]}")
+    elif kind == "publish_refused":
+        print(f"{L4} [!] 発行拒否: {event[1]} :: {short(event[2], 120)}")
     elif kind == "task_done":
         print(f"{L4} [x] TASK DONE  : ({event[1]['role']}) {event[1]['file']}")
     elif kind == "task_failed":

@@ -314,6 +314,7 @@ class Director:
         guard: Any = None,
         deadline: Any = None,
         protected: Sequence[str] | None = None,
+        workspace: str | None = None,
     ) -> dict:
         roles = roles or {}
         skills = skills or {}
@@ -357,8 +358,8 @@ class Director:
             outcome = self._l4.run(                                   # D: 進行の層に任せる
                 model, spec, tools, roles=roles, skills=skills, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
-                guard=guard, deadline=deadline, protected=protected,
-                # ↑ 破れ検査・締切・保護一覧は呼び出し側が注入し、この層は素通しする
+                guard=guard, deadline=deadline, protected=protected, workspace=workspace,
+                # ↑ 破れ検査・締切・保護一覧・作業空間は呼び出し側が注入し、この層は素通しする
                 max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,
             )
             tasks = outcome["tasks"]

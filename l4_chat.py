@@ -23,8 +23,8 @@ import sys
 from pathlib import Path
 
 from chat_common import (
-    VerboseL0, env_preamble, log, roles_paths, short, show_roles, show_skills, skills_paths,
-    utf8_console, verbose_tools,
+    VerboseL0, env_preamble, log, roles_paths, short, show_roles, show_skills, show_workspace,
+    skills_paths, utf8_console, verbose_tools, workspace_root,
     L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -74,15 +74,18 @@ def main() -> None:
     l3 = Orchestrator(VerboseL0(l0, _L3), Agent(VerboseL0(l0, _L2), ToolLoop(VerboseL0(l0, _L1))))
     manager = Manager(VerboseL0(l0, _L4), l3)
 
+    workspace = workspace_root()           # 切替は MU_WORKSPACE（合意030）
     print(f"L4 chat / model={model}  pool={pool}  l4_max={L4_MAX}")
     show_roles(roles, roles_paths())
     show_skills(skills, skills_paths(), roles)
+    show_workspace(workspace)
     print(f"spec: {spec_file}")
     print(f"  {short(spec['spec'], 200)}")
     try:
         outcome = manager.run(
             model, spec, verbose_tools(TOOLS),
             roles=roles, skills=skills, models=pool, log=log, system=env_preamble(),
+            workspace=workspace,
             max_rounds=L4_MAX, l3_max=L3_MAX, l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
         )
     except L0Error as e:

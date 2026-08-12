@@ -1,0 +1,29 @@
+# Analysis Notes: Deadstock Identification Logic
+
+## Data Integration Strategy
+1.  **Unique Identifier**: All items are linked via "Product Code" (e.g., P001, P002).
+2.  **Data Sources**:
+    - inventory.csv: [Code, Name, Current Stock]
+    - sales.csv: [Code, Sales Count] (Aggregated by Code)
+    - returns.csv: [Code, Return Quantity/Count]
+
+## Processing Logic for "Deadstock" Identification
+A product is classified as DEADSTOCK_LOGIC if it meets either of the following criteria:
+1.  **High Stock / Zero Sales**: 
+    - Condition: Inventory Count >= 10 AND Total Sales Count == 0.
+2.  **Poor Sales Velocity / High Return Ratio**:
+    - Condition: Significant inventory exists but return rates are disproportionately high relative to sales, or the item only appears in returns data.
+
+## Data Mapping & Join Rules
+- Load `inventory.csv` as the primary base for names and current stock levels.
+- Aggregate `sales.csv` by Product Code to get total units sold per product.
+- Process `returns.csv` to determine return counts or high-frequency return flags.
+- Join these datasets on "Product Code".
+
+## Report Generation Logic
+For each item identified as deadstock:
+- Select [Product Code], [Item Name], [Current Stock].
+- Calculate and include a "Reason" (判断理由) based on specific metrics (e.g., "Stock of X units with 0 sales", "High return rate").
+
+## Keywords for Verification
+DEADSTOCK_LOGIC

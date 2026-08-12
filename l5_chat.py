@@ -41,7 +41,8 @@ import sys
 import tools as tools_mod
 from chat_common import (
     Abort, VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, short,
-    show_catalog, show_roles, show_skills, skills_paths, utf8_console, verbose_tools,
+    show_catalog, show_roles, show_skills, show_workspace, skills_paths, utf8_console,
+    verbose_tools, workspace_root,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -117,6 +118,8 @@ def main() -> None:
     print(f"L5 chat / model={model}  pool={pool}  l5_max={L5_MAX} l4_max={L4_MAX}")
     show_catalog(packages) if roles_auto() else show_roles(roles, roles_paths())
     show_skills(skills, skills_paths(), roles)
+    workspace = workspace_root()           # 切替は MU_WORKSPACE（合意030）
+    show_workspace(workspace)
     print(f"  cwd={os.getcwd()}  <- 成果物・SPEC.md・PROCESS.md・verdict.md はここに作られます")
     print("  環境:", platform.system(), platform.release(), "/ execute_command=PowerShell")
     print("  (目的を入力 / /exit で終了)")
@@ -137,6 +140,7 @@ def main() -> None:
                 roles=roles, skills=skills, packages=packages, selector=selector, models=pool,
                 review=_review, log=log, system=env_preamble(),
                 guard=tools_mod.protection_violations,  # 守られるべき入力の破れで即停止（合意016）
+                workspace=workspace,
                 max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
                 l2_max=L2_MAX, l2_l1_max=L2_L1_MAX,
             )

@@ -1,9 +1,9 @@
 {
   "sprint_id": "030-needs-and-workspace",
-  "status": "executing",
+  "status": "retrospecting",
   "goal": "needs 宣言（入力の明示・複数・外部含む）＋実行ゲート＋作業空間の分離（tray・copy-in/publish-out・single-writer）を逐次のまま導入し、依存グラフが構成的に真であることを実走で実証する。並列実行そのものは次スプリント",
   "created_at": "2026-08-12T15:30:00+09:00",
   "agreed_at": "2026-08-12T15:30:00+09:00",
   "agreement_path": ".pair-agent/agreements/030-needs-and-workspace.md",
-  "note": "師匠確定: needs は複数・外部ファイルも宣言／意味論はゲート（満たせなければ実行できない）／読み取りゲートは権限まで強める（copy-in/publish-out）／言及推定は計画時 lint に降格／出力の書き手は1ロール固定（発行ゲートで適用）。フェーズ: A=needs とグラフ(TDD) → B=作業空間(tray) → C=検証・クローズ"
+  "note": "3フェーズ＋修理1件（C1: tray パス二重入れ子）完了。399 green・実走4本すべて達成・偽なし・宣言グラフ完全（needs 未充足 0・lint 0）・基準計測器 31b-cloud で 198s＝028 同条件基準と同速。次スプリント候補: 並列スケジューラ（ready 集合の dispatch・同時実行数・ツール大域状態 _PROTECTED の並列対応＝023 再訪・OLLAMA_NUM_PARALLEL 実測）"
 }
