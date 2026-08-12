@@ -38,6 +38,7 @@ from .process import (
     task_contract, task_goal, verdict_check, write_process, process_note,
 )
 from .role_kb import role_perms, role_prompt, role_tools, staffing_lines, task_roles
+from .skill_kb import skill_text
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -151,16 +152,22 @@ def plan_lint(task: dict, doc: Any, protected: Sequence[str] | None, log: Callab
 
 def lifeline_system(
     roles: dict, role: str, section: str, schema: dict, env: str | None, log: Callable,
+    skills: dict | None = None,
 ) -> str:
-    """役割定義（やり方）＋スキーマ由来の契約（形）＋呼び出し側の環境 で system を組む。
+    """役割定義（やり方）＋装備（skill）＋スキーマ由来の契約（形）＋環境 で system を組む。
 
     定義書が無ければ「役割は認識しているが知識が無い」状態になる——既定プロンプトで
     埋めず、その事実をログに出す（合意008）。
+
+    ポジション（pdm / pjm / director）にも skill が装着される（合意029）。プロジェクト側の
+    skill が確実に名指しできるのは**名前が動かない4ポジション**であり、そこに pdm / pjm が
+    含まれる以上、生命線の side でも着せなければ `applies_to: pdm` が空手形になる。
     """
     doc = role_prompt(roles.get(role, ""), section).strip()
     if not doc:
         log(("role_doc_missing", role, section))
-    return with_env("\n\n".join(s for s in (doc, _shape_line(schema)) if s), env)
+    equipped = skill_text(skills or {}, role, log)
+    return with_env("\n\n".join(s for s in (doc, equipped, _shape_line(schema)) if s), env)
 
 
 class Manager:
@@ -177,6 +184,7 @@ class Manager:
         tools: Sequence[Tool],
         *,
         roles: dict | None = None,
+        skills: dict | None = None,
         models: Sequence[str] | None = None,
         purpose: str = "",
         spec_path: str = "SPEC.md",
@@ -198,10 +206,11 @@ class Manager:
             escalate — 人手が要る／予算が尽きた
         """
         roles = roles or {}
+        skills = skills or {}
         pool = list(models) if models else [model]
         limits = {"max_rounds": l3_max, "l2_max": l2_max, "l2_l1_max": l2_l1_max}
 
-        tasks = self._process(model, spec, roles, pool, log, system)    # P（体制＝プロセス）
+        tasks = self._process(model, spec, roles, pool, log, system, skills)   # P（体制＝プロセス）
         rounds = 0
         for _ in range(max_rounds):
             rounds += 1
@@ -221,7 +230,7 @@ class Manager:
             failure, broken, timed_out = self._execute(                 # D（役割を着た L3 の逐次ループ）
                 model, tasks, tools, roles, pool,
                 spec_path, purpose, system, log, limits,
-                guard=guard, deadline=deadline, protected=protected,
+                guard=guard, deadline=deadline, protected=protected, skills=skills,
             )
             if broken:      # タスク境界の検査で破れが出た（017: 1周が締切に収まらず周頭では遅い）
                 return _broken_outcome(broken, tasks, rounds, process_path, log)
@@ -240,7 +249,7 @@ class Manager:
                 return _outcome("done", "", tasks, verdict, checks, True, rounds, process_path)
 
             decision = self._decide(                                    # A（部分再実行の判断）
-                model, spec, tasks, failure, failed_checks, verdict, roles, log, system
+                model, spec, tasks, failure, failed_checks, verdict, roles, log, system, skills
             )
             act, reason = decision.get("action"), str(decision.get("reason", ""))
             if rounds < max_rounds:
@@ -270,6 +279,7 @@ class Manager:
         guard: Callable[[], list] | None = None,
         deadline: Callable[[], bool] | None = None,
         protected: Sequence[str] | None = None,
+        skills: dict | None = None,
     ) -> tuple[dict | None, list, bool]:
         """pending タスクを順に実行する。返り値は (最初に失敗したタスク | None, 破れ, 時間切れ)。
 
@@ -287,8 +297,11 @@ class Manager:
             doc = roles.get(t["role"], "")
             # 契約（判定書の書式等）は system にも載せる。goal だけだと L3 の再計画の転記から
             # 欠落して L2 に届かない（019 実走）。system はコードが素通しで運ぶ。
+            # 装備（skill）は職掌の直後・契約の手前に入る（合意029）——契約と環境は後ろの
+            # ままにする（019 で確立した「再計画で薄まらない経路」の順序を動かさない）。
             task_system = "\n\n".join(
-                s for s in (role_prompt(doc), task_contract(t), system) if s
+                s for s in (role_prompt(doc), skill_text(skills or {}, t["role"], log),
+                            task_contract(t), system) if s
             )
             task_model = t.get("model") if t.get("model") in pool else model
             prior = [p["file"] for p in tasks[:i] if p.get("done")]
@@ -315,7 +328,7 @@ class Manager:
 
     def _process(
         self, model: str, spec: dict, roles: dict, pool: list, log: Callable,
-        system: str | None = None,
+        system: str | None = None, skills: dict | None = None,
     ) -> list:
         # 一覧は人選対象だけ（見せる範囲＝有効な範囲。合意025。人間向け表示と同じ関数）
         roles_s = staffing_lines(roles)
@@ -326,7 +339,7 @@ class Manager:
         )
         data = structured(
             self._l0, model,
-            lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log),
+            lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log, skills),
             user, _PROCESS_SCHEMA,
         )
         return normalize_tasks(data.get("tasks", []), task_roles(roles), log)
@@ -334,7 +347,7 @@ class Manager:
     def _decide(
         self, model: str, spec: dict, tasks: list, failure: dict | None,
         failed_checks: list, verdict: dict | None, roles: dict, log: Callable,
-        system: str | None = None,
+        system: str | None = None, skills: dict | None = None,
     ) -> dict:
         result_parts = []
         if failure is not None:
@@ -352,7 +365,7 @@ class Manager:
         )
         data = structured(
             self._l0, model,
-            lifeline_system(roles, "pjm", "decide", _DECIDE_SCHEMA, system, log),
+            lifeline_system(roles, "pjm", "decide", _DECIDE_SCHEMA, system, log, skills),
             user, _DECIDE_SCHEMA,
         )
         if data.get("action") not in ("rerun", "replan", "respec", "escalate"):

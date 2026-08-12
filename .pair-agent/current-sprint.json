@@ -1,10 +1,9 @@
 {
-  "sprint_id": "028-l5-package-selection",
-  "status": "completed",
-  "goal": "L5 によるパッケージ自動選択の内在化——カタログ（呼び出し側規定）から Director が目的に適合するパッケージを1判断で選ぶ。適合なしは escalate",
-  "created_at": "2026-08-11T00:00:00+09:00",
+  "sprint_id": "029-skill-system",
+  "status": "executing",
+  "goal": "skill システムの導入——役割定義書から「やり方」を独立単位に分離する。宛先は skill 側が名乗り（applies_to）、権限は持たない（絶対ルール）、confirmed だけが装着される",
+  "created_at": "2026-08-12T00:00:00+09:00",
   "agreed_at": "2026-08-12T00:00:00+09:00",
-  "completed_at": "2026-08-12T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/028-l5-package-selection.md",
-  "note": "振り返り実施済み（vision/028・Skill 3件承認: draft 1・forming 1・confirmed 昇格 1）。骨格の既知ピースはこれで完了——目的を渡すだけでチームを自選して働く形に到達。次スプリント未協議——候補: リサーチの深さの仕様化／サービス状態 diff の観測（probe 構造対処）／draft パッケージの検証蓄積・verified 昇格"
+  "agreement_path": ".pair-agent/agreements/029-skill-system.md",
+  "note": "協議は 2026-08-12 の対話で実施（層の位置づけ・role との関係・装着方式・絶対ルール・目的①②③の切り分け）。フェーズ A（機構・TDD）から実行中"
 }

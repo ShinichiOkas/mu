@@ -297,6 +297,7 @@ class Director:
         tools: Sequence[Tool],
         *,
         roles: dict | None = None,
+        skills: dict | None = None,
         packages: Sequence[dict] | None = None,
         selector: Any = None,
         models: Sequence[str] | None = None,
@@ -315,10 +316,11 @@ class Director:
         protected: Sequence[str] | None = None,
     ) -> dict:
         roles = roles or {}
+        skills = skills or {}
         package = ""
         # 028: roles 明示（L6 手動）が常に優先。無いときだけカタログから1判断で選ぶ。
         if not roles and packages:
-            sel = self._select_package(model, purpose, packages, selector, log, system)
+            sel = self._select_package(model, purpose, packages, selector, log, system, skills)
             if "escalate" in sel:
                 # 黙って別パッケージを当てない（vision/024 の規律）——選択の失敗は人間へ。
                 assessment = {"achieved": "uncertain",
@@ -334,7 +336,7 @@ class Director:
         )
         if inputs:
             log(("inputs", inputs))
-        spec = self._specify(model, purpose, roles, log, system, inputs)
+        spec = self._specify(model, purpose, roles, log, system, inputs, skills)
         if _infeasible(spec):                                         # 充足不能なら人間へ（合意007）
             return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log,
                                          package)
@@ -353,7 +355,7 @@ class Director:
             log(("spec", spec, spec_path))
 
             outcome = self._l4.run(                                   # D: 進行の層に任せる
-                model, spec, tools, roles=roles, models=models, purpose=purpose,
+                model, spec, tools, roles=roles, skills=skills, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
                 guard=guard, deadline=deadline, protected=protected,
                 # ↑ 破れ検査・締切・保護一覧は呼び出し側が注入し、この層は素通しする
@@ -373,7 +375,7 @@ class Director:
                 # 解釈でなく実行結果に出ている（合意014 A）。
                 spec = self._respecify(
                     model, purpose, spec, _with_check_facts(outcome["reason"], outcome["checks"]),
-                    roles, log, system, inputs,
+                    roles, log, system, inputs, skills,
                 )
                 if _infeasible(spec):
                     return self._stop_infeasible(
@@ -403,7 +405,7 @@ class Director:
 
     def _select_package(
         self, model: str, purpose: str, packages: Sequence[dict], selector: Any,
-        log: Callable, system: str | None,
+        log: Callable, system: str | None, skills: dict | None = None,
     ) -> dict:
         """カタログから目的に適合する役割パッケージを1判断で選ぶ（合意028）。
 
@@ -421,7 +423,7 @@ class Director:
         data = structured(
             self._l0, model,
             lifeline_system({"director": selector} if selector else {}, "director",
-                            "select", _SELECT_SCHEMA, system, log),
+                            "select", _SELECT_SCHEMA, system, log, skills),
             f"PURPOSE:\n{purpose}\n\nCATALOG (available role packages):\n{catalog}",
             _SELECT_SCHEMA,
         )
@@ -465,18 +467,18 @@ class Director:
     # --- 生命線の LLM 呼び出し（やり方は roles/pdm.md、形はスキーマ） ---
     def _specify(
         self, model: str, purpose: str, roles: dict, log: Callable,
-        system: str | None = None, inputs: str = "",
+        system: str | None = None, inputs: str = "", skills: dict | None = None,
     ) -> dict:
         data = structured(
             self._l0, model,
-            lifeline_system(roles, "pdm", "specify", _SPECIFY_SCHEMA, system, log),
+            lifeline_system(roles, "pdm", "specify", _SPECIFY_SCHEMA, system, log, skills),
             f"PURPOSE:\n{purpose}{_inputs_block(inputs)}", _SPECIFY_SCHEMA,
         )
         return _normalize_spec(data, purpose, log)
 
     def _respecify(
         self, model: str, purpose: str, spec: dict, feedback: str, roles: dict, log: Callable,
-        system: str | None = None, inputs: str = "",
+        system: str | None = None, inputs: str = "", skills: dict | None = None,
     ) -> dict:
         user = (
             f"PURPOSE:\n{purpose}{_inputs_block(inputs)}\n\n"
@@ -486,7 +488,7 @@ class Director:
         log(("respec", feedback))
         data = structured(
             self._l0, model,
-            lifeline_system(roles, "pdm", "respecify", _SPECIFY_SCHEMA, system, log),
+            lifeline_system(roles, "pdm", "respecify", _SPECIFY_SCHEMA, system, log, skills),
             user, _SPECIFY_SCHEMA,
         )
         new = _normalize_spec(data, purpose, log)

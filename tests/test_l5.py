@@ -1288,3 +1288,25 @@ def test_escalation_reason_reaches_the_result(tmp_path, monkeypatch):
     result = run(agent, tmp_path, monkeypatch)
     assert result["escalated"] is True
     assert "ESCALATE-REASON-MARKER" in result.get("escalation_reason", "")
+
+
+# --- 029: 装備（skill）は L5 のポジション（PdM）にも届く -------------------------
+
+def test_pdm_wears_skills_on_the_specify_lifeline(tmp_path, monkeypatch):
+    # 目的②（プロジェクト方針）の代表例——「この案件の仕様はこう書く」は PdM に効く必要がある。
+    # パッケージが自動選択されても名前が動かない4ポジションだから、宛先として指定できる。
+    skills = {"spec-house-style": {"prompt": "SKILL-PDM-MARKER", "applies_to": ("pdm",),
+                                   "maturity": "confirmed", "description": "x"}}
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, skills=skills)
+    assert "SKILL-PDM-MARKER" in agent._l0.calls[0]["messages"][0]["content"]   # specify
+    assert "SKILL-PDM-MARKER" not in agent._l0.calls[1]["messages"][0]["content"]  # process(PjM)
+
+
+def test_skills_flow_from_l5_down_into_the_tasks(tmp_path, monkeypatch):
+    # L5 は skills を素通しする（環境接地と同じく、出所を規定するのは呼び出し側）。
+    skills = {"everywhere": {"prompt": "SKILL-ALL-MARKER", "applies_to": None,
+                             "maturity": "confirmed", "description": "x"}}
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch, skills=skills)
+    assert all("SKILL-ALL-MARKER" in c["kwargs"]["system"] for c in agent._l4._l3.calls)

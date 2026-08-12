@@ -438,3 +438,86 @@ def test_plan_lint_leaves_non_qa_checks_alone(tmp_path, monkeypatch):
         "check": {"run": "python main.py", "expect": "OK"},
     }])
     assert units[0]["check"] == {"run": "python main.py", "expect": "OK"}
+
+
+# --- 029: 装備（skill）は役割の直後・契約の手前に着せられる ----------------------
+#
+# skill は層ではなく、役割定義書と同じ場所（層の外のデータ）から同じ経路で着る。
+# 違いは濃度（1 task = 0..N）と、**権限を持たない**こと。
+
+SKILLS = {
+    "readonly-inputs": {
+        "prompt": "SKILL-IMPL-MARKER", "applies_to": ("implementer",),
+        "maturity": "confirmed", "description": "x",
+    },
+    "house-style": {
+        "prompt": "SKILL-ALL-MARKER", "applies_to": None,
+        "maturity": "confirmed", "description": "x",
+    },
+    "not-ready": {
+        "prompt": "SKILL-DRAFT-MARKER", "applies_to": None,
+        "maturity": "draft", "description": "x",
+    },
+}
+
+
+def test_skills_are_worn_by_the_task_in_role_skill_contract_order(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch, skills=SKILLS)
+    qa_system = mgr._l3.calls[1]["kwargs"]["system"]
+    # 職掌 → 装備 → 契約 の順（契約は 019 で確立した「再計画で薄まらない経路」。順序を動かさない）
+    assert qa_system.index("QA-MARKER") < qa_system.index("SKILL-ALL-MARKER")
+    assert qa_system.index("SKILL-ALL-MARKER") < qa_system.index("ITEM <番号>")
+
+
+def test_a_skill_reaches_only_the_role_it_names(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch, skills=SKILLS)
+    impl_system, qa_system = (mgr._l3.calls[i]["kwargs"]["system"] for i in (0, 1))
+    assert "SKILL-IMPL-MARKER" in impl_system
+    assert "SKILL-IMPL-MARKER" not in qa_system      # 宛先の無い役割には届かない
+    assert "SKILL-ALL-MARKER" in impl_system and "SKILL-ALL-MARKER" in qa_system
+
+
+def test_draft_skills_never_reach_a_task(tmp_path, monkeypatch):
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch, skills=SKILLS)
+    assert all("SKILL-DRAFT-MARKER" not in c["kwargs"]["system"] for c in mgr._l3.calls)
+
+
+def test_positions_wear_skills_on_the_lifeline_too(tmp_path, monkeypatch):
+    # `applies_to: pjm` を空手形にしない——4ポジションは目的②（プロジェクト方針）が
+    # パッケージ自動選択（028）の下でも確実に名指しできる唯一の宛先である。
+    skills = {"planning-policy": {"prompt": "SKILL-PJM-MARKER", "applies_to": ("pjm",),
+                                  "maturity": "confirmed", "description": "x"}}
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch, skills=skills)
+    assert "SKILL-PJM-MARKER" in mgr._l0.calls[0]["messages"][0]["content"]
+
+
+def test_skills_are_logged_at_the_composition_point(tmp_path, monkeypatch):
+    events = []
+    mgr = make([PROCESS2], ok2())
+    run(mgr, tmp_path, monkeypatch, skills=SKILLS, log=events.append)
+    worn = [e for e in events if e[0] == "skills"]
+    assert ("skills", "implementer", ["readonly-inputs", "house-style"],
+            len("SKILL-IMPL-MARKER\n\nSKILL-ALL-MARKER")) in worn
+
+
+def test_skills_cannot_widen_the_tools_a_role_receives(tmp_path, monkeypatch):
+    # 絶対ルールの行動側の担保: skill を着せても、役割が受け取るツールは変わらない。
+    # （宣言側の担保＝権限キーの名指し拒否は test_skill_kb.py）
+    roles = dict(ROLES, qa={"prompt": "QA-MARKER", "tools": ["read_file"], "write_scope": "own"})
+    bare, equipped = make([PROCESS2], ok2()), make([PROCESS2], ok2())
+    run(bare, tmp_path, monkeypatch, roles=roles)
+    run(equipped, tmp_path, monkeypatch, roles=roles, skills=SKILLS)
+    names = lambda mgr: [f.__name__ for f, _ in mgr._l3.calls[1]["tools"]]
+    assert names(equipped) == names(bare)
+
+
+def test_no_skills_leaves_the_task_system_unchanged(tmp_path, monkeypatch):
+    # 029 以前と同一の合成（装備ゼロは no-op）。既存の 300+ テストが測る挙動を動かさない。
+    bare, empty = make([PROCESS2], ok2()), make([PROCESS2], ok2())
+    run(bare, tmp_path, monkeypatch)
+    run(empty, tmp_path, monkeypatch, skills={})
+    assert bare._l3.calls[1]["kwargs"]["system"] == empty._l3.calls[1]["kwargs"]["system"]
