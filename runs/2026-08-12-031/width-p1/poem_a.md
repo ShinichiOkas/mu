@@ -1,0 +1,3 @@
+- Blossoms start to bloom, warm breeze whispers through the trees, life begins anew.
+- Green buds on the branch, melting snow feeds thirsty roots, spring is in the air.
+- Cherry blossoms fall, dancing on the morning grass, softly find their rest.

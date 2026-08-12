@@ -1,0 +1,2 @@
+ITEM 1: PASS — poem_a.md に「- 」で始まる行は 3 行（read_file で確認）："- Blossoms..."、"- Green buds..."、"- Cherry blossoms..." の計 3 行。SPEC criteria["poem_a.md に「- 」で始まる行が 3 行ある"]を満たすため PASS.
+ITEM 2: PASS — poem_b.md に「- 」で始まる独立した項目は count=3（read_file で確認）："- Gold leaf..."、"- Red maples..."、"- Crunch of..." の計 3 行。SPEC criteria["poem_b.md に「- 」で始まる行が 3 行ある"]を満たすため PASS.

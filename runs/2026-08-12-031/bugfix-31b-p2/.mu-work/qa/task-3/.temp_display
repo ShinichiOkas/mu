@@ -1,0 +1,3 @@
+ITEM 1: PASS — test_stats.py が変更されていないことを確認（read_file('test_stats.py')で内容を確認し、SPEC の「test_stats.py は一切変更せずに」という要件を満たしている）
+
+ITEM 2: PASS — python test_stats.py を execute_command で実行、「OK」を含む出力(exit code=0)が得られている

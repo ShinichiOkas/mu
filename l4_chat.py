@@ -70,6 +70,13 @@ def main() -> None:
     skills = load_skills(*skills_paths())  # 切替は MU_SKILLS_DIR（合意029）
     spec = _load_spec(spec_file)
 
+    # SPEC.md を cwd に実体化する（環境接地は caller の責務）。L5 経由の走では Director が
+    # 書くファイルで、タスク goal が「参照できるファイル: SPEC.md」と名指しする——実在
+    # しないと実行者（特に QA）が探して空転する（031 幅課題の実走で観測。1752s の主因）。
+    spec_md = Path("SPEC.md")
+    if spec_md.resolve() != spec_file:
+        spec_md.write_text(spec_file.read_text(encoding="utf-8"), encoding="utf-8")
+
     l0 = OllamaInterface()
     l3 = Orchestrator(VerboseL0(l0, _L3), Agent(VerboseL0(l0, _L2), ToolLoop(VerboseL0(l0, _L1))))
     manager = Manager(VerboseL0(l0, _L4), l3)

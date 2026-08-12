@@ -1,0 +1,3 @@
+- Blossoms wake from sleep, / Dancing in the gentle breeze, / Spring has just begun.
+- Green buds on the trees, / Warming in the morning sun, / Life begins anew.
+- Petals drift and fall, / Softly landing on the path, / Summer is coming soon.

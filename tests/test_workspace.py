@@ -45,6 +45,32 @@ def test_copy_in_reports_what_it_could_not_copy(tmp_path, monkeypatch):
     assert copy_in(tray, ["nosuch.csv"]) == ["nosuch.csv"]
 
 
+def test_copy_in_overwrites_a_readonly_stale_copy(tmp_path, monkeypatch):
+    # 031 実走（bugfix×31b の rerun）で実発火: 実行者が skill「入力は読み取り専用」に従い
+    # 写しに +R を立て、次周の copy_in が PermissionError で run ごと死んだ。
+    # 写しは毎回作り直すスナップショット——前回の属性に殺されない。
+    import stat
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "input.csv").write_text("v2", encoding="utf-8")
+    tray = task_tray("work", "implementer", 0)
+    stale = Path(tray) / "input.csv"
+    stale.write_text("v1", encoding="utf-8")
+    stale.chmod(stat.S_IREAD)                          # 読み取り専用の前回写し
+    assert copy_in(tray, ["input.csv"]) == []
+    assert stale.read_text(encoding="utf-8") == "v2"
+
+
+def test_discard_stale_output_removes_a_readonly_stale_output(tmp_path, monkeypatch):
+    import stat
+    monkeypatch.chdir(tmp_path)
+    tray = task_tray("work", "implementer", 0)
+    stale = Path(tray) / "out.md"
+    stale.write_text("残骸", encoding="utf-8")
+    stale.chmod(stat.S_IREAD)
+    discard_stale_output(tray, "out.md")
+    assert not stale.exists()
+
+
 def test_discard_stale_output_removes_only_the_declared_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     tray = task_tray("work", "implementer", 0)

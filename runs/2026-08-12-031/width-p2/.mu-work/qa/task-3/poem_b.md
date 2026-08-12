@@ -1,0 +1,3 @@
+- Gold leaves drift and fall, crisp air whispers through the trees, autumn is here now.
+- Crimson maples glow, chilly winds begin to blow, summer fades away.
+- Harvest moon shines bright, golden fields of heavy grain, autumn's touch is soft.

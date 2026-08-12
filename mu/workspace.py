@@ -64,15 +64,22 @@ def copy_in(tray: str, files: Sequence[str]) -> list:
             continue
         dst = Path(tray) / f
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, dst)
+        _remove(dst)   # 前回試行の写しが読み取り専用でも、写しは毎回作り直す（031 実走で実発火:
+        shutil.copyfile(src, dst)   # 実行者が skill「入力は読み取り専用」に従い写しに +R を立てた）
     return missing
+
+
+def _remove(path: Path) -> None:
+    """既存ファイルを属性に関わらず消す（Windows は読み取り専用だと unlink も open('wb') も失敗する）。"""
+    if path.is_file():
+        path.chmod(0o666)
+        path.unlink()
 
 
 def discard_stale_output(tray: str, file: str) -> None:
     """前回試行が tray に残した宣言済み出力を消す（残骸の発行を防ぐ。scratch は残す）。"""
-    p = Path(tray) / file
-    if not Path(file).is_absolute() and p.is_file():
-        p.unlink()
+    if not Path(file).is_absolute():
+        _remove(Path(tray) / file)
 
 
 def publish(tray: str, file: str, role: str, owner: str) -> tuple[bool, str]:
@@ -93,6 +100,7 @@ def publish(tray: str, file: str, role: str, owner: str) -> tuple[bool, str]:
     dst = Path(file)
     if dst.parent != Path("."):
         dst.parent.mkdir(parents=True, exist_ok=True)
+    _remove(dst)   # 自分の成果物の前版が読み取り専用でも、正当な発行は通す（所有権は上で検査済み）
     shutil.copyfile(src, dst)
     return True, ""
 

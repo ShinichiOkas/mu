@@ -1,0 +1,2 @@
+ITEM 1: PASS — poem_a.md contains spring haikus and has 3 lines starting with '- '. (Source: read_file("poem_a.md"))
+ITEM 2: PASS — poem_b.md contains autumn haikus and has 3 lines starting with '- '. (Source: read_file("poem_b.md"))

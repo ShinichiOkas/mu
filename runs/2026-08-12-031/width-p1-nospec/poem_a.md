@@ -1,0 +1,3 @@
+- Flowers bloom in spring
+- Warm breeze through the trees
+- Life wakes from its sleep

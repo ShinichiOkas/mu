@@ -1,0 +1,3 @@
+- Blossoms bloom in sun, Petals dance upon the grass, Spring is here today
+- Warm winds wake the trees, Green leaves sprout from winter sleep, Morning dew is sweet
+- Birds sing in the sky, Dancing through the sunny fields, Joy of spring has come
