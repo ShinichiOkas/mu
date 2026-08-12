@@ -84,6 +84,27 @@ def show_workspace(root: str | None) -> None:
         print("[workspace] off — 全タスクが共有 cwd で走る（隔離なし・030 以前の挙動）")
 
 
+def parallel_n() -> int:
+    """タスクの同時実行数（合意031）。環境変数 `MU_PARALLEL`、無指定＝1（従来の逐次）。
+
+    コード既定を保守的に保ち、加速は環境変数の明示で行う（observe-then-accelerate の型）。
+    不正値は 1 に落として起動表示に出す（静かに壊れない）。
+    """
+    raw = os.environ.get("MU_PARALLEL", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 1
+    except ValueError:
+        print(f"[parallel] MU_PARALLEL={raw!r} を解釈できない — 1（逐次）で走る")
+        return 1
+
+
+def show_parallel(n: int) -> None:
+    if n > 1:
+        print(f"[parallel] 同時実行 最大 {n}（dispatch 規則: needs・WAW/WAR・QA バリア）")
+    else:
+        print("[parallel] 1 — 逐次（MU_PARALLEL=N で同時実行）")
+
+
 # カタログの root（roles/ 直下＝パッケージたちと director.md の住所。合意028）。
 ROLES_ROOT = str(Path(__file__).resolve().parent / "roles")
 
@@ -391,6 +412,8 @@ def log(event: tuple) -> None:
         print(f"{L4} [>] 発行: {event[1]}")
     elif kind == "publish_refused":
         print(f"{L4} [!] 発行拒否: {event[1]} :: {short(event[2], 120)}")
+    elif kind == "task_started":          # 031: 並列 dispatch の開始（逐次では出ない）
+        print(f"{L4} [>] TASK START : ({event[1]['role']}) {event[1]['file']}")
     elif kind == "task_done":
         print(f"{L4} [x] TASK DONE  : ({event[1]['role']}) {event[1]['file']}")
     elif kind == "task_failed":

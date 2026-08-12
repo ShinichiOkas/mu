@@ -28,8 +28,9 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, show_catalog,
-    show_roles, show_skills, show_workspace, skills_paths, verbose_tools, workspace_root,
+    VerboseL0, auto_catalog, env_preamble, log, parallel_n, roles_auto, roles_paths,
+    show_catalog, show_parallel, show_roles, show_skills, show_workspace, skills_paths,
+    verbose_tools, workspace_root,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
 )
 from mu.l0 import OllamaInterface, L0Error
@@ -397,8 +398,10 @@ def main() -> None:
     judge_tool = (tools_mod.make_judge(l0, pool[-1]), tools_mod.JUDGE_USAGE)
 
     workspace = workspace_root()           # 切替は MU_WORKSPACE（合意030）
+    parallel = parallel_n()                # 切替は MU_PARALLEL（合意031）
     print(f"probe_hard case={case} model={model} pool={pool} workdir={workdir}")
     show_workspace(workspace)
+    show_parallel(parallel)
     print(f"purpose: {spec['purpose']}")
     print(f"protected: {spec['protect']}  time_budget: {TIME_BUDGET}s")
     t0 = time.monotonic()
@@ -408,7 +411,7 @@ def main() -> None:
             roles=roles, skills=skills, packages=packages, selector=selector, models=pool,
             log=log, system=env_preamble(),
             guard=tools_mod.protection_violations,   # 破れたら周・タスク境界で止める（合意016→018）
-            workspace=workspace,                     # tray（合意030）
+            workspace=workspace, parallel=parallel,  # tray（030）・同時実行数（031）
             deadline=lambda: time.monotonic() - t0 > TIME_BUDGET,   # 内部締切（合意018 ⑥）
             protected=tools_mod.protected_paths(),   # 計画 lint 用の保護一覧（合意018 ④）
             max_rounds=L5_MAX, l4_max=L4_MAX, l3_max=L3_MAX,
