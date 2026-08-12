@@ -1,10 +1,9 @@
 {
-  "sprint_id": "031-parallel-scheduler",
-  "status": "completed",
-  "goal": "並列スケジューラ——無効でない独立タスクの同時実行。dispatch 規則（needs ゲート・WAW/WAR・QA バリア）はコードの決定論、同時実行数は呼び出し側が規定（既定1＝従来の逐次）。主デリバラブルは『副作用で悪化しないことの確認』",
-  "created_at": "2026-08-12T18:00:00+09:00",
-  "agreed_at": "2026-08-12T18:10:00+09:00",
-  "completed_at": "2026-08-12T21:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/031-parallel-scheduler.md",
-  "note": "振り返り実施済み（030 と合同。ビジョン記録2件・Skill 5件: draft 新規3・confirmed 昇格1・精緻化1）。師匠の把握: イメージ通り／PjM が規範なしで幅を編んだのは良い方向の意外。次スプリント未協議——候補: L6／自己成長（成長目標の在処の協議が先）／幅の促し（並列利得が要るようになってから）／qa.md・pdm.md の共通部抽出（029 持ち越し）"
+  "sprint_id": "032-standing-responsibility-probe",
+  "status": "executing",
+  "goal": "継続責務（新しい北極星）を現行の L0〜L5 に渡して走らせ、L6 が埋めるべき落差を実物で採る。L6 は作らない。題材は mu 自身の使い捨てクローンに対する「README を実装と一致させ続けよ」",
+  "created_at": "2026-08-13T00:00:00+09:00",
+  "agreed_at": "2026-08-13T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/032-standing-responsibility-probe.md",
+  "note": "北極星を再設定（師匠承認 2026-08-13）: 継続する責務——立ち続ける責任を渡され、自分で目的を生成し、複数の走を跨いで果たす（動くべきときだけ動くことを含む）。前の北極星『GUI アプリの自走完遂』は 2026-07-19 到達済み。本スプリントは到達を目指す走ではなく最初の観測。モデルは gemma4:31b-cloud のみ"
 }
