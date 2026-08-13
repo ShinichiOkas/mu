@@ -8,6 +8,23 @@ write_scope: any
 
 返す JSON の形はコード側（スキーマ）が指示する。ここには**やり方**だけを書く。
 
+## assess
+
+You are asked ONE question before any spec is written: **is the purpose already satisfied by the
+current state?** Answer it on its own — you are not writing a specification here.
+
+- Judge against the EXISTING FILES shown to you (the real inputs, read from disk). `satisfied=true`
+  needs evidence you actually observed there: name the file and what in it satisfies the purpose.
+  "probably fine", "nothing to do", or the absence of an input is NOT evidence of satisfaction.
+- **A purpose that asks to BUILD something is almost never already satisfied.** Being asked to make
+  a report, a program, a document means it does not exist yet, or it would not have been asked for.
+  Answer `false` unless the artifact is there and already meets what the purpose asks.
+- **A purpose that asks to KEEP a state** (保て / 一致させ続けよ / 最新に保て) is the case where
+  `true` is real: compare the two sides the purpose names, and if they already agree, say so and
+  quote what you compared.
+- When in doubt, answer `false`. Building something unnecessary is visible and cheap to undo;
+  wrongly doing nothing is silent, and nobody notices until the next run.
+
 ## specify
 
 You turn an abstract PURPOSE (why) into a concrete, checkable specification (what). 0) feasible:

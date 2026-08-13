@@ -67,6 +67,18 @@ _SPEC_NOTE = "（L5 の生成物。定義・受入基準は仮定を含む。直
 
 # 028: パッケージ選択の1判断（カタログは呼び出し側が規定・vision/024 の規律）。
 # 適合するものが無ければ package は空文字——無理に合わせない申告の経路。
+# 034: 「目的は既に満たされているか」だけを問う独立した判断。**生成タスクに同梱しない**——
+# 033 B3 の実測（生成に yes/no を同梱すると 8/16・否定形の申告 0/32、独立した二値なら 7/9）。
+# 生成を求められた判断は生成に引かれる（032 で実測: 4走とも必ず何かを作った）。
+_ASSESS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "satisfied": {"type": "boolean"},
+        "evidence": {"type": "string"},
+    },
+    "required": ["satisfied", "evidence"],
+}
+
 _SELECT_SCHEMA = {
     "type": "object",
     "properties": {"package": {"type": "string"}, "reason": {"type": "string"}},
@@ -88,7 +100,8 @@ def _with_check_facts(reason: str, checks: list) -> str:
 
 
 def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path, rounds,
-          l4_rounds: int = 0, escalation_reason: str = "", package: str = "") -> dict:
+          l4_rounds: int = 0, escalation_reason: str = "", package: str = "",
+          no_action: bool = False) -> dict:
     """呼び出し側への返り値。`rounds` は**この層の**周回（respec サイクル）、
     `l4_rounds` は最後に回した L4（PjM サイクル）の周回——予算は各層が自分で持つ（合意009）。
 
@@ -104,6 +117,9 @@ def _done(achieved, escalated, assessment, spec, spec_path, tasks, process_path,
         # 028: 自動選択されたパッケージ名（手動 roles・選択前の停止は空文字）。
         # 選択の正しさを呼び出し側が機械検査できる観測面。
         "package": package,
+        # 034: 目的が**既に満たされていた**ため何もしなかった（正常な終端）。
+        # done（作って達成）とも escalate（人手が要る）とも別物として機械で判別できる。
+        "no_action": no_action,
     }
 
 
@@ -198,6 +214,21 @@ def _inputs_block(inputs: str) -> str:
 def _infeasible(spec: dict) -> bool:
     """PdM が明示的に「充足不能」と申告したか。欠落・True はどちらも「進める」（合意007 決定4）。"""
     return spec.get("feasible") is False
+
+
+def _satisfied(assessment: dict) -> bool:
+    """PdM が「目的は**既に満たされている**」と申告したか（合意034。`_infeasible` の兄弟）。
+
+    032 の実測: 一致した状態の継続責務を渡した4走とも、mu は必ず何かを作り、
+    一致していた 21,108 字の文書を書き潰した。**結果契約に「やる必要がない」という終端が
+    無かった**ためで、skill に明記しても効かない（契約に無い終端は知識では作れない）。
+
+    床（安全側は「進める」）: 欄の欠落・壊れた応答・**証拠の無い充足申告**はすべて False。
+    `feasible` の「欠落・True はどちらも進める」と同型で、**サボる側には倒れない**——
+    間違って作るコストより、間違って何もしないコストの方が高い（静かな失敗になるため）。
+    """
+    return bool(assessment.get("satisfied") is True
+                and str(assessment.get("evidence") or "").strip())
 
 
 def _auto_review(report: dict) -> dict:
@@ -349,6 +380,17 @@ class Director:
         )
         if inputs:
             log(("inputs", inputs))
+        # 034: **仕様を作る前に**「もう満たされていないか」を独立して1問だけ問う。
+        # 生成タスクに同梱すると生成に引かれる（032: 4走とも必ず作った / 033 B3: 8/16 vs 7/9）。
+        #
+        # **入力の実物が1つも無ければ問わない**——充足済みと言える根拠は接地された実物だけで、
+        # 白紙の作業ディレクトリに「もう満たされている」は原理的に有り得ない（作る仕事は
+        # 作らないと終わらない）。材料が無い判断を回さないのは、床であり同時に節約でもある。
+        if inputs:
+            assessment = self._assess(model, purpose, roles, log, system, inputs, skills)
+            if _satisfied(assessment):
+                return self._stop_satisfied(purpose, assessment, spec_path, process_path,
+                                            roles, log, package)
         spec = self._specify(model, purpose, roles, log, system, inputs, skills)
         if _infeasible(spec):                                         # 充足不能なら人間へ（合意007）
             return self._stop_infeasible(purpose, spec, spec_path, process_path, [], 0, roles, log,
@@ -478,7 +520,53 @@ class Director:
         return _done(False, True, assessment, spec, spec_path, tasks, process_path, rounds,
                      escalation_reason="PdM が目的を充足不能と申告した", package=package)
 
+    def _stop_satisfied(
+        self, purpose: str, assessment: dict, spec_path: str, process_path: str,
+        roles: dict, log: Callable, package: str = "",
+    ) -> dict:
+        """PdM が「目的は**既に満たされている**」と申告したとき、何も作らずに正常終了する（合意034）。
+
+        032 の実測への対処: 一致した状態の継続責務を4走渡して、4走とも何かを作り、
+        一致していた文書を書き潰した。「やる必要がない」が結果契約に無かったためである。
+
+        **根拠は必ず残す**（`SPEC.md` に書く）。no-op は**静かな失敗**を生みうる唯一の終端で、
+        何も出力しなければ「気づかなかった」と区別がつかない。握り潰せない分岐＋残る証跡に
+        する（合意007 決定4「申告は SPEC.md にも残す」と同じ型）。
+        """
+        evidence = str(assessment.get("evidence") or "").strip()
+        note = (f"# 充足済み — 何もしない（L5 の判断・合意034）\n\n"
+                f"## 目的（人間の入力・原文）\n{purpose}\n\n"
+                f"## 判断\n目的が求める状態は**既に満たされている**ため、仕様を作らず"
+                f"作業も行わなかった。\n\n## 根拠\n{evidence}\n")
+        Path(spec_path).write_text(note, encoding="utf-8")
+        log(("satisfied", evidence))
+        return _done(
+            True, False,
+            {"achieved": "yes", "reason": "目的は既に満たされていた（作業不要）", "gap": ""},
+            {"definitions": [], "criteria": [], "spec": "", "feasible": True, "conflicts": []},
+            spec_path, [], process_path, 0, package=package, no_action=True,
+        )
+
     # --- 生命線の LLM 呼び出し（やり方は roles/pdm.md、形はスキーマ） ---
+    def _assess(
+        self, model: str, purpose: str, roles: dict, log: Callable,
+        system: str | None = None, inputs: str = "", skills: dict | None = None,
+    ) -> dict:
+        """「目的は既に満たされているか」だけを問う独立した判断（合意034）。
+
+        **仕様を作る呼び出しとは分ける。** 生成を求められた判断は生成に引かれる——
+        033 B3 の実測（同梱 8/16・否定形 0/32 ／ 独立した二値 7/9）。
+        やり方は `roles/*/pdm.md` の `## assess`。節が無ければ知識ゼロで判断し、
+        `role_doc_missing` で可視化される（既存の哲学のまま）。
+        """
+        data = structured(
+            self._l0, model,
+            lifeline_system(roles, "pdm", "assess", _ASSESS_SCHEMA, system, log, skills),
+            f"PURPOSE:\n{purpose}{_inputs_block(inputs)}", _ASSESS_SCHEMA,
+        )
+        log(("assess", data))
+        return data
+
     def _specify(
         self, model: str, purpose: str, roles: dict, log: Callable,
         system: str | None = None, inputs: str = "", skills: dict | None = None,

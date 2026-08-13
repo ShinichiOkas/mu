@@ -72,6 +72,9 @@ def _review(report: dict) -> dict:
     print("── 目的レビュー ──")
     print(f"  目的: {short(report.get('purpose'), 160)}")
     print(f"  ラウンド: {'完全 ok' if report.get('ok') else '未達あり'}")
+    if result.get("no_action"):
+        # 034: 何もしなかったことは黙らせない——no-op は静かな失敗を生みうる唯一の終端。
+        print("  [no-op] 目的は既に満たされていた（作業なし）。根拠は SPEC.md に記録")
     print(f"  QA 判定: {a.get('achieved')} :: {short(a.get('reason'), 200)}")
     if a.get("gap"):
         print(f"  gap: {short(a.get('gap'), 200)}")

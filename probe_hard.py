@@ -435,6 +435,7 @@ def main() -> None:
     print(json.dumps(
         {k: result.get(k) for k in (
             "achieved", "escalated", "escalation_reason", "assessment", "rounds", "l4_rounds",
+            "no_action",
         )},
         ensure_ascii=False, indent=2,
     ))

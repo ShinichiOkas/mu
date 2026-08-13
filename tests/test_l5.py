@@ -557,25 +557,25 @@ def test_run_with_packages_selects_loads_and_runs(tmp_path, monkeypatch):
     # 028 A: roles 無し＋packages 有り → specify の前に選択の1判断 → 選択パッケージを
     # load して以降は従来どおり。結果契約に package 欄（選択の正しさを機械検査できる）。
     monkeypatch.chdir(tmp_path)
-    agent = make([SELECT_NOVEL, SPEC, PROC_NOVEL],
+    agent = make([SELECT_NOVEL, NOT_SATISFIED, SPEC, PROC_NOVEL],
                  [{"done": True}, {"done": True, "writes": [("verdict.md", VERDICT_YES)]}])
     result = agent.run("m", "掌編小説を書いてくれ", [], packages=_catalog(tmp_path), models=["m"])
     assert result["achieved"] is True
     assert result["package"] == "novel"
     select_user = agent._l0.calls[0]["messages"][-1]["content"]
     assert "CATALOG" in select_user and "novel" in select_user and "小説向け" in select_user
-    process_user = agent._l0.calls[2]["messages"][-1]["content"]
+    process_user = agent._l0.calls[3]["messages"][-1]["content"]
     assert "NOVELIST-MARKER" in process_user   # 選択パッケージの役割が人選一覧に載る
 
 
 def test_manual_roles_win_over_packages(tmp_path, monkeypatch):
     # L6（呼び出し側の roles 明示）が常に優先——選択の判断は挟まらない。
-    agent = make([SPEC, PROCESS3], ok3())
+    agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
     result = run(agent, tmp_path, monkeypatch, packages=_catalog(tmp_path))
     assert result["achieved"] is True
     assert result["package"] == ""
-    fmt = agent._l0.calls[0]["format"]
-    assert set(fmt["properties"]) == set(_SPECIFY_PROPS)   # 1発目が specify（選択ではない）
+    fmt = agent._l0.calls[1]["format"]
+    assert set(fmt["properties"]) == set(_SPECIFY_PROPS)   # 選択は挟まらない（assess の次が specify）
 
 
 _SPECIFY_PROPS = ("definitions", "criteria", "spec", "feasible", "conflicts")
@@ -725,9 +725,9 @@ def test_specify_prompt_forbids_weakening_constraints(tmp_path, monkeypatch):
 
 def test_specify_sees_the_real_input_files(tmp_path, monkeypatch):
     (tmp_path / "sales.csv").write_text("商品ID,数量,単価\np008,3,120\n", encoding="utf-8")
-    agent = make([SPEC, PROCESS3], ok3())
+    agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
     run(agent, tmp_path, monkeypatch)
-    specify_user = agent._l0.calls[0]["messages"][1]["content"]
+    specify_user = agent._l0.calls[1]["messages"][1]["content"]
     assert "sales.csv" in specify_user
     assert "商品ID,数量,単価" in specify_user      # ヘッダーの実物が渡る（発明させない）
 
@@ -737,9 +737,9 @@ def test_grounding_excludes_generated_artifacts(tmp_path, monkeypatch):
     (tmp_path / "SPEC.md").write_text("OLD-SPEC-MARKER", encoding="utf-8")
     (tmp_path / "PROCESS.md").write_text("OLD-PROCESS-MARKER", encoding="utf-8")
     (tmp_path / "input.txt").write_text("REAL-INPUT", encoding="utf-8")
-    agent = make([SPEC, PROCESS3], ok3())
+    agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
     run(agent, tmp_path, monkeypatch)
-    specify_user = agent._l0.calls[0]["messages"][1]["content"]
+    specify_user = agent._l0.calls[1]["messages"][1]["content"]
     assert "REAL-INPUT" in specify_user
     assert "OLD-SPEC-MARKER" not in specify_user
     assert "OLD-PROCESS-MARKER" not in specify_user
@@ -750,12 +750,12 @@ def test_respecify_also_sees_the_real_input_files(tmp_path, monkeypatch):
     (tmp_path / "sales.csv").write_text("商品ID,数量,単価\np008,3,120\n", encoding="utf-8")
     decide = {"action": "respec", "invalidate": [], "reason": "ヘッダーが違う"}
     agent = make(
-        [SPEC, PROCESS3, decide, SPEC, PROCESS3],
+        [NOT_SATISFIED, SPEC, PROCESS3, decide, SPEC, PROCESS3],
         [{"done": True}, {"done": True},
          {"done": True, "writes": [("verdict.md", VERDICT_NO_IMPL)]}] + ok3(),
     )
     run(agent, tmp_path, monkeypatch, max_rounds=2)
-    respecify_user = agent._l0.calls[3]["messages"][1]["content"]
+    respecify_user = agent._l0.calls[4]["messages"][1]["content"]
     assert "商品ID,数量,単価" in respecify_user
 
 
@@ -926,6 +926,10 @@ DECIDE-BODY-MARKER 次の一手を決めよ。
 """
 
 ROLES5 = dict(ROLES, pdm=PDM_DOC, pjm=PJM_DOC)
+
+# 034: 接地された入力があるとき、L5 は specify の前に「もう満たされているか」を1問だけ問う。
+# 既存の走はどれも「まだ満たされていない」——この応答を応答列の先頭に足すだけで挙動は不変。
+NOT_SATISFIED = {"satisfied": False, "evidence": ""}
 
 
 def test_pdm_prompt_comes_from_the_role_doc(tmp_path, monkeypatch):
@@ -1353,3 +1357,90 @@ def test_grounding_without_a_purpose_is_unchanged(tmp_path):
     for name in ("b.txt", "a.txt"):
         (tmp_path / name).write_text("x", encoding="utf-8")
     assert _input_grounding(str(tmp_path), set()).splitlines()[0].startswith("- a.txt")
+
+
+# --- 034: no-op を第一級の結果にする（充足済みなら何も作らない）--------------------
+#
+# 032 の実測: 一致した状態の継続責務を4走渡して、4走とも何かを作り、一致していた
+# 21,108 字の文書を書き潰した。**結果契約に「やる必要がない」終端が無かった**ため。
+# 対処は `_infeasible`（充足不能→人間へ）の**兄弟**——`satisfied`（充足済み→正常終了）。
+
+SATISFIED = {"satisfied": True, "evidence": "result.csv が既に存在し、期待どおりの内容である"}
+
+
+def _with_input(tmp_path):
+    (tmp_path / "input.txt").write_text("REAL-INPUT", encoding="utf-8")
+
+
+def test_satisfied_purpose_produces_no_action_without_building_anything(tmp_path, monkeypatch):
+    _with_input(tmp_path)
+    agent = make([SATISFIED])                     # specify も process も呼ばれない
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["no_action"] is True
+    assert result["achieved"] is True             # 「何もしない」が正解＝達成
+    assert result["escalated"] is False
+    assert result["tasks"] == []
+    assert agent._l4._l3.calls == []              # 下の層を一度も回していない
+    assert len(agent._l0.calls) == 1              # 判断は assess の1回だけ
+
+
+def test_no_action_leaves_its_reason_on_disk(tmp_path, monkeypatch):
+    # no-op は**静かな失敗**を生みうる唯一の終端——何も出力しなければ「気づかなかった」と
+    # 区別がつかない。根拠を必ず残す（合意007 決定4「申告は SPEC.md にも残す」と同じ型）。
+    _with_input(tmp_path)
+    agent = make([SATISFIED])
+    run(agent, tmp_path, monkeypatch)
+    note = (tmp_path / "SPEC.md").read_text(encoding="utf-8")
+    assert "充足済み" in note
+    assert "result.csv が既に存在し" in note      # 根拠の原文が残る
+    assert "この売上表から不採算商品" in note      # 目的の原文も残る
+
+
+def test_satisfied_without_evidence_is_not_believed(tmp_path, monkeypatch):
+    # 証拠の無い充足申告は無効——判定は実体に接地する（QA の verdict と同じ思想）。
+    _with_input(tmp_path)
+    agent = make([{"satisfied": True, "evidence": "   "}, SPEC, PROCESS3], ok3())
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["no_action"] is False
+    assert result["achieved"] is True             # 従来どおり作って達成した
+
+
+def test_broken_or_missing_assessment_falls_forward(tmp_path, monkeypatch):
+    # 安全側は「進める」——欠落・壊れた応答はサボる側に倒れない（_infeasible と同型）。
+    # 間違って作るコストより、間違って何もしないコストの方が高い（静かな失敗になるため）。
+    for broken in ({}, {"satisfied": "yes", "evidence": "x"}, {"evidence": "x"}):
+        _with_input(tmp_path)
+        agent = make([broken, SPEC, PROCESS3], ok3())
+        result = run(agent, tmp_path, monkeypatch)
+        assert result["no_action"] is False, broken
+        assert result["achieved"] is True, broken
+
+
+def test_empty_workdir_skips_the_assessment_entirely(tmp_path, monkeypatch):
+    # 充足済みと言える根拠は接地された実物だけ。白紙の作業ディレクトリに
+    # 「もう満たされている」は原理的に有り得ない——材料の無い判断は回さない（床＋節約）。
+    agent = make([SPEC, PROCESS3], ok3())         # assess の応答を用意していない
+    result = run(agent, tmp_path, monkeypatch)
+    assert result["achieved"] is True
+    assert result["no_action"] is False
+    assert agent._l0.calls[0]["format"]["properties"].keys() >= {"criteria", "spec"}  # 1発目が specify
+
+
+def test_assessment_is_a_separate_judgement_from_specify(tmp_path, monkeypatch):
+    # 033 B3 の実測（生成に同梱すると 8/16・否定形 0/32 ／ 独立した二値なら 7/9）に基づく設計。
+    # 生成を求められた判断は生成に引かれるので、**問いを分ける**。
+    _with_input(tmp_path)
+    agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    assess_fmt = agent._l0.calls[0]["format"]
+    assert set(assess_fmt["properties"]) == {"satisfied", "evidence"}   # 1問だけを問う
+    assert "criteria" not in assess_fmt["properties"]                   # 仕様は同梱しない
+
+
+def test_no_action_is_logged_for_the_caller(tmp_path, monkeypatch):
+    _with_input(tmp_path)
+    events = []
+    agent = make([SATISFIED])
+    run(agent, tmp_path, monkeypatch, log=events.append)
+    assert any(e[0] == "assess" for e in events)
+    assert any(e[0] == "satisfied" for e in events)
