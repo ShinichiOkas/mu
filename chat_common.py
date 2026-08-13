@@ -22,7 +22,9 @@ import time
 from pathlib import Path
 
 import tools as tools_mod
-from mu.role_kb import L4_ROLES, list_packages, missing_positions, parse_role_doc, staffing_lines
+from mu.role_kb import (
+    L4_ROLES, list_packages, load_roles, missing_positions, parse_role_doc, staffing_lines,
+)
 from mu.skill_kb import equipment_lines, unknown_targets
 
 # repo の roles/ を cwd に依らず指す（役割定義書の出所。差し替え可能——合意008）。
@@ -126,6 +128,23 @@ def auto_catalog(root: str = ROLES_ROOT) -> tuple:
     doc = Path(root) / "director.md"
     selector = parse_role_doc(doc.read_text(encoding="utf-8")) if doc.is_file() else None
     return packages, selector
+
+
+def catalog_roles(packages: list) -> dict:
+    """カタログ全体の役割名の**和集合**（auto モードの装備表示に使う。合意032 で追加）。
+
+    auto ではパッケージ選択が L5 の中で起きるので、起動時点では**どのセットで走るかが未定**。
+    そこに空の役割集合を渡すと、`unknown_targets` が全 skill を「宛先が居ない」と誤報する
+    （032 の実走で発火——実際には選択後に正しく装着されていた）。**表示が構成と食い違うのは
+    合意025 に反する**ので、auto では「どのパッケージにも居ない宛先」だけを不明として報告する。
+
+    パッケージごとに読んで束ねる（`load_roles` に複数パスを渡すと、自己完結ゆえの同名衝突で
+    エラーになる——026 の設計どおり）。
+    """
+    names: dict = {}
+    for p in packages:
+        names.update(load_roles(str(p["path"])))
+    return names
 
 
 def show_catalog(packages: list) -> None:

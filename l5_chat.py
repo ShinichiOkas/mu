@@ -40,7 +40,8 @@ import sys
 
 import tools as tools_mod
 from chat_common import (
-    Abort, VerboseL0, auto_catalog, env_preamble, log, roles_auto, roles_paths, short,
+    Abort, VerboseL0, auto_catalog, catalog_roles, env_preamble, log, roles_auto,
+    roles_paths, short,
     parallel_n, show_catalog, show_parallel, show_roles, show_skills, show_workspace,
     skills_paths, utf8_console, verbose_tools, workspace_root,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
@@ -117,7 +118,8 @@ def main() -> None:
 
     print(f"L5 chat / model={model}  pool={pool}  l5_max={L5_MAX} l4_max={L4_MAX}")
     show_catalog(packages) if roles_auto() else show_roles(roles, roles_paths())
-    show_skills(skills, skills_paths(), roles)
+    # auto ではこの時点でセットが未定——カタログ全体の和集合で照合する（合意032）
+    show_skills(skills, skills_paths(), roles or catalog_roles(list(packages)))
     workspace = workspace_root()           # 切替は MU_WORKSPACE（合意030）
     show_workspace(workspace)
     parallel = parallel_n()                # 切替は MU_PARALLEL（合意031）

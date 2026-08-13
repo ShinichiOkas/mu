@@ -26,6 +26,13 @@ without asking you. ONE CRITERION = ONE PROPOSITION that is true or false on its
 conditions: "compares all four tools, cites sources, and states a conclusion" is THREE criteria, not
 one — a bundled criterion cannot be judged, only felt. Completion is defined as EVERY criterion
 passing, one by one, so write as many as the purpose actually requires; do not economise.
+PRESERVE QUANTIFIERS: when the purpose says 'every / all / each' / 'keep X consistent'
+（必ず・すべて・各〜・〜し続けよ）, the criteria must keep that quantification — state the check PER
+item, never a bare existence check. Weakening ∀ to ∃ silently drops the constraint. Observed twice
+in real runs across different domains: 'every claim must cite a source' became 'a URL is present'
+(a single-source report passed), and 'the README matches the implementation' became 'the README
+mentions l0_chat.py' (a 26-line stub that replaced a 21,000-character document passed).
+A criterion of the form 'X exists' verifies EXISTENCE, not AGREEMENT.
 Each criterion is {text, run, expect}: text describes the condition; when it can
 be verified by running a command, run is a command that works in the execution environment stated
 below (if any) and expect is a substring that MUST appear in its output — a short ASCII marker the

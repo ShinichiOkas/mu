@@ -28,7 +28,8 @@ from pathlib import Path
 
 import tools as tools_mod
 from chat_common import (
-    VerboseL0, auto_catalog, env_preamble, log, parallel_n, roles_auto, roles_paths,
+    VerboseL0, auto_catalog, catalog_roles, env_preamble, log, parallel_n, roles_auto,
+    roles_paths,
     show_catalog, show_parallel, show_roles, show_skills, show_workspace, skills_paths,
     verbose_tools, workspace_root,
     L5 as _L5, L4 as _L4, L3 as _L3, L2 as _L2, L1 as _L1,
@@ -373,7 +374,8 @@ def main() -> None:
         roles, packages, selector = load_roles(*roles_paths()), (), None
         show_roles(roles, roles_paths())
     skills = load_skills(*skills_paths())   # 切替は MU_SKILLS_DIR（合意029）
-    show_skills(skills, skills_paths(), roles)
+    # auto ではこの時点でセットが未定——カタログ全体の和集合で照合する（合意032）
+    show_skills(skills, skills_paths(), roles or catalog_roles(list(packages)))
     workdir.mkdir(parents=True, exist_ok=True)
     os.chdir(workdir)
     for rel, content in spec["files"].items():
