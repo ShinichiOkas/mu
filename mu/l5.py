@@ -132,7 +132,8 @@ def _self_description(text: str, suffix: str) -> str:
     return "\n".join(out).strip()
 
 
-def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300) -> str:
+def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int = 300,
+                     purpose: str = "") -> str:
     """作業ディレクトリの**実在する入力**を一覧＋抜粋にして返す（合意007 C2）。
 
     PdM は目的の文章だけからは入力の形式を知りえず、実測すると形式を発明する
@@ -143,11 +144,20 @@ def _input_grounding(workdir: str, exclude: set, max_files: int = 12, head: int 
     スクリプト（実行可能な道具）は先頭5行でなく**自己記述（docstring/コメント塊）を全文**
     見せる（合意021 修正②）。見えない usage の続きは推測で発明される——規範で禁じると同時に、
     推測の必要そのものを消す。
+
+    **目的が名指ししたファイルは必ず先に置く**（合意032 の実走で発火）。上限は context の床だが、
+    その切り方は「名前順の先頭 N 件」であって目的とは無関係だった——「README.md を実装と
+    一致させ続けよ」という目的に対し、`README.md` はソート18番目で**接地から落ちていた**。
+    PdM は責任を負う当の文書を一度も見ないまま仕様を書き、存在検査だけの基準を作った。
+    上限そのものは動かさない（予算の床）。**並び順で守る。**
     """
     p = Path(workdir or ".")
     if not p.is_dir():
         return ""
     entries = [f for f in sorted(p.iterdir()) if f.name not in exclude and not f.name.startswith(".")]
+    if purpose:
+        named = [f for f in entries if f.name in purpose]
+        entries = named + [f for f in entries if f not in named]
     lines = []
     for f in entries[:max_files]:
         if f.is_dir():
@@ -334,7 +344,8 @@ class Director:
                              0, escalation_reason=sel["escalate"])
             roles, package = sel["roles"], sel["package"]
         inputs = _input_grounding(                                    # 入力の実物（合意007 C2）
-            str(Path(spec_path).parent), {Path(spec_path).name, Path(process_path).name}
+            str(Path(spec_path).parent), {Path(spec_path).name, Path(process_path).name},
+            purpose=purpose,   # 目的が名指ししたファイルは上限で落とさない（合意032）
         )
         if inputs:
             log(("inputs", inputs))

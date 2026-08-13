@@ -1311,3 +1311,45 @@ def test_skills_flow_from_l5_down_into_the_tasks(tmp_path, monkeypatch):
     agent = make([SPEC, PROCESS3], ok3())
     run(agent, tmp_path, monkeypatch, skills=skills)
     assert all("SKILL-ALL-MARKER" in c["kwargs"]["system"] for c in agent._l4._l3.calls)
+
+
+# --- 032: 目的が名指ししたファイルは接地の上限で落とさない ----------------------
+#
+# 実発火（032 の継続責務の実走）: 目的は「README.md を実装と一致させ続けよ」だったのに、
+# `README.md` はソート18番目で **max_files=12 の外**に落ち、PdM は責任を負う当の文書を
+# 一度も見ないまま仕様を書いた。結果、受入基準は「README.md が存在すること」など
+# 存在検査だけになり、21,000字の文書が891字のスタブに置き換わって全基準を通った。
+# 上限は context の床なので動かさない——**並び順で守る**。
+
+def test_purpose_named_file_is_grounded_even_past_the_cap(tmp_path):
+    from mu.l5 import _input_grounding
+    for i in range(20):                       # 上限（12）を超える数のダミー
+        (tmp_path / f"a{i:02d}.txt").write_text(f"dummy {i}", encoding="utf-8")
+    (tmp_path / "zzz_target.md").write_text("これが目的の対象である", encoding="utf-8")
+
+    without = _input_grounding(str(tmp_path), set())
+    assert "zzz_target.md" not in without            # 従来: 名前順で落ちる
+
+    grounded = _input_grounding(str(tmp_path), set(),
+                                purpose="zzz_target.md を実装と一致させ続けよ")
+    assert "zzz_target.md" in grounded               # 目的が名指ししたので載る
+    assert "これが目的の対象である" in grounded        # 中身（先頭）も見える
+
+
+def test_named_files_come_first_and_the_cap_still_holds(tmp_path):
+    from mu.l5 import _input_grounding
+    for i in range(20):
+        (tmp_path / f"a{i:02d}.txt").write_text("dummy", encoding="utf-8")
+    (tmp_path / "target.md").write_text("対象", encoding="utf-8")
+    g = _input_grounding(str(tmp_path), set(), purpose="target.md を保て")
+    lines = [l for l in g.splitlines() if l.startswith("- ")]
+    assert lines[0].startswith("- target.md")        # 先頭に置かれる
+    assert any("他 " in l for l in lines)             # 上限は動かさない（残りは件数で示す）
+
+
+def test_grounding_without_a_purpose_is_unchanged(tmp_path):
+    # 既定の挙動は変えない（purpose 無指定＝従来どおり名前順）。
+    from mu.l5 import _input_grounding
+    for name in ("b.txt", "a.txt"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert _input_grounding(str(tmp_path), set()).splitlines()[0].startswith("- a.txt")
