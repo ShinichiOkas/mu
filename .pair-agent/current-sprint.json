@@ -1,10 +1,8 @@
 {
-  "sprint_id": "032-standing-responsibility-probe",
-  "status": "completed",
-  "goal": "継続責務（新しい北極星）を現行の L0〜L5 に渡して走らせ、L6 が埋めるべき落差を実物で採る。L6 は作らない。題材は mu 自身の使い捨てクローンに対する「README を実装と一致させ続けよ」",
+  "sprint_id": "033-l6-diagnosis-and-design",
+  "status": "deliberating",
+  "goal": "L6（学習の層）の設計協議＋診断精度の単体測定。L6 の機構は作らず、学習者に過去の走行ログを読ませて確定済みの診断と一致するかを測る（028 の「選択のみ精度」と同型）。成長指標は師匠の3宣言（再発頻度を下げる・手段を増やす・失敗がなくなったら手数を減らす）",
   "created_at": "2026-08-13T00:00:00+09:00",
-  "agreed_at": "2026-08-13T00:00:00+09:00",
-  "completed_at": "2026-08-13T00:00:00+09:00",
-  "agreement_path": ".pair-agent/agreements/032-standing-responsibility-probe.md",
-  "note": "振り返り実施済み（ビジョン記録2件・Skill 6件: draft 新規5・confirmed 精緻化1）。北極星は第2世代「継続する責務」へ。師匠の把握: 作らずに観測するのは重要なやり方で思った通り／制御ループという捉え方は実装の失敗ケースを読んで思いついた。階段（接地→自力→skill→構造）で切り分けた結果、観測は構造・作用は skill・no-op だけが構造の不足として残った。次スプリント未協議——本命は L6 の設計協議（落差は実物で採れており構成は設計から書ける段階）。保留: 制御ループ skill 2件の共有ライブラリ昇格は L6 の形が決まってから"
+  "agreement_path": ".pair-agent/agreements/033-l6-diagnosis-and-design.md",
+  "note": "協議は 2026-08-13 の対話で実施（L6 の目的＝自己成長・失敗モードから skill/role へのフィードバック・3指標・トリガーは別スプリント＝ループエンジニアリングの領域）。合意 v1 起草済み——師匠の承認で executing へ"
 }

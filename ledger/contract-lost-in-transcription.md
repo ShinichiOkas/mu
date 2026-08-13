@@ -1,0 +1,17 @@
+---
+name: contract-lost-in-transcription
+description: goal にだけ載せた契約（判定書の書式等）は、L3 の再計画の転記から欠落して L2 に届かない
+maturity: confirmed
+---
+症状: 判定書が契約の書式（ITEM 行）を満たさず、uncertain に落ちる。再計画が挟まった
+タスクでだけ起きる。
+
+機構: 規範が確率的な転記に乗っていた——L3 が unit を計画し直すたびに goal の記載が
+転記から薄れる。
+
+## 観測
+- runs/2026-08-08-019（deadstock）: 再計画後の QA に契約が届かず判定書が壊れた
+
+## 対処と効果
+- 構造（019 Phase4）: 契約は task の system にも載せる——system は L3→L2 へコードが
+  素通しで運ぶため転記で薄まらない（goal 併記も残す＝計画者にも見せる）。→ 以後安定
