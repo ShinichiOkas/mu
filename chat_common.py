@@ -400,6 +400,15 @@ def log(event: tuple) -> None:
         _show_process(event[1], event[2])
     elif kind == "qa_appended":
         print(f"{L4} [+] QA タスクをコードが補完: {event[1]}")
+    elif kind == "assess":                # 034: 仕様を作る前の「もう満たされているか」の判断
+        # no-op は**静かな失敗**を生みうる唯一の終端。判断そのものを必ず実況に出す
+        # ——「何もしなかった」と「気づかなかった」を人間が区別できるようにする。
+        data = event[1] or {}
+        print(f"{L5} 充足済みか: {data.get('satisfied')} :: "
+              f"{short(data.get('evidence'), 200)}")
+    elif kind == "satisfied":             # 034: 充足済みと判断し、何も作らずに終える
+        print(f"{L5} [=] 目的は既に満たされている——仕様を作らず終了（根拠は SPEC.md に記録）:")
+        print(f"{L5}     {short(event[1], 200)}")
     elif kind == "infeasible":            # 合意007 C1: 目的が充足不能と申告された
         print(f"{L4} [!] 目的が充足不能と申告された（仕様は作らず人間へ）:")
         for c in event[1] or ["(申告なし)"]:
