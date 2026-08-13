@@ -7,12 +7,23 @@ r"""probe_learning.py — L6（学習の層）の中核能力＝診断を、機�
 
 条件（1ケースにつき2つ）:
   R（再発検知）: 台帳に該当モードを**含めて**渡す → 正解 = そのモード名（**機械照合**）
-  N（新モード診断）: 台帳から該当モードを**抜いて**渡す → 正解 = new_mode ＋機構の記述
+  N（新モード診断）: 台帳から該当モードを**すべて抜いて**渡す → 正解 = new_mode ＋機構の記述
      （機構の一致は人間採点。学習者が「最も近い既存モード」へ無理に寄せないかを見る）
 
 材料の軸（仮説「診断の質は判断文でなく材料の質で決まる」の検証）:
   thin : 仕様・計画・判定の眺め（[tool] 行を除いた実況）
   thick: thin ＋ ツール呼び出しの列——機構の診断にはこれが必須、が事前の仮説
+
+初回測定（B）からの計器修理（B2。誤答の法医学で判明した欠陥への対処）:
+  1. **gold の全数検証** — 各ケースに「決定的証拠のマーカー」（生ログに実在することを
+     人間が確認した文字列）を焼き込み、テストが**材料への生存**まで保証する。
+     検証できなかったケース（qa-self-fix: ログはガード適用後の走で gold と食い違う）は落とした
+  2. **材料の目的接地** — 位置による中央省略をやめ、**診断の目的順の優先度充填**にした
+     （P1: 仕様・検査・判定・拒否などの制御面 → P2: ツール呼び出し → P3: ツール結果 →
+     P4: 残りの実況）。証拠がログのどこにあっても、種類が濃ければ残る
+  3. **gold の複数化** — 根因と近因が併存する走（grounding-drop）は gold を集合で持つ
+  4. **目的の注入** — 生ログに目的の原文が印字されていない走（020）には、その走が実際に
+     受け取った目的を材料の先頭に添える（比較対象の欠落は診断不能を意味する）
 
 リーク対策（床）: 学習者に渡すのは**生ログからの抽出だけ**。スプリント記録・runs/README は
 診断の答えを明記しているため、材料生成の入力にすら使わない。
@@ -41,51 +52,66 @@ LEDGER_DIR = REPO / "ledger"
 LEARNER_DOC = REPO / "roles" / "learner.md"
 DEFAULT_MODEL = "gemma4:31b-cloud"
 
-# 材料の上限（学習者の context 予算の床）。超えたら**中央を**落とす——冒頭（目的・仕様）と
-# 末尾（結果・判定）は診断の目的に直結するため残す（skill: 切る順序を目的に接地させる）。
+# 材料の上限（学習者の context 予算の床）。何を残すかは優先度充填が決める——
+# 上限は動かさず、**順序（＝診断の目的への接地）で守る**（skill: truncate-in-purpose-order）。
 MAX_CHARS = 60_000
 
 # --- 正解ケース（gold = ledger のモード名。診断は人間の承認を経たもの） -----------
 #
-# slice の end マーカーは「その走だけを見せる」ため（多ラウンドのログで後続周が答えを
-# 漏らすのを防ぐ）。log は**生ログのみ**——記録 README は使わない（リーク）。
+# `evidence` は**決定的証拠のマーカー**——生ログに実在することを検証済みの文字列。
+# テストが (a) 生ログでの実在 (b) thick 材料への生存 を保証する（公平さの床）。
+# `purpose` はその走が実際に受け取った目的の原文（ログに印字が無い場合のみ。出所はコード）。
 
 CASES = {
-    "qa-self-fix": {
-        "log": "runs/2026-08-02-007/f1-12b.log",
-        "gold": "qa-self-fix-self-approve",
-    },
     "checker-overwritten": {
         "log": "runs/2026-08-05-012/research.log",
-        "gold": "checker-becomes-the-artifact",
+        "golds": ["checker-becomes-the-artifact"],
+        "evidence": ["path=check_sources.py"],        # 上書きの瞬間（3回実在）
     },
     "protection-escalation": {
         "log": "runs/2026-08-07-017/regression.log",
-        "gold": "denied-becomes-an-obstacle",
+        "golds": ["denied-becomes-an-obstacle"],
+        "evidence": ["Set-Content"],                  # エスカレーションの経路
     },
     "contract-loss": {
         "log": "runs/2026-08-08-019/deadstock.log",
-        "gold": "contract-lost-in-transcription",
+        "golds": ["contract-lost-in-transcription"],
+        "evidence": ["uncertain", "ITEM"],            # 壊れた判定と契約の書式
     },
     "quantifier": {
         "log": "runs/2026-08-10-020/runtime.log",
-        "gold": "quantifier-weakening",
+        "golds": ["quantifier-weakening"],
+        # ログに目的の原文が無い（∀→∃ は両側が揃わないと診断不能）。
+        # この走が実際に受け取った目的（probe_research._RUNTIME_PURPOSE と同文）を添える。
+        "purpose": (
+            "ローカルで LLM を動かす実行基盤について、Ollama / llama.cpp / vLLM / LM Studio を"
+            "比較し、mu（きわめてミニマルな汎用エージェント）の基盤として Ollama を使い続ける"
+            "べきかを判断できる材料を、報告書にまとめてほしい。判断に効く観点で比べ、"
+            "主張には必ず出典 URL を添えること。"
+        ),
+        "evidence": ["記述されていること"],            # ∃ に弱まった側（受入基準の文面）
     },
     "invented-calls": {
         "log": "runs/2026-08-10-021/schedule.log",
-        "gold": "invented-invocations",
+        "golds": ["invented-invocations"],
+        "evidence": ["outlook.py"],                   # 見えていた usage と使われた形の突き合わせ
     },
     "service-guessing": {
         "log": "runs/2026-08-12-028/auto-schedule.log",
-        "gold": "blind-service-trial-and-error",
+        "golds": ["blind-service-trial-and-error"],
+        "evidence": ["CONFLICT"],                     # 当て推量の痕跡（53回実在）
     },
     "regenerate-loss": {
         "log": "runs/2026-08-13-032/standing-R0-grounded.log",
-        "gold": "regenerate-loses-the-document",
+        "golds": ["regenerate-loses-the-document"],
+        "evidence": ["10436"],                        # 尽きた生成のバイト数
     },
     "grounding-drop": {
         "log": "runs/2026-08-13-032/standing.log",
-        "gold": "grounding-cap-drops-the-subject",
+        # 根因（接地の切り捨て）と近因（全文再生成→917バイト）が併存する走。
+        # どちらの診断も実在の証拠に接地しており、単一 gold は初回測定で曖昧さと判明した。
+        "golds": ["grounding-cap-drops-the-subject", "regenerate-loses-the-document"],
+        "evidence": ["入力の実物を PdM に接地", "917"],
         "end": "=== R1 ===",     # R0 だけを見せる（後続周は同じ答えの繰り返し）
     },
 }
@@ -112,32 +138,63 @@ def load_ledger(path: Path = LEDGER_DIR) -> dict:
     return entries
 
 
-def ledger_lines(ledger: dict, exclude: str = "") -> str:
-    """学習者に見せる既知モードの一覧（1行＝「- 名前: 説明」）。N 条件は該当モードを抜く。"""
+def ledger_lines(ledger: dict, exclude: tuple = ()) -> str:
+    """学習者に見せる既知モードの一覧（1行＝「- 名前: 説明」）。N 条件は該当モードを全部抜く。"""
     lines = [f"- {name}: {doc.get('description', '')}"
-             for name, doc in ledger.items() if name != exclude]
+             for name, doc in ledger.items() if name not in exclude]
     return "\n".join(lines) or "(none)"
 
 
 _NOISE = re.compile(r"\[L[12]\] (思考中|Reflect（合否）判定中)")
 
+# 診断の「制御面」——仕様・検査・判定・タスク境界・拒否と保護。証拠の密度が最も高い行。
+_CONTROL = re.compile(
+    r"\[L[45]\]|purpose|PURPOSE|受入基準|定義|仕様:|OUTCOME|RESULT|verdict|ITEM|achieved"
+    r"|passed=|権限で拒否|保護|escalat|respec|uncertain|TASK"
+)
+
+
+def _priority(line: str) -> int:
+    """診断の目的への接地順。1=制御面 / 2=ツール呼び出し / 3=ツール結果 / 4=残りの実況。"""
+    if _CONTROL.search(line):
+        return 1
+    if "[tool]" in line:
+        return 3 if "->" in line else 2
+    return 4
+
 
 def materials(log_text: str, kind: str) -> str:
-    """生ログから学習者に見せる材料を作る。
+    """生ログから学習者に見せる材料を作る（優先度充填。B2 で位置切りから置換）。
 
-    thick: 実況からタイミングノイズ（思考中… の行）だけを落としたもの
-    thin : thick からさらに [tool] 行（呼び出しと結果）を落としたもの
-           ＝仕様・計画・判定の眺め。機構の証拠が消える、が事前の仮説
+    上限を超えるとき、**位置ではなく種類**で残す——制御面 → ツール呼び出し → ツール結果 →
+    残り、の順に予算へ詰める（各クラス内は元の順）。証拠がログのどこにあっても、種類が
+    濃ければ残る。落とした行は「（…省略 N 行…）」で数を明示する（黙って切らない）。
     """
     lines = [l for l in log_text.splitlines() if not _NOISE.search(l)]
     if kind == "thin":
         lines = [l for l in lines if "[tool]" not in l]
-    text = "\n".join(lines)
-    if len(text) > MAX_CHARS:
-        head, tail = text[: MAX_CHARS // 2], text[-MAX_CHARS // 2:]
-        text = (f"{head}\n\n…（中略: 材料の上限 {MAX_CHARS} 字を超えたため中央を省略。"
-                f"冒頭と末尾は完全）…\n\n{tail}")
-    return text
+    # 予算に収まるなら全部（マーカー行も要らない）
+    if sum(len(l) + 1 for l in lines) <= MAX_CHARS:
+        return "\n".join(lines)
+    keep = set()
+    budget = MAX_CHARS
+    for idx in sorted(range(len(lines)), key=lambda i: (_priority(lines[i]), i)):
+        cost = len(lines[idx]) + 1
+        if cost <= budget:
+            keep.add(idx)
+            budget -= cost
+    out, omitted = [], 0
+    for i, line in enumerate(lines):
+        if i in keep:
+            if omitted:
+                out.append(f"（…省略 {omitted} 行…）")
+                omitted = 0
+            out.append(line)
+        else:
+            omitted += 1
+    if omitted:
+        out.append(f"（…省略 {omitted} 行…）")
+    return "\n".join(out)
 
 
 def case_text(case: dict) -> str:
@@ -149,13 +206,16 @@ def case_text(case: dict) -> str:
 
 
 def build_input(case: dict, kind: str, condition: str, ledger: dict) -> tuple:
-    """学習者に渡す (system, user) を組む。R=台帳に正解あり / N=正解を抜く。"""
-    exclude = case["gold"] if condition == "N" else ""
+    """学習者に渡す (system, user) を組む。R=台帳に正解あり / N=正解を**全部**抜く。"""
+    exclude = tuple(case["golds"]) if condition == "N" else ()
     doc = parse_role_doc(LEARNER_DOC.read_text(encoding="utf-8"))
     system = lifeline_system({"learner": doc}, "learner", "diagnose",
                              _DIAG_SCHEMA, None, lambda e: None)
+    purpose = (f"PURPOSE (the goal this run actually received; verbatim):\n"
+               f"{case['purpose']}\n\n") if case.get("purpose") else ""
     user = (
         f"LEDGER (known failure modes):\n{ledger_lines(ledger, exclude)}\n\n"
+        f"{purpose}"
         f"RUN RECORD (material={kind}; raw console transcript of one completed run):\n"
         f"{materials(case_text(case), kind)}"
     )
@@ -173,10 +233,13 @@ def main() -> None:
 
     if cmd == "list":
         for name, case in CASES.items():
-            ok = (REPO / case["log"]).is_file()
-            gold_ok = case["gold"] in ledger
-            print(f"  {name:22} gold={case['gold']:38} log={'ok' if ok else 'MISSING'} "
-                  f"ledger={'ok' if gold_ok else 'MISSING'}")
+            log_ok = (REPO / case["log"]).is_file()
+            golds_ok = all(g in ledger for g in case["golds"])
+            thick = materials(case_text(case), "thick")
+            ev_ok = all(m in thick for m in case["evidence"])
+            print(f"  {name:22} golds={','.join(case['golds']):60} "
+                  f"log={'ok' if log_ok else 'MISSING'} ledger={'ok' if golds_ok else 'MISSING'} "
+                  f"evidence={'ok' if ev_ok else 'LOST'}")
         return
 
     if cmd == "dump":
@@ -206,9 +269,9 @@ def main() -> None:
                             data = {"error": f"{type(e).__name__}: {e}"}
                         record = {
                             "case": name, "condition": condition, "material": kind,
-                            "rep": rep, "gold": case["gold"],
-                            # R の正解は機械照合できる。N の mechanism は人間採点
-                            "hit": (data.get("mode") == case["gold"]) if condition == "R"
+                            "rep": rep, "golds": case["golds"],
+                            # R の正解は機械照合できる（gold 集合のどれか）。N の mechanism は人間採点
+                            "hit": (data.get("mode") in case["golds"]) if condition == "R"
                                    else (data.get("mode") == "" and bool(data.get("new_mode"))),
                             **{k: data.get(k) for k in
                                ("mode", "new_mode", "mechanism", "evidence", "error")},
