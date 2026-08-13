@@ -45,7 +45,7 @@ from pathlib import Path
 from mu.l0 import OllamaInterface, L0Error
 from mu.l3 import structured
 from mu.l4 import lifeline_system
-from mu.role_kb import parse_role_doc
+from mu.role_kb import parse_role_doc, role_section
 
 REPO = Path(__file__).resolve().parent
 LEDGER_DIR = REPO / "ledger"
@@ -114,6 +114,17 @@ CASES = {
         "evidence": ["入力の実物を PdM に接地", "917"],
         "end": "=== R1 ===",     # R0 だけを見せる（後続周は同じ答えの繰り返し）
     },
+}
+
+# B3: モードごとの独立二値判定（017「総合判定を書かせず、項目ごとの二値＋集約はコード」と同型）。
+# 判断は1モードについてだけ——候補どうしの干渉が消え、否定形（該当なし）はコードが導出する。
+_BINARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "occurred": {"type": "boolean"},
+        "evidence": {"type": "string"},
+    },
+    "required": ["occurred", "evidence"],
 }
 
 _DIAG_SCHEMA = {
@@ -205,6 +216,31 @@ def case_text(case: dict) -> str:
     return text
 
 
+def build_binary_input(case: dict, kind: str, mode: str, ledger: dict) -> tuple:
+    """1モードの二値判定に渡す (system, user)（B3）。
+
+    見せるのは**そのモードの素性と検知の問いだけ**——台帳本文の `## 観測` は
+    そのモードが出た走を名指ししており（答えのリーク）、`## 対処と効果` も同様なので渡さない。
+    他のモードは prompt に一切現れない＝候補どうしの干渉が構造的に消える。
+    """
+    doc = parse_role_doc(LEARNER_DOC.read_text(encoding="utf-8"))
+    system = lifeline_system({"learner": doc}, "learner", "detect-one",
+                             _BINARY_SCHEMA, None, lambda e: None)
+    entry = ledger[mode]
+    purpose = (f"PURPOSE (the goal this run actually received; verbatim):\n"
+               f"{case['purpose']}\n\n") if case.get("purpose") else ""
+    user = (
+        f"FAILURE MODE UNDER TEST\n"
+        f"  name: {mode}\n"
+        f"  description: {entry.get('description', '')}\n"
+        f"  DETECTION QUESTION:\n{role_section(entry, 'detect') or '(none)'}\n\n"
+        f"{purpose}"
+        f"RUN RECORD (material={kind}; raw console transcript of one completed run):\n"
+        f"{materials(case_text(case), kind)}"
+    )
+    return system, user
+
+
 def build_input(case: dict, kind: str, condition: str, ledger: dict) -> tuple:
     """学習者に渡す (system, user) を組む。R=台帳に正解あり / N=正解を**全部**抜く。"""
     exclude = tuple(case["golds"]) if condition == "N" else ()
@@ -242,10 +278,43 @@ def main() -> None:
                   f"evidence={'ok' if ev_ok else 'LOST'}")
         return
 
+    if cmd == "binary":
+        # B3: モードごとの独立二値判定。R/N の区別は要らない——1判断に1モードしか
+        # 現れないので、N（該当モードを抜いた条件）の答えは**同じデータから導出できる**
+        # （非 gold モードの判定は台帳一覧の有無に影響されない）。
+        target = sys.argv[2]
+        model = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_MODEL
+        reps = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+        kind = sys.argv[5] if len(sys.argv) > 5 else "thick"
+        names = list(CASES) if target == "all" else [target]
+        l0 = OllamaInterface()
+        for name in names:
+            case = CASES[name]
+            for mode in ledger:
+                for rep in range(reps):
+                    system, user = build_binary_input(case, kind, mode, ledger)
+                    try:
+                        data = structured(l0, model, system, user, _BINARY_SCHEMA)
+                    except L0Error as exc:
+                        data = {"error": f"{type(exc).__name__}: {exc}"}
+                    print(json.dumps({
+                        "case": name, "mode": mode, "material": kind, "rep": rep,
+                        "is_gold": mode in case["golds"],
+                        "occurred": data.get("occurred"),
+                        "evidence": data.get("evidence"),
+                        "error": data.get("error"),
+                    }, ensure_ascii=False), flush=True)
+        return
+
     if cmd == "dump":
         case = CASES[sys.argv[2]]
         kind = sys.argv[3] if len(sys.argv) > 3 else "thick"
         condition = sys.argv[4] if len(sys.argv) > 4 else "R"
+        if condition == "binary":
+            system, user = build_binary_input(case, kind, sys.argv[5], ledger)
+            print(f"===== SYSTEM ({len(system)} chars) =====\n{system}\n")
+            print(f"===== USER ({len(user)} chars) =====\n{user[:3000]}")
+            return
         system, user = build_input(case, kind, condition, ledger)
         print(f"===== SYSTEM ({len(system)} chars) =====\n{system}\n")
         print(f"===== USER ({len(user)} chars) =====\n{user}")

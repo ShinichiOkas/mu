@@ -28,3 +28,20 @@ failure modes as: name: description.
   mechanism). Restating the conclusion is not evidence.
 - One run can contain several failures; diagnose the one that caused the outcome, and
   mention the others in evidence only if they are visible in the record.
+
+## detect-one
+
+You are given ONE known failure mode — its description and its DETECTION QUESTION — and the
+RECORD of a completed run. Answer one thing only: **did THIS mode occur in THIS run?**
+
+- **Answer the detection question literally.** It names what to compare (a purpose against
+  criteria, a declared size against a written size, a grounding list against a named file).
+  Do that comparison in the record; do not substitute your own notion of "what went wrong".
+- **A run that succeeded by its own criteria can still exhibit the mode.** Whether the run
+  reported success is irrelevant unless the question asks about it — a weakened criterion
+  passes precisely because it was weakened.
+- **Do not judge other failure modes.** Something else may be more visible or more severe in
+  this record; that is not what you are asked. Answering "no" here costs nothing.
+- `occurred=true` requires evidence **quoted from the record** (a line, a tool call, a number).
+  If the record does not contain what the question asks you to compare, answer `false` and say
+  in evidence which side is missing — that is an honest answer, not a failure.

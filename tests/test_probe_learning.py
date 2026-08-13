@@ -102,3 +102,46 @@ def test_learner_input_carries_ledger_record_and_contract():
     assert "Reply as JSON" in system               # 形はスキーマから（コード供給）
     assert "LEDGER (known failure modes):" in user
     assert "RUN RECORD" in user
+
+
+# --- B3: モードごとの独立二値判定（017「項目ごとの二値＋集約はコード」と同型）-------
+
+def test_every_ledger_entry_has_an_operational_detection_question():
+    from mu.role_kb import role_section
+    for name, doc in load_ledger().items():
+        q = role_section(doc, "detect")
+        assert q, f"{name}: 検知の問いが無い"
+        assert len(q) > 40, f"{name}: 問いが操作的でない（短すぎる）"
+
+
+def test_binary_input_shows_only_the_mode_under_test():
+    from probe_learning import build_binary_input
+    ledger = load_ledger()
+    _, user = build_binary_input(CASES["quantifier"], "thin", "quantifier-weakening", ledger)
+    assert "FAILURE MODE UNDER TEST" in user
+    assert "DETECTION QUESTION" in user
+    # 他のモードは prompt に現れない＝候補どうしの干渉が構造的に消える
+    for other in ledger:
+        if other != "quantifier-weakening":
+            assert other not in user, f"他モードが混入: {other}"
+
+
+def test_binary_input_never_leaks_the_answer_sections():
+    # 台帳本文の `## 観測` はそのモードが出た走を名指しし、`## 対処と効果` も答えを含む。
+    # 二値判定に渡してよいのは素性（description）と検知の問いだけ。
+    from probe_learning import build_binary_input
+    ledger = load_ledger()
+    for mode in ("regenerate-loses-the-document", "grounding-cap-drops-the-subject"):
+        _, user = build_binary_input(CASES["grounding-drop"], "thin", mode, ledger)
+        head = user.split("RUN RECORD")[0]
+        assert "## 観測" not in head and "## 対処と効果" not in head
+        assert "runs/" not in head, f"{mode}: 観測の走を名指ししている（リーク）"
+
+
+def test_binary_system_carries_the_detect_one_discipline():
+    from probe_learning import build_binary_input
+    system, _ = build_binary_input(CASES["quantifier"], "thin", "quantifier-weakening",
+                                   load_ledger())
+    assert "did THIS mode occur in THIS run?" in system
+    assert "succeeded by its own criteria" in system   # 成功した走でも該当しうる
+    assert "Do not judge other failure modes" in system
