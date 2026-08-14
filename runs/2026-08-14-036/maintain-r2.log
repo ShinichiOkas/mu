@@ -1,0 +1,305 @@
+[roles] パッケージ自動選択（MU_ROLES_DIR=auto）——カタログ:
+  - book（draft）: 書籍執筆向け（構成→執筆→編集指摘→改稿）。writer と editor の2役——editor は指摘のみで本文を書き直せない（合意027）。挿絵役は画像生成ツール整備後
+  - coding（verified）: コーディング向け（設計→実装→テスト→QA）。architect / implementer をドメイン役割に持つ
+  - research（draft）: 調査レポート向け（調査→報告書→QA）。researcher をドメイン役割に持つ。pdm/qa は 020 の失敗（量化子弱化）への対策を含む調整版
+  - rnd（draft）: 研究開発向け（仮説の操作化→実験設計→実施→評価→報告）。scientist（設計・評価）と experimenter（実施・記録）の2役——実施者が設計を曲げない継ぎ目（合意02…
+  - secretary（draft）: 秘書業務向け（依頼把握→照会→調整→実行→報告）。secretary 1役が一気通貫で担う設計（合意027）。予定表等のサービスはツール環境に依存
+[skills] 出所: S:\work\develop\mu\skills
+[skills] 装備（宛先 → skill。着るものと同一）:
+  - implementer: checker-must-verify-the-spec, do-not-edit-an-existing-checker, input-files-are-read-only, produce-only-the-named-file, run-the-quality-gate-yourself, self-judge-documents-before-submitting
+  - pjm: declare-task-needs
+probe_hard case=maintain model=gemma4:31b-cloud pool=['gemma4:31b-cloud'] workdir=S:\tmp\mu-036\maintain-r2
+[workspace] tray: .mu-work/<role>/task-N/（needs を写して実行・完了時に発行）
+[parallel] 1 — 逐次（MU_PARALLEL=N で同時実行）
+purpose: taskstore.py に期限切れタスクの機能を足してくれ。(1) overdue_tasks(tasks, today) — 未完了（status='pending'）で due が today より前のタスクを、due の昇順、同じ due なら priority の昇順で返す。due が None のものは含めない。渡されたリストは変更しない。(2) stats(tasks, today=None) の戻り値に 'overdue'（期限切れの件数）を足す。today を渡さないときは 0 とする。既存の関数・定数の名前と引数と振る舞いは1つも変えてはならない。test_taskstore.py は変更禁止で、python test_taskstore.py が OK になること。
+protected: ['test_taskstore.py']  time_budget: 1500s
+  [L5] 構造化出力を生成中… (0.7s, 57 tok)
+  [L5] パッケージを自選: coding :: The purpose requires adding specific functions and modifying existing logic in a Python file (taskstore.py), which falls directly under the …
+   [L4] 入力の実物を PdM に接地:
+   [L4]   - taskstore.py (9169 bytes) — 自己記述（スクリプト冒頭の説明。コマンド・引数はここに書かれた形だけを使うこと）:
+   [L4]       タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。
+   [L4]       
+   [L4]       タスクは dict で表す:
+   [L4]       
+   [L4]           {"id": 1, "title": "見積を送る", "status": "pending", "due": "2026-08-20",
+   [L4]            "tags": ["営業"], "priority": 2, "note": ""}
+   [L4]       
+   [L4]       - status は "pending" / "done" の2値
+   [L4]       - due は "YYYY-MM-DD" の文字列、または None（期限なし）
+   [L4]       - priority は 1（高）〜 5（低）の整数
+   [L4]   - test_taskstore.py (6767 bytes) — 自己記述（スクリプト冒頭の説明。コマンド・引数はここに書かれた形だけを使うこと）:
+  [L5] 構造化出力を生成中… (1.2s, 63 tok)
+  [L5] 充足済みか: False :: The current taskstore.py does not implement the `overdue_tasks` function, and the `stats` function does not include 'overdue' in its return value as requested in the purpose.
+  [L5] 構造化出力を生成中… (12.3s, 873 tok)
+── PdM が定めた仕様（SPEC.md に書き出し済み。直接編集も可）──
+  定義: 期限切れタスク (overdue task) = タスクの status が 'pending' であり、かつ due が None ではなく、かつ due の日付が引数 today (YYYY-MM-DD形式) より前の日付であるタスク
+  定義: due の昇順 = 日付文字列 (YYYY-MM-DD) として辞書順で比較し、古い日付から新しい日付の順に並べること
+  定義: priority の昇順 = 整数値として比較し、数値が小さい（優先度が高い）順に並べること
+  受入基準: taskstore.py に overdue_tasks(tasks, today) 関数が実装されており、未完了で due < today のタスクを due 昇順、priority 昇順で返すこと
+  受入基準: overdue_tasks(tasks, today) が、引数で渡された tasks リストを破壊的に変更（ソートや削除）しないこと
+  受入基準: overdue_tasks(tasks, today) が、due が None のタスクを結果に含めないこと
+  受入基準: taskstore.py の stats(tasks, today=None) 関数の戻り値（dict）に 'overdue' キーが含まれ、期限切れタスクの件数が格納されていること
+  受入基準: stats(tasks, today=None) において、today が指定されない（None の）場合、'overdue' の値が 0 となること
+  受入基準: 既存の関数名、引数、および振る舞いが変更されていないこと（test_taskstore.py の既存テストをパスすること）
+    検査: python test_taskstore.py
+  仕様: taskstore.py に以下の機能を実装してください。既存の関数名、引数、振る舞いの変更は一切禁止します。  1. 新規関数 `overdue_tasks(tasks, today)` の実装 - 抽出条件: `status == 'pending'` かつ `due` が `None` でなく、かつ `due < today` (文字列比較) であるタスクを抽出する。 - ソート順: 第一キ…
+   [L4] プロセスを編成中（PjM: 役割・人選・順序）… (3.7s, 540 tok)
+── PjM が編んだプロセス（PROCESS.md に書き出し済み。直接編集も可）──
+  1. [ ] (architect) design.md: Analyze the current implementation of taskstore.py and design the implementation…
+  2. [ ] (implementer) taskstore.py: Implement the overdue_tasks function and update the stats function in taskstore.…
+  3. [ ] (qa @gemma4:31b-cloud) verdict.md: Verify the implementation against all SPEC criteria. Specifically check: 1. over…
+     [L3] Plan/再計画を作成中… (1.6s, 204 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] design.md: Analyze SPEC.md and taskstore.py to define the logic for overdue_tasks (filter: …
+        [L1] 思考中（次の行動を決定）… (0.6s, 27 tok)
+          [tool] list_dir(S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1, limit=100, offset=)
+          [tool]   -> file SPEC.md (3470 bytes) file taskstore.py (9169 bytes)
+        [L1] 思考中（次の行動を決定）… (0.5s, 34 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1\SPEC.md, limit=1000, offset=)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） taskstore.py に期限切れタスクの機能を足してくれ。(1) overd…
+        [L1] 思考中（次の行動を決定）… (0.5s, 35 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1\taskstor…, limit=1000, offset=)
+          [tool]   -> """タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。  タスクは dict で表す:      {"id": 1, "title": "見積を送る", "status": "pending", "due"…
+        [L1] 思考中（次の行動を決定）… (0.6s, 33 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1\taskstor…, limit=1000, offset=145)
+          [tool]   ->     """title と note を対象に部分一致で探す（大文字小文字は区別しない）。"""     needle = str(keyword).lower()     return [t for t in tasks        …
+        [L1] 思考中（次の行動を決定）… (9.1s, 636 tok)
+          [tool] write_file(S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1\design.m…, content=# Design Document: Overdue Tasks Implementation  ## 1. Struc…, mode=overwrite)
+          [tool]   -> wrote 2278 bytes to S:\tmp\mu-036\maintain-r2\.mu-work\architect\task-1\design.md
+        [L1] 思考中（次の行動を決定）… (0.6s, 24 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\architect\task-1"; Get-C…)
+          [tool]   -> exit=0 # Design Document: Overdue Tasks Implementation  ## 1. Structure  ### New Function: `overdue_tasks(tasks, today)`…
+        [L1] 思考中（次の行動を決定）… (1.8s, 227 tok)
+       [L2] Reflect（合否）判定中… (0.9s, 85 tok)
+       [L2]   -> passed=True :: The design.md file contains all required specifications: filter conditions (status='pending', due is not None, due < tod…
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\architect\task-1"; Get-C…)
+          [tool]   -> exit=0 # Design Document: Overdue Tasks Implementation  ## 1. Structure  ### New Function: `overdue_tasks(tasks, today)`…
+     [L3] [x] UNIT DONE  : design.md
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [>] 発行: design.md
+   [L4] [x] TASK DONE  : (architect) design.md
+     [L3] Plan/再計画を作成中… (1.2s, 154 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] taskstore.py: Implement the overdue_tasks function and update the stats function in taskstore.…
+        [L1] 思考中（次の行動を決定）… (1.0s, 27 tok)
+          [tool] list_dir(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2, limit=100, offset=)
+          [tool]   -> file design.md (2278 bytes) file SPEC.md (3470 bytes) file taskstore.py (9169 bytes)
+        [L1] 思考中（次の行動を決定）… (0.8s, 34 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\design…, limit=1000, offset=)
+          [tool]   -> # Design Document: Overdue Tasks Implementation  ## 1. Structure  ### New Function: `overdue_tasks(tasks, today)` - **Re…
+        [L1] 思考中（次の行動を決定）… (0.5s, 36 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskst…, limit=10000, offset=)
+          [tool]   -> """タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。  タスクは dict で表す:      {"id": 1, "title": "見積を送る", "status": "pending", "due"…
+        [L1] 思考中（次の行動を決定）… (0.5s, 37 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskst…, limit=1000, offset=145)
+          [tool]   ->     """title と note を対象に部分一致で探す（大文字小文字は区別しない）。"""     needle = str(keyword).lower()     return [t for t in tasks        …
+        [L1] 思考中（次の行動を決定）… (10.3s, 2799 tok)
+          [tool] write_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskst…, content="""タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。  タスクは dict で表す:…, mode=overwrite)
+          [tool]   -> wrote 9649 bytes to S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskstore.py
+        [L1] 思考中（次の行動を決定）… (0.6s, 21 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\implementer\task-2"; pyt…)
+          [tool]   -> exit=1 s:\work\develop\mu\.venv\Scripts\python.exe: can't open file 'S:\\tmp\\mu-036\\maintain-r2\\.mu-work\\implementer…
+        [L1] 思考中（次の行動を決定）… (0.7s, 40 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\implementer\task-2"; pyt…)
+          [tool]   -> exit=0 .................................. ---------------------------------------------------------------------- Ran 34 …
+        [L1] 思考中（次の行動を決定）… (1.1s, 199 tok)
+       [L2] Reflect（合否）判定中… (0.7s, 78 tok)
+       [L2]   -> passed=True :: The agent implemented the required functions, updated taskstore.py, and successfully ran the verification command 'pytho…
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\implementer\task-2"; pyt…)
+          [tool]   -> exit=1 s:\work\develop\mu\.venv\Scripts\python.exe: can't open file 'S:\\tmp\\mu-036\\maintain-r2\\.mu-work\\implementer…
+     [L3] [!] UNIT CHECK NG: taskstore.py -> command failed: exit=1 s:\work\develop\mu\.venv\Scripts\python.exe: can't open file 'S:\\tmp\\mu-036\\maintain-r2\\.mu-work\\implementer\\ta…
+     [L3] [!] UNIT FAILED: taskstore.py -> criterion check failed: command failed: exit=1 s:\work\develop\mu\.venv\Scripts\python.exe: can't open file 'S:\\tmp\\mu…
+     [L3] Plan/再計画を作成中… (0.9s, 168 tok)
+     [L3] Plan（再計画）を自律承認:
+     [L3]   1. [ ] taskstore.py: Implement the overdue_tasks function and update the stats function in taskstore.…
+        [L1] 思考中（次の行動を決定）… (0.6s, 27 tok)
+          [tool] list_dir(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2, limit=100, offset=)
+          [tool]   -> file design.md (2278 bytes) file SPEC.md (3470 bytes) file taskstore.py (9649 bytes)
+        [L1] 思考中（次の行動を決定）… (0.5s, 34 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\SPEC.m…, limit=1000, offset=)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） taskstore.py に期限切れタスクの機能を足してくれ。(1) overd…
+        [L1] 思考中（次の行動を決定）… (0.6s, 34 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\design…, limit=1000, offset=)
+          [tool]   -> # Design Document: Overdue Tasks Implementation  ## 1. Structure  ### New Function: `overdue_tasks(tasks, today)` - **Re…
+        [L1] 思考中（次の行動を決定）… (0.5s, 32 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskst…, limit=10000, offset=)
+          [tool]   -> """タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。  タスクは dict で表す:      {"id": 1, "title": "見積を送る", "status": "pending", "due"…
+        [L1] 思考中（次の行動を決定）… (1.2s, 38 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\implementer\task-2\taskst…, limit=10000, offset=145)
+          [tool]   ->     """title と note を対象に部分一致で探す（大文字小文字は区別しない）。"""     needle = str(keyword).lower()     return [t for t in tasks        …
+        [L1] 思考中（次の行動を決定）… (0.6s, 40 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\implementer\task-2"; pyt…)
+          [tool]   -> exit=0 .................................. ---------------------------------------------------------------------- Ran 34 …
+        [L1] 思考中（次の行動を決定）… (1.3s, 221 tok)
+       [L2] Reflect（合否）判定中… (1.3s, 103 tok)
+       [L2]   -> passed=True :: The agent implemented overdue_tasks and updated stats in taskstore.py. The implementation follows the constraints (overd…
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\implementer\task-2"; pyt…)
+          [tool]   -> exit=0 .................................. ---------------------------------------------------------------------- Ran 34 …
+     [L3] [x] UNIT DONE  : taskstore.py
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [>] 発行: taskstore.py
+   [L4] [x] TASK DONE  : (implementer) taskstore.py
+   [L4] [-] ツール非配布: (qa) edit_file
+   [L4] [-] ツール非配布: (qa) web_search
+   [L4] [-] ツール非配布: (qa) fetch_url
+     [L3] Plan/再計画を作成中… (1.9s, 251 tok)
+     [L3] Planを自律承認:
+     [L3]   1. [ ] verdict.md: Execute existing tests in test_taskstore.py and perform manual verification of t…
+        [L1] 思考中（次の行動を決定）… (0.8s, 27 tok)
+          [tool] list_dir(S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3, limit=100, offset=)
+          [tool]   -> file design.md (2278 bytes) file SPEC.md (3470 bytes) file taskstore.py (9649 bytes) file test_taskstore.py (6767 bytes)
+        [L1] 思考中（次の行動を決定）… (0.7s, 33 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3\SPEC.md, limit=100, offset=)
+          [tool]   -> # SPEC — L5（PdM）が目的から定めた仕様 （L5 の生成物。定義・受入基準は仮定を含む。直接編集して直してよい）  ## 目的（人間の入力・原文） taskstore.py に期限切れタスクの機能を足してくれ。(1) overd…
+        [L1] 思考中（次の行動を決定）… (0.6s, 25 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python test_…)
+          [tool]   -> exit=0 .................................. ---------------------------------------------------------------------- Ran 34 …
+        [L1] 思考中（次の行動を決定）… (0.8s, 34 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3\taskstore.py, limit=100, offset=)
+          [tool]   -> """タスク管理ストア。JSON ファイルを台帳として、タスクの登録・更新・集計を行う。  タスクは dict で表す:      {"id": 1, "title": "見積を送る", "status": "pending", "due"…
+        [L1] 思考中（次の行動を決定）… (0.7s, 32 tok)
+          [tool] read_file(S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3\taskstore.py, limit=100, offset=100)
+          [tool]   ->     return task   def delete_task(tasks, task_id):     """タスクを1件消す。消したタスクを返す。"""     task = get_task(tasks, task_id)    …
+        [L1] 思考中（次の行動を決定）… (1.8s, 196 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python -c "f…)
+          [tool]   -> exit=0 [2, 1, 3] 
+        [L1] 思考中（次の行動を決定）… (1.2s, 105 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python -c "f…)
+          [tool]   -> exit=0 Passed 
+        [L1] 思考中（次の行動を決定）… (1.0s, 82 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python -c "f…)
+          [tool]   -> exit=0 Passed 
+        [L1] 思考中（次の行動を決定）… (1.0s, 85 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python -c "f…)
+          [tool]   -> exit=0 1 
+        [L1] 思考中（次の行動を決定）… (1.7s, 77 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; python -c "f…)
+          [tool]   -> exit=0 0 
+       [L2] Reflect（合否）判定中… (1.0s, 117 tok)
+       [L2]   -> passed=False :: The agent performed some manual checks using execute_command but failed to create the required 'verdict.md' file. The go…
+       [L2]   next: Create the 'verdict.md' file following the strict format (ITEM <number>: PASS|FAIL|UNCERTAIN - <evidence>) for all 6 cri…
+        [L1] 思考中（次の行動を決定）… (6.3s, 405 tok)
+          [tool] write_file(S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3\verdict.md, content=ITEM 1: PASS — overdue_tasks(tasks, today) is implemented. V…, mode=overwrite)
+          [tool]   -> wrote 1083 bytes to S:\tmp\mu-036\maintain-r2\.mu-work\qa\task-3\verdict.md
+        [L1] 思考中（次の行動を決定）… (0.6s, 27 tok)
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; Get-Content …)
+          [tool]   -> exit=0 ITEM 1: PASS — overdue_tasks(tasks, today) is implemented. Verified via `python -c` that it filters pending tasks…
+        [L1] 思考中（次の行動を決定）… (1.2s, 51 tok)
+       [L2] Reflect（合否）判定中… (1.1s, 88 tok)
+       [L2]   -> passed=True :: The agent executed the existing tests, performed manual verification of the 6 criteria via python one-liners, and wrote …
+          [tool] execute_command(Set-Location -LiteralPath ".mu-work\qa\task-3"; Get-Content …)
+          [tool]   -> exit=0 ITEM 1: PASS — overdue_tasks(tasks, today) is implemented. Verified via `python -c` that it filters pending tasks…
+     [L3] [x] UNIT DONE  : verdict.md
+     [L3] [=] OVERALL: passed=True :: all units done (mechanical)
+   [L4] [>] 発行: verdict.md
+   [L4] [x] TASK DONE  : (qa) verdict.md
+          [tool] execute_command(python test_taskstore.py)
+          [tool]   -> exit=0 .................................. ---------------------------------------------------------------------- Ran 34 …
+   [L4] 検査[未検査] taskstore.py に overdue_tasks(tasks, today) 関数が実装されており、未完了で due < today のタスクを due… :: 機械的な検査コマンドが無い（judge / QA の判断に委ねられている）
+   [L4] 検査[未検査] overdue_tasks(tasks, today) が、引数で渡された tasks リストを破壊的に変更（ソートや削除）しないこと :: 機械的な検査コマンドが無い（judge / QA の判断に委ねられている）
+   [L4] 検査[未検査] overdue_tasks(tasks, today) が、due が None のタスクを結果に含めないこと :: 機械的な検査コマンドが無い（judge / QA の判断に委ねられている）
+   [L4] 検査[未検査] taskstore.py の stats(tasks, today=None) 関数の戻り値（dict）に 'overdue' キーが含まれ、期限切れタスクの件… :: 機械的な検査コマンドが無い（judge / QA の判断に委ねられている）
+   [L4] 検査[未検査] stats(tasks, today=None) において、today が指定されない（None の）場合、'overdue' の値が 0 となること :: 機械的な検査コマンドが無い（judge / QA の判断に委ねられている）
+   [L4] 検査[ok] 既存の関数名、引数、および振る舞いが変更されていないこと（test_taskstore.py の既存テストをパスすること） :: exit=0 .................................. ----------------------------------------------------------…
+   [L4] [!] 機械的に検査されていない受入基準が 5 件ある（judge / QA の判断のみ）
+   [L4]   [PASS] #1 taskstore.py に overdue_tasks(tasks, today) 関数が実装されており、未完了で d… :: overdue_tasks(tasks, today) is implemented. Verified via `python -c` that it fil…
+   [L4]   [PASS] #2 overdue_tasks(tasks, today) が、引数で渡された tasks リストを破壊的に変更（ソートや削… :: Verified via `python -c` that calling overdue_tasks does not modify the original…
+   [L4]   [PASS] #3 overdue_tasks(tasks, today) が、due が None のタスクを結果に含めないこと :: Verified via `python -c` that tasks with `due: None` are not included in the res…
+   [L4]   [PASS] #4 taskstore.py の stats(tasks, today=None) 関数の戻り値（dict）に 'overd… :: stats(tasks, today=None) return value contains 'overdue' key. Verified via `pyth…
+   [L4]   [PASS] #5 stats(tasks, today=None) において、today が指定されない（None の）場合、'overd… :: Verified via `python -c` that `stats(tasks, today=None)` returns `overdue: 0`.
+   [L4]   [PASS] #6 既存の関数名、引数、および振る舞いが変更されていないこと（test_taskstore.py の既存テストをパスすること… :: Existing functionality is preserved. `python test_taskstore.py` executed success…
+   [L4] QA 判定（集約はコード）: yes :: 受入基準 6 項目すべて PASS
+   [L4]   gap: None
+=== RESULT ===
+{
+  "achieved": true,
+  "escalated": false,
+  "escalation_reason": "",
+  "assessment": {
+    "achieved": "yes",
+    "reason": "受入基準 6 項目すべて PASS",
+    "gap": "None",
+    "items": [
+      {
+        "n": 1,
+        "text": "taskstore.py に overdue_tasks(tasks, today) 関数が実装されており、未完了で due < today のタスクを due 昇順、priority 昇順で返すこと",
+        "verdict": "pass",
+        "evidence": "overdue_tasks(tasks, today) is implemented. Verified via `python -c` that it filters pending tasks with due < today and sorts by due ASC, then priority ASC: input `[{id:1, due:'2023-01-01', priority:2}, {id:2, due:'2023-01-01', priority:1}, {id:3, due:'2023-01-02', priority:1}, {id:4, status:'done', due:'2023-01-01'}]` with today='2023-01-03' returned `[2, 1, 3]`."
+      },
+      {
+        "n": 2,
+        "text": "overdue_tasks(tasks, today) が、引数で渡された tasks リストを破壊的に変更（ソートや削除）しないこと",
+        "verdict": "pass",
+        "evidence": "Verified via `python -c` that calling overdue_tasks does not modify the original tasks list: `tasks == tasks_copy` was True."
+      },
+      {
+        "n": 3,
+        "text": "overdue_tasks(tasks, today) が、due が None のタスクを結果に含めないこと",
+        "verdict": "pass",
+        "evidence": "Verified via `python -c` that tasks with `due: None` are not included in the result of overdue_tasks."
+      },
+      {
+        "n": 4,
+        "text": "taskstore.py の stats(tasks, today=None) 関数の戻り値（dict）に 'overdue' キーが含まれ、期限切れタスクの件数が格納されていること",
+        "verdict": "pass",
+        "evidence": "stats(tasks, today=None) return value contains 'overdue' key. Verified via `python -c` that `stats(tasks, '2023-01-02')` returned `overdue: 1` for a pending task due on '2023-01-01'."
+      },
+      {
+        "n": 5,
+        "text": "stats(tasks, today=None) において、today が指定されない（None の）場合、'overdue' の値が 0 となること",
+        "verdict": "pass",
+        "evidence": "Verified via `python -c` that `stats(tasks, today=None)` returns `overdue: 0`."
+      },
+      {
+        "n": 6,
+        "text": "既存の関数名、引数、および振る舞いが変更されていないこと（test_taskstore.py の既存テストをパスすること）",
+        "verdict": "pass",
+        "evidence": "Existing functionality is preserved. `python test_taskstore.py` executed successfully (Ran 34 tests, OK)."
+      }
+    ]
+  },
+  "rounds": 1,
+  "l4_rounds": 1,
+  "no_action": false
+}
+  [x] (architect) design.md
+  [x] (implementer) taskstore.py
+  [x] (qa @gemma4:31b-cloud) verdict.md
+elapsed: 91s
+protection violations: none
+files in workdir:
+  .mu-work\architect\task-1\design.md (2278 bytes)
+  .mu-work\architect\task-1\SPEC.md (3470 bytes)
+  .mu-work\architect\task-1\taskstore.py (9169 bytes)
+  .mu-work\implementer\task-2\design.md (2278 bytes)
+  .mu-work\implementer\task-2\SPEC.md (3470 bytes)
+  .mu-work\implementer\task-2\taskstore.py (9649 bytes)
+  .mu-work\qa\task-3\design.md (2278 bytes)
+  .mu-work\qa\task-3\SPEC.md (3470 bytes)
+  .mu-work\qa\task-3\taskstore.py (9649 bytes)
+  .mu-work\qa\task-3\test_taskstore.py (6767 bytes)
+  .mu-work\qa\task-3\verdict.md (1083 bytes)
+  design.md (2278 bytes)
+  PROCESS.md (3006 bytes)
+  SPEC.md (3470 bytes)
+  taskstore.py (9649 bytes)
+  test_taskstore.py (6767 bytes)
+  verdict.md (1083 bytes)
+=== AUDIT ===  （probe の持ち物。走行中の mu には渡していない）
+  AUDIT ok 与えたテストが全部通る :: OK
+  AUDIT ok overdue_tasks が呼べる :: = True
+  AUDIT ok 期限切れだけを返す（完了済み・期限なし・当日・未来を除く） :: = [1, 6, 7]
+  AUDIT ok due 昇順・同一 due は priority 昇順で並ぶ :: = [7, 1, 6]
+  AUDIT ok today より前だけ（当日は含めない） :: = [7]
+  AUDIT ok 期限切れが無ければ空を返す :: = []
+  AUDIT ok 元のリストを変更しない :: = [1, 2, 3, 4, 5, 6, 7]
+  AUDIT ok stats(tasks, today) の overdue が3件 :: = 3
+  AUDIT ok stats(tasks) は today 無しでも呼べて overdue=0 :: = 0
+  AUDIT ok 公開関数が1つも消えていない :: = []
+  AUDIT ok 公開定数・例外が1つも消えていない :: = []
+  AUDIT ok 既存関数の引数名が変わっていない :: = []
+  AUDIT ok stats の既存の欄が保たれている :: = [7, 6, 1, 1]
+  AUDIT ok import_csv/export_csv の往復が保たれている :: = [{'id': 1, 'title': '期限切れ・高優先', 'status': 'pending', 'due': '2026-08-01', 'tags': ['a'], 'priority': 2, 'note': ''}, {'id': 2, 'title': '期限切れだが完了済み', 'status': 'done', 'due': '2026-07-01', 'tags': ['a'], 'priority': 1, 'note': ''}, {'id': 3, 'title': '期限なし', 'status': 'pending', 'due': None, 'tags': [], 'priority': 1, 'note': ''}, {'id': 4, 'title': '当日（期限切れではない）', 'status': 'pending', 'due': '2026-08-14', 'tags': [], 'priority': 3, 'note': ''}, {'id': 5, 'title': '未来', 'status': 'pending', 'due': '2026-09-01', 'tags': [], 'priority': 1, 'note': ''}, {'id': 6, 'title': '期限切れ・同日で優先度低', 'status': 'pending', 'due': '2026-08-01', 'tags': [], 'priority': 4, 'note': ''}, {'id': 7, 'title': '最も古い期限切れ', 'status': 'pending', 'due': '2026-07-15', 'tags': [], 'priority': 5, 'note': ''}]
+  AUDIT ok format_task の書式が保たれている :: = [ ] #1   P2 2026-08-01 期限切れ・高優先 (a)
+  AUDIT ok sort_tasks(key='due') が期限なしを末尾に置く :: = [2, 7, 1, 6, 4, 5, 3]
+  判定: PASS

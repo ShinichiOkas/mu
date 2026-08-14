@@ -128,3 +128,76 @@ def test_outlook_no_args_still_shows_usage_without_error(outlook):
     r = outlook()
     assert r.returncode == 0
     assert "book" in r.stdout
+
+
+# --- 036 拡張: 高難易度コーディング3題の検算 -------------------------------------
+#
+# 隠し検査（probe の持ち物）は「未着手なら NG・参照解なら ok」に割れなければ物差しにならない。
+# ここで固定するのは**割れ方**である——課題が既に解けている（NG が出ない）ことも、
+# 仕様が矛盾している（参照解でも ok にならない）ことも、実走を1本無駄にする。
+
+import probe_hard as _ph                                     # noqa: E402
+
+
+@pytest.fixture
+def case_workdir(tmp_path):
+    def setup(case):
+        for rel, content in _ph.CASES[case]["files"].items():
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        return tmp_path
+    return setup
+
+
+def _audit(case, work):
+    lines = _ph.audit_case(case, work)
+    return {ln.split(" ", 2)[2].split(" :: ")[0]: ln.startswith("AUDIT ok") for ln in lines}
+
+
+def test_maintain_given_tests_pass_before_the_work(case_workdir):
+    # 与えたテストが最初から通ることは前提（通らなければ課題が別物になる）
+    assert _audit("maintain", case_workdir("maintain"))["与えたテストが全部通る"]
+
+
+def test_maintain_new_feature_is_absent_before_the_work(case_workdir):
+    result = _audit("maintain", case_workdir("maintain"))
+    assert not result["overdue_tasks が呼べる"]
+    assert not result["stats(tasks, today) の overdue が3件"]
+
+
+def test_maintain_api_is_intact_before_the_work(case_workdir):
+    result = _audit("maintain", case_workdir("maintain"))
+    assert result["公開関数が1つも消えていない"]
+    assert result["既存関数の引数名が変わっていない"]
+    assert result["format_task の書式が保たれている"]
+
+
+def test_compat_callers_match_the_golden_before_the_work(case_workdir):
+    # 基準（元の実装の出力）は毎回その場で作る。焼き付けた期待値との転記ずれを持たない
+    result = _audit("compat", case_workdir("compat"))
+    assert all(result[f"{name} の出力が変わっていない"] for name in _ph.COMPAT_CALLERS)
+
+
+def test_compat_options_are_absent_before_the_work(case_workdir):
+    result = _audit("compat", case_workdir("compat"))
+    assert not result["thousands=True で3桁区切りになる"]
+    assert not result["min_width で全列がその幅以上になる"]
+
+
+def test_repro_bug_actually_reproduces(case_workdir):
+    # 「一部の顧客だけ 0」が本当に起きること。起きなければ課題が成立しない
+    work = case_workdir("repro")
+    subprocess.run([sys.executable, "csvjoin.py"], cwd=work, capture_output=True,
+                   text=True, timeout=60, encoding="utf-8")
+    report = (work / "report.csv").read_text(encoding="utf-8")
+    zero_rows = [ln for ln in report.splitlines()[1:] if ln.split(",")[3] == "0"]
+    # 7（山本印刷）と 12（山田興業）＝0埋め id の被害者、5（伊藤事務機）＝正当な 0
+    assert sorted(ln.split(",")[0] for ln in zero_rows) == ["12", "5", "7"]
+
+
+def test_repro_hidden_check_fails_before_the_work(case_workdir):
+    result = _audit("repro", case_workdir("repro"))
+    assert not result["元データで再実行しても正しい"]
+    assert not result["見せていないデータでも正しい（0埋め・空白入りの id を取りこぼさない）"]
+    assert result["顧客表に無い注文（id=99）は今も除外される"]   # 壊してはいけない既存の振る舞い

@@ -10,6 +10,15 @@ case: deadstock | jsonparse | contradiction | sitegen | bugfix | perf | schedule
       | f1 | sales（005 由来の原点2題材。probe_l4 から統合——023）
       | rnd | book（027 拡張・非コーディングパッケージの実証実験用。MU_ROLES_DIR で
         roles/rnd・roles/book を指して走らせる想定——課題自体はパッケージ非依存）
+      | maintain | compat | repro（036 拡張・高難易度コーディング3題。いずれも「作る」でなく
+        「既にあるものを保つ」型で、走行後に **probe の隠し検査**で合否を機械判定する）
+
+036 の3題（軸は師匠の指示）:
+  maintain — 既存コードの保守。19の公開関数を持つ taskstore.py に機能を1つ足し、
+             既存 API を1つも失わない。作り直せば必ず落ちる（035 の弱点の coding 版）
+  compat   — 後方互換を保った拡張。呼び出し元3本の出力が1バイトも変わってはならない
+  repro    — 再現から始まるバグ修正。失敗するテストは与えない。症状だけから再現手順を
+             自分で作り、原因を特定して直す（見せていないデータでも正しいことを隠し検査で見る）
 
 schedule / action（021 拡張・師匠の指示でバリエーションを拡大）:
   schedule — Outlook 風モック（probe_fixtures/outlook.py）越しの複数人予定調整。
@@ -22,7 +31,10 @@ schedule / action（021 拡張・師匠の指示でバリエーションを拡�
 
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -357,7 +369,131 @@ CASES = {
         "files": {"sales.csv": _UNPROFITABLE_SALES},
         "protect": ["sales.csv"],
     },
+    # --- 036 拡張: 高難易度コーディング3題（師匠の指示。軸＝保守・後方互換・再現） ---
+    # いずれも「作る」ではなく「既にあるものを保つ」型。035 で継続責務の側から見つけた
+    # 「更新は入力＝出力の形をしている」という弱点を、coding ドメインで再現できるかを測る。
+    # 合否は probe 側の隠し検査で決める（自己申告の achieved は 035 で破壊と両立した）。
+    "maintain": {
+        "purpose": (
+            "taskstore.py に期限切れタスクの機能を足してくれ。"
+            "(1) overdue_tasks(tasks, today) — 未完了（status='pending'）で due が today より"
+            "前のタスクを、due の昇順、同じ due なら priority の昇順で返す。due が None のものは"
+            "含めない。渡されたリストは変更しない。"
+            "(2) stats(tasks, today=None) の戻り値に 'overdue'（期限切れの件数）を足す。"
+            "today を渡さないときは 0 とする。"
+            "既存の関数・定数の名前と引数と振る舞いは1つも変えてはならない。"
+            "test_taskstore.py は変更禁止で、python test_taskstore.py が OK になること。"
+        ),
+        "files": {
+            "taskstore.py": _fixture("maintain_taskstore.py"),
+            "test_taskstore.py": _fixture("maintain_tests.py"),
+        },
+        "protect": ["test_taskstore.py"],
+    },
+    "compat": {
+        "purpose": (
+            "report.py の render を render(rows, title, min_width=None, thousands=False) に"
+            "拡張してくれ（既定値もこのとおりにすること）。"
+            "min_width=N は各列の幅を最低 N 文字にする（自然幅がそれ以上ならそのまま。"
+            "None は指定なしで従来どおり）。"
+            "thousands=True は数値のセルと合計を3桁区切りで表示する。"
+            "既存の呼び出し元 daily.py / weekly.py / adhoc.py は変更禁止で、"
+            "これらの出力は1バイトも変わってはならない（python daily.py などで確認できる）。"
+            "render(rows, title) という位置引数2つの呼び方も維持すること。"
+        ),
+        "files": {
+            "report.py": _fixture("compat_report.py"),
+            "daily.py": _fixture("compat_daily.py"),
+            "weekly.py": _fixture("compat_weekly.py"),
+            "adhoc.py": _fixture("compat_adhoc.py"),
+        },
+        "protect": ["daily.py", "weekly.py", "adhoc.py"],
+    },
+    "repro": {
+        "purpose": (
+            "csvjoin.py が作る report.csv で、一部の顧客だけ合計金額が 0 になってしまう。"
+            "原因を突き止めて csvjoin.py を直してくれ。"
+            "orders.csv と customers.csv は変更禁止（データは正であり、直すのは実装の側）。"
+            "python csvjoin.py で report.csv を作り直し、'CSVJOIN OK <行数>' が出ること。"
+            "注文が1件も無い顧客の合計が 0 なのは正しい姿なので、そこは変えないこと。"
+            "再現手順・原因・直した内容を repro.md に書くこと。"
+        ),
+        "files": {
+            "csvjoin.py": _fixture("repro_csvjoin.py"),
+            "orders.csv": _fixture("repro_orders.csv"),
+            "customers.csv": _fixture("repro_customers.csv"),
+        },
+        "protect": ["orders.csv", "customers.csv"],
+    },
 }
+
+
+# --- 036: 隠し検査（probe の持ち物。mu には渡さない） -----------------------------
+#
+# 035 の教訓: 自己申告の achieved=True は破壊と両立する。ログを溜めるだけでは合否が
+# 言えないので、**走行後に機械で測る**。検査そのものは走行前の作業ディレクトリには
+# 置かない（見えれば基準を書き写して満たしにいける——それは観測ではなく漏洩である）。
+
+HIDDEN_CHECKS = {"maintain": "maintain_hidden.py", "compat": "compat_hidden.py",
+                 "repro": "repro_hidden.py"}
+COMPAT_CALLERS = {"daily.py": "compat_daily.py", "weekly.py": "compat_weekly.py",
+                  "adhoc.py": "compat_adhoc.py"}
+CHILD_ENV = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+
+
+def _run_child(args, cwd):
+    return subprocess.run(
+        args, cwd=str(cwd), capture_output=True, text=True, timeout=300,
+        encoding="utf-8", errors="replace", env={**os.environ, **CHILD_ENV})
+
+
+def _compat_golden():
+    """**元の実装**で呼び出し元を走らせた出力を作る（後方互換の基準）。
+
+    固定の期待値をファイルに焼かない——fixture が変われば基準も自動で追随するように、
+    毎回その場で作る（[[measurement-instrument-stays-fixed-across-phases]] の転記回避）。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="compat-golden-"))
+    try:
+        (tmp / "report.py").write_text(_fixture("compat_report.py"), encoding="utf-8")
+        out = {}
+        for name, src in COMPAT_CALLERS.items():
+            (tmp / name).write_text(_fixture(src), encoding="utf-8")
+        for name in COMPAT_CALLERS:
+            out[name] = _run_child([sys.executable, name], tmp).stdout
+        return out
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def audit_case(case, workdir):
+    """走行後に機械で測る。`AUDIT <ok|NG> <claim> :: <detail>` の行を返す。"""
+    lines = []
+    if case == "maintain":
+        proc = _run_child([sys.executable, "test_taskstore.py"], workdir)
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-1:] or [""]
+        lines.append(f"AUDIT {'ok' if proc.returncode == 0 else 'NG'} "
+                     f"与えたテストが全部通る :: {tail[0][:160]}")
+    if case == "compat":
+        golden = _compat_golden()
+        for name in COMPAT_CALLERS:
+            proc = _run_child([sys.executable, name], workdir)
+            same = proc.stdout == golden[name]
+            detail = "出力が完全に一致" if same else (
+                f"差分あり（元 {len(golden[name])}字 / 現 {len(proc.stdout)}字）"
+                f"{' stderr=' + proc.stderr.strip()[:80] if proc.stderr.strip() else ''}")
+            lines.append(f"AUDIT {'ok' if same else 'NG'} {name} の出力が変わっていない :: {detail}")
+    hidden = HIDDEN_CHECKS.get(case)
+    if hidden:
+        dst = Path(workdir) / f"_hidden_{case}.py"
+        dst.write_text(_fixture(hidden), encoding="utf-8")
+        proc = _run_child([sys.executable, dst.name], workdir)
+        found = [ln for ln in proc.stdout.splitlines() if ln.startswith("AUDIT ")]
+        lines.extend(found)
+        if not found:
+            lines.append(f"AUDIT NG 隠し検査が走らない :: "
+                         f"{(proc.stderr or proc.stdout).strip()[:200]}")
+    return lines
 
 
 def main() -> None:
@@ -448,6 +584,15 @@ def main() -> None:
     for p in sorted(Path(".").rglob("*")):
         if p.is_file() and "__pycache__" not in p.parts:
             print(f"  {p} ({p.stat().st_size} bytes)")
+
+    # 走行後の隠し検査（036）。申告ではなく実物で合否を出す。
+    audit = audit_case(case, Path("."))
+    if audit:
+        ng = [ln for ln in audit if ln.startswith("AUDIT NG")]
+        print("=== AUDIT ===  （probe の持ち物。走行中の mu には渡していない）")
+        for line in audit:
+            print(f"  {line}")
+        print(f"  判定: {'PASS' if not ng else f'FAIL（NG {len(ng)}/{len(audit)}件）'}")
 
 
 if __name__ == "__main__":
