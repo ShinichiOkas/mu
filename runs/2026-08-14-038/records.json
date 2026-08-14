@@ -1,0 +1,313 @@
+[
+  {
+    "round": "R0",
+    "drift": {
+      "added": [],
+      "removed": []
+    },
+    "elapsed": 908,
+    "achieved": true,
+    "escalated": false,
+    "package": "coding",
+    "reason": "",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "analysis.md",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "10件 ['implementer', 'pjm']",
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "10件 ['implementer', 'pjm']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 300,
+      "lines_kept": 187,
+      "rate": 0.623,
+      "chars_before": 22317,
+      "chars_after": 13929
+    },
+    "violations": []
+  },
+  {
+    "round": "R1",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": []
+    },
+    "elapsed": 425,
+    "achieved": true,
+    "escalated": false,
+    "package": "coding",
+    "reason": "",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "sync_plan.md",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 215,
+      "lines_kept": 215,
+      "rate": 1.0,
+      "chars_before": 13929,
+      "chars_after": 14797
+    },
+    "violations": []
+  },
+  {
+    "round": "R2",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 689,
+    "achieved": true,
+    "escalated": false,
+    "package": "coding",
+    "reason": "",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "readme_plan.md",
+      "verdict.md",
+      "verify_readme.ps1",
+      "verify_readme.py"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "retention": {
+      "lines_before": 231,
+      "lines_kept": 0,
+      "rate": 0.0,
+      "chars_before": 14797,
+      "chars_after": 1489
+    },
+    "violations": []
+  }
+]

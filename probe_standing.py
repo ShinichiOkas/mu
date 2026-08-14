@@ -23,8 +23,18 @@ L6 の代役はこのスクリプト——ただし**判断は一切持たない
 **主デリバラブルは R0 / R3 の「何もしない」。** 継続責務の難しさは
 「動くべきときだけ動く」ことであり、過剰行動しない証明が要る。
 
-監査（一致の機械検査）は**この probe の持ち物で、mu には渡さない**——渡せば
-「何を検査すべきか」という最も難しい部分を肩代わりしてしまう。
+監査は**この probe の持ち物で、mu には渡さない**——渡せば「何を検査すべきか」という
+最も難しい部分を肩代わりしてしまう。
+
+監査は**2種類の違反を分けて測る**（v2・2026-08-14）:
+
+  嘘   — README が実装について**偽を述べている**（一致の違反）
+  沈黙 — README がその件に**触れなくなった**（網羅の違反）
+
+v1 ではこの2つを1つの ok/NG に潰しており、5走ぶんを測り直すと **嘘は0件**——
+消えていたのは記述だけだった。しかも v1 の責務文は「一致」しか要求していなかったので、
+**mu は違反していなかった**。責務文（網羅の明文化と停止条件）と監査（2軸）を、
+同じ回に両方直してある。
 
 使い方:
     .\.venv\Scripts\python.exe probe_standing.py <workdir> [model] [rounds]
@@ -34,6 +44,7 @@ L6 の代役はこのスクリプト——ただし**判断は一切持たない
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -71,8 +82,29 @@ REPO = Path(__file__).resolve().parent
 STANDING_DUTY = (
     "この作業ディレクトリのリポジトリについて、README.md を実装と一致させ続けよ。"
     "実装が正であり、README.md の側を実装に合わせる（実装ファイルは変更しない）。"
-    "すでに一致しているなら、何も変更しなくてよい。"
+    "README.md は、実装を構成するファイル・役割・それらの数について漏れなく述べ、"
+    "かつ既に述べている事柄を減らさないこと。"
+    "記述が実装と食い違うなら記述を直し、実装に無いものを述べているなら削る。"
+    "だが、正しい記述を理由なく落としてはならない。"
+    "すでに網羅かつ一致しているなら、何も変更しなくてよい。"
 )
+# **網羅の範囲は「ファイル・役割・数」に限定してある。** 「実装について述べるべきことを
+# すべて」では範囲が無限に開き、誰も充足を宣言できない＝**停止条件が到達不能**になって
+# no-op（北極星の主デリバラブル）が原理的に発火しなくなる。限定してあるから、
+# 基線の監査 0 NG が「停止条件は到達可能である」ことの実測の証拠になる。
+# なお**どのファイル・どの数を検査するかは渡していない**——要求は言うが、検査器は渡さない。
+#
+# v2（2026-08-14・師匠）。v1 は「一致」しか要求していなかった:
+#
+#   「…README.md を実装と一致させ続けよ。…すでに一致しているなら、何も変更しなくてよい。」
+#
+# ところが監査は「実在する ⟺ 言及がある」＝**網羅**を測っていた。5走ぶんの成果物を
+# measure し直すと **嘘は0件・沈黙が3〜5件**で、v1 に照らせば mu は一度も違反していない。
+# 私が「破壊」と呼んでいたのは、**指示に無い要求に対する不履行**だった。
+#
+# v2 で網羅を明文化し、**停止条件も「網羅かつ一致」に揃えた**（師匠の指摘）。
+# 揃えないと「一致だけ満たして止まる」が正解になり、北極星の難所——動くべきときだけ動く
+# ——を測る土台そのものが崩れる。要求と停止条件は同じ集合を指していなければならない。
 
 # クローンに含めるもの／含めないもの。
 #   .pair-agent/ は**この実験の設計書そのもの**が入っているので必ず除外する（実験の汚染）。
@@ -153,38 +185,115 @@ def apply_drift(clone: Path, round_id: str) -> str:
     return json.dumps({"added": added, "removed": removed}, ensure_ascii=False)
 
 
-# --- 監査（一致の機械検査。observer の持ち物——mu には渡さない） ---------------
+# --- 監査（observer の持ち物——mu には渡さない） -------------------------------
+#
+# **2つの違反を分けて測る（合意038）。**
+#
+# 責務の原文が要求しているのは「一致」だけである。分量の保存も網羅も書いていない。
+# ところが旧 audit は「ファイルが実在する ⟺ README が言及している」を1つの ok にまとめており、
+# **黙っただけ**と**嘘をついた**を同じ NG に潰していた。037 R1 の成果物（10,018字）を
+# 調べると、偽の主張はゼロで、消えたのは記述だった——**指示に照らせば違反ではない**。
+# 私はそれを「破壊」と報告していた。物差しが指示より厳しかったのである。
+#
+#   truth   — README が実装について**偽を述べている**か（None＝その件について何も述べていない）
+#   covered — README がその件に**まだ触れている**か
+#   ok      — 旧来の判定（truth 違反でも covered 欠落でも NG）。前後比較のために残す
+
+def classify(readme: str, facts: dict) -> list:
+    """README の主張を、実装の事実（facts）と突き合わせて2軸で分類する。
+
+    facts: {"skills": 件数, "targets": [宛先...], "probe_research": bool,
+            "probe_hard": bool, "packages": 件数}
+
+    facts とテキストだけに依存させてある——過去の成果物（クローンはもう無い）にも
+    同じ物差しを当てられるようにするため（[[measurement-instrument-stays-fixed-across-phases]]）。
+    """
+    lines = readme.splitlines()
+    # skill の件数と宛先は1つの主張として見る。**どれか1行が**「実際の件数」と
+    # 「実在する宛先の名前を全部」述べていればよし（`skills/` を含む行は複数あるため）。
+    skill_lines = [ln for ln in lines if "skills/" in ln]
+    claimed_counts = [m.group(1) for ln in skill_lines for m in [re.search(r"(\d+)件", ln)] if m]
+    inventory_ok = any(
+        f"{facts['skills']}件" in ln and all(t in ln for t in facts["targets"])
+        for ln in skill_lines
+    )
+    pkg_claims = re.findall(r"(\d+)パッケージ", readme)
+    mentioned_layers = [i for i in range(6) if f"mu/l{i}.py" in readme]
+    out = [
+        {"claim": "skill の件数と宛先", "actual": f"{facts['skills']}件 {facts['targets']}",
+         "ok": inventory_ok,
+         # 件数を名乗っていて数が違う＝嘘。名乗っていない＝主張なし（None）
+         "truth": None if not claimed_counts else (str(facts["skills"]) in claimed_counts),
+         "covered": bool(skill_lines)},
+    ]
+    for name in ("probe_research.py", "probe_hard.py"):
+        exists = facts[name[:-3]]                       # "probe_research.py" -> facts["probe_research"]
+        mentioned = name in readme
+        out.append(
+            {"claim": f"{name} の実在", "actual": exists,
+             "ok": exists == mentioned,
+             # 「無いものを在ると書いた」だけが嘘。「在るものに触れない」は沈黙
+             "truth": (exists if mentioned else None),
+             "covered": mentioned})
+    out.append(
+        {"claim": "役割パッケージ数", "actual": facts["packages"],
+         "ok": f"{facts['packages']}パッケージ" in readme,
+         "truth": None if not pkg_claims else (str(facts["packages"]) in pkg_claims),
+         "covered": bool(pkg_claims)})
+    out.append(
+        {"claim": "層のファイル（l0〜l5）", "actual": 6,
+         "ok": len(mentioned_layers) == 6,
+         "truth": None if not mentioned_layers else True,   # 実在するものしか名指していない
+         "covered": len(mentioned_layers) == 6})
+    return out
+
 
 def audit(clone: Path) -> list:
-    """README の**機械検査できる主張**を実装と突き合わせる。
-
-    網羅ではない（README の大半は散文で、機械では検査できない）。ドリフトが触る主張と、
-    その周辺の数え上げだけを見る。`ok=False` が「README が実装について嘘を言っている」。
-    """
+    """クローンから事実を集めて `classify` に渡す（事実の採取と判定の分離）。"""
     readme = (clone / "README.md").read_text(encoding="utf-8", errors="replace")
     skills = load_skills(str(clone / "skills"))
-    targets = sorted({t for d in skills.values() for t in (d.get("applies_to") or ("all",))})
-    packages = list_packages(str(clone / "roles"))
-    # skill の件数と宛先は1つの主張として見る。README のどこにどう書くかは自由なので、
-    # **どれか1行が**「実際の件数」と「実在する宛先の名前を全部」述べていればよし、とする
-    # （`skills/` を含む行は複数あり、別の文脈で「N件」と言っている行に引っかかるため）。
-    inventory_ok = any(
-        f"{len(skills)}件" in line and all(t in line for t in targets)
-        for line in readme.splitlines() if "skills/" in line
-    )
-    results = [
-        {"claim": "skill の件数と宛先", "actual": f"{len(skills)}件 {targets}",
-         "ok": inventory_ok},
-        {"claim": "probe_research.py の実在", "actual": (clone / "probe_research.py").is_file(),
-         "ok": (clone / "probe_research.py").is_file() == ("probe_research.py" in readme)},
-        {"claim": "probe_hard.py の実在", "actual": (clone / "probe_hard.py").is_file(),
-         "ok": (clone / "probe_hard.py").is_file() == ("probe_hard.py" in readme)},
-        {"claim": "役割パッケージ数", "actual": len(packages),
-         "ok": f"{len(packages)}パッケージ" in readme},
-        {"claim": "層のファイル（l0〜l5）", "actual": 6,
-         "ok": all(f"mu/l{i}.py" in readme for i in range(6))},
-    ]
-    return results
+    return classify(readme, {
+        "skills": len(skills),
+        "targets": sorted({t for d in skills.values() for t in (d.get("applies_to") or ("all",))}),
+        "probe_research": (clone / "probe_research.py").is_file(),
+        "probe_hard": (clone / "probe_hard.py").is_file(),
+        "packages": len(list_packages(str(clone / "roles"))),
+    })
+
+
+def retention(before: str, after: str) -> dict:
+    """原本の記述のうち、成果物に残っているものの割合（**保存**の機械検査。責務 v2）。
+
+    行の多重集合で見る（合意029 の移行検算と同じやり方）。句読点と空白は正規化する
+    ——`、` を `,` に置換するような**書式の揺れは「述べている事柄」の増減ではない**。
+    実際 037 R1 の成果物は素の一致で 50% だが、正規化すると **84%**（残りは切れた分）で、
+    正規化しないと「書き換えた」と「落とした」を取り違える。
+    """
+    norm = lambda s: s.strip().replace("、", ",").replace("。", ".").replace(" ", "")
+    src = [norm(l) for l in before.splitlines() if l.strip()]
+    kept = {norm(l) for l in after.splitlines() if l.strip()}
+    survived = sum(1 for l in src if l in kept)
+    return {
+        "lines_before": len(src), "lines_kept": survived,
+        "rate": round(survived / len(src), 3) if src else 1.0,
+        "chars_before": len(before), "chars_after": len(after),
+    }
+
+
+def _audit_line(results: list) -> str:
+    """1行の要約。**嘘と沈黙を別々に出す**——混ぜたのが元の誤りだった。"""
+    v = violations(results)
+    return (f"嘘 {len(v['嘘'])}件 {v['嘘'] or ''} / 沈黙 {len(v['沈黙'])}件 {v['沈黙'] or ''} "
+            f"（旧NG {len(v['旧NG'])}件）")
+
+
+def violations(results: list) -> dict:
+    """監査結果を違反の種類ごとに数える。**種類を混ぜない**のがこの関数の仕事。"""
+    return {
+        "嘘": [r["claim"] for r in results if r["truth"] is False],
+        "沈黙": [r["claim"] for r in results if r["truth"] is None and not r["covered"]],
+        "旧NG": [r["claim"] for r in results if not r["ok"]],
+    }
 
 
 def digests(clone: Path) -> dict:
@@ -260,9 +369,9 @@ def main() -> None:
             (clone / "README.md").write_text(carried_readme, encoding="utf-8")
         drift = apply_drift(clone, round_id)
         before, before_audit = digests(clone), audit(clone)
+        readme_before = (clone / "README.md").read_text(encoding="utf-8", errors="replace")
         print(f"[drift] {drift}")
-        print(f"[audit-before] " + ", ".join(
-            f"{a['claim']}={'ok' if a['ok'] else 'NG'}" for a in before_audit))
+        print(f"[audit-before] " + _audit_line(before_audit))
 
         os.chdir(clone)
         tools_mod.protect([str(clone / p) for p in PROTECT])
@@ -290,6 +399,7 @@ def main() -> None:
             "impl_changed": [f for f in diff["modified"] + diff["created"] + diff["deleted"]
                              if f != "README.md"],
             "audit_before": before_audit, "audit_after": after_audit,
+            "retention": retention(readme_before, carried_readme),
             "violations": violations,
         }
         records.append(rec)
@@ -297,8 +407,10 @@ def main() -> None:
         print(f"  achieved={rec['achieved']} escalated={rec['escalated']} {elapsed}s "
               f"package={rec['package']!r}")
         print(f"  README 変更: {rec['readme_changed']}   実装の変更: {rec['impl_changed'] or 'なし'}")
-        print(f"  audit-after: " + ", ".join(
-            f"{a['claim']}={'ok' if a['ok'] else 'NG'}" for a in after_audit))
+        print(f"  audit-after: " + _audit_line(after_audit))
+        r = rec["retention"]
+        print(f"  保存: 原本の記述 {r['lines_kept']}/{r['lines_before']} 行が残存"
+              f"（{r['rate']:.0%}）  {r['chars_before']} → {r['chars_after']} 字")
         if violations:
             print(f"  [!] 保護の破れ: {violations}")
         (workdir / "records.json").write_text(
