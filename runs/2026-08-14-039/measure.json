@@ -1,0 +1,17 @@
+{
+  "expected_roles": [
+    "pdm",
+    "pjm",
+    "architect",
+    "implementer",
+    "qa"
+  ],
+  "file_analysis": {},
+  "missing_roles": [
+    "pdm",
+    "pjm",
+    "architect",
+    "implementer",
+    "qa"
+  ]
+}

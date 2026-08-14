@@ -82,12 +82,37 @@ REPO = Path(__file__).resolve().parent
 STANDING_DUTY = (
     "この作業ディレクトリのリポジトリについて、README.md を実装と一致させ続けよ。"
     "実装が正であり、README.md の側を実装に合わせる（実装ファイルは変更しない）。"
-    "README.md は、実装を構成するファイル・役割・それらの数について漏れなく述べ、"
-    "かつ既に述べている事柄を減らさないこと。"
-    "記述が実装と食い違うなら記述を直し、実装に無いものを述べているなら削る。"
-    "だが、正しい記述を理由なく落としてはならない。"
-    "すでに網羅かつ一致しているなら、何も変更しなくてよい。"
+    "まず現状を測れ。検査器 verify_readme.py と測定結果 measure.json が既にあるなら、"
+    "それを使って測り直せ。無ければ verify_readme.py を作り、結果を measure.json に残せ。"
+    "検査器が数えるのは次の2つだけである。"
+    "(1) 事実でない記述の件数。"
+    "(2) ファイル・役割・それらの数について述べられていない件数。"
+    "あいまいさや、詳細の記述の不足は数えるな。"
+    "検査器を作ったら、いまの README.md で一度走らせ、"
+    "あなたが直すべきと考える件数と一致するかを確かめよ。"
+    "README.md は、実装を構成するファイル・役割・それらの数について漏れなく述べること。"
+    "直す基準はこうである。"
+    "実装と食い違う記述（事実でない記述）は、1件でも直せ。"
+    "記述してあることが事実ならば、あいまいさが残っていても書き換えるな。"
+    "詳細の記述は、不足していても直さなくてよい。"
+    "前回まで述べていた正しい記述を落としてはならない。"
+    "すでに事実でない記述が無く、ファイル・役割・数について述べられているなら、"
+    "何も変更しなくてよい。"
 )
+# v3（2026-08-14・師匠）— **不感帯を数ではなく意味で切る**（合意039）。
+#
+#   「記述してあることが事実ならばあいまいさが残っていても書き換えない」
+#   「詳細の記述は不足していても直さない」
+#
+# 私の初稿は数で切っていた（不足3件以上で動き1件以下で止まる）。師匠はそれを意味の側に
+# 置き換えた。この2文は**不感帯であると同時に単調性**を与える——真である記述は触られず、
+# 網羅の粒度は固定され、「落とすな」と合わせて系はラチェットになる（増える方向にしか動かない）。
+# 数の閾値は境界で振動しうるが、意味の境界（事実か否か・詳細か否か）は走ごとに動かない。
+#
+# 師匠の但し書き: **「対象が README なのでこれでよい。設計ドキュメントならまた違う」**
+# ——あいまいさは README では許容だが、設計ドキュメントでは直すべき欠陥である。
+# 不感帯の幅は対象の性質から決まるので、**閾値は責務文（任せる側の宣言）が持つ**のが正しい。
+#
 # **網羅の範囲は「ファイル・役割・数」に限定してある。** 「実装について述べるべきことを
 # すべて」では範囲が無限に開き、誰も充足を宣言できない＝**停止条件が到達不能**になって
 # no-op（北極星の主デリバラブル）が原理的に発火しなくなる。限定してあるから、
@@ -360,13 +385,22 @@ def main() -> None:
     rounds = (sys.argv[3] if len(sys.argv) > 3 else "R0,R1,R2,R3").split(",")
 
     clone = workdir / "clone"
-    carried_readme = None            # README.md だけが周を跨ぐ（＝責務の対象）
+    # 周を跨ぐもの（合意039）。**責務の対象（README.md）だけでなく、mu 自身が作った
+    # 検査器と測定結果も持ち越す。** 039 フェーズ A で、責務文は「前回の測定結果があるなら
+    # それで測り直せ」と要求しているのに、probe は毎周クローンを作り直して消していた
+    # ——mu は毎周ちがう名前で作り直し（checker.py → verifier.py → measure_script.py）、
+    # **走を跨ぐ記憶＝ヒステリシスの側が一度も試されていなかった**。032 の接地の交絡と同型の、
+    # 計器の穴である。名前は責務文で固定する（mu が自由に名づけると持ち越せない）。
+    CARRY = ("README.md", "measure.json", "verify_readme.py")
+    carried: dict = {}
     records = []
     for round_id in rounds:
         print(f"\n{'='*70}\n=== {round_id} ===\n{'='*70}")
         make_clone(clone)                                   # 実装は毎周 pristine から
-        if carried_readme is not None:
-            (clone / "README.md").write_text(carried_readme, encoding="utf-8")
+        for name, text in carried.items():
+            (clone / name).write_text(text, encoding="utf-8")
+        if carried:
+            print(f"[carry] 前周から持ち越し: {', '.join(sorted(carried))}")
         drift = apply_drift(clone, round_id)
         before, before_audit = digests(clone), audit(clone)
         readme_before = (clone / "README.md").read_text(encoding="utf-8", errors="replace")
@@ -389,7 +423,9 @@ def main() -> None:
 
         after, after_audit = digests(clone), audit(clone)
         diff = changed(before, after)
-        carried_readme = (clone / "README.md").read_text(encoding="utf-8", errors="replace")
+        carried = {n: (clone / n).read_text(encoding="utf-8", errors="replace")
+                   for n in CARRY if (clone / n).is_file()}
+        carried_readme = carried["README.md"]
         rec = {
             "round": round_id, "drift": json.loads(drift), "elapsed": elapsed,
             "achieved": result.get("achieved"), "escalated": result.get("escalated"),

@@ -1,0 +1,419 @@
+[
+  {
+    "round": "R0",
+    "drift": {
+      "added": [],
+      "removed": []
+    },
+    "elapsed": 1515,
+    "achieved": false,
+    "escalated": true,
+    "package": "coding",
+    "reason": "時間予算を使い切った（deadline）。ここまでの部分結果を返す。人間の判断が要る。",
+    "readme_changed": false,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "checker.py",
+      "measure.json"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "10件 ['implementer', 'pjm']",
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "10件 ['implementer', 'pjm']",
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 300,
+      "lines_kept": 300,
+      "rate": 1.0,
+      "chars_before": 22317,
+      "chars_after": 22317
+    },
+    "violations": []
+  },
+  {
+    "round": "R1",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": []
+    },
+    "elapsed": 740,
+    "achieved": false,
+    "escalated": true,
+    "package": "coding",
+    "reason": "PjM の予算切れ（rerun）: The QA verdict indicates that README.md is completely out of sync with the actual file system (referring to non-existent folders like 'mu/' and missing existing files like 'l0_chat.py'). This suggests the implementation task failed to correctly interpret the actual directory conten",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "measure.json",
+      "verdict.md",
+      "verifier.py"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 300,
+      "lines_kept": 280,
+      "rate": 0.933,
+      "chars_before": 22317,
+      "chars_after": 20922
+    },
+    "violations": []
+  },
+  {
+    "round": "R2",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 1201,
+    "achieved": false,
+    "escalated": true,
+    "package": "coding",
+    "reason": "時間予算を使い切った（deadline）。ここまでの部分結果を返す。人間の判断が要る。",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "checker.py",
+      "measure.json",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "retention": {
+      "lines_before": 290,
+      "lines_kept": 105,
+      "rate": 0.362,
+      "chars_before": 20922,
+      "chars_after": 8330
+    },
+    "violations": []
+  },
+  {
+    "round": "R3",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 716,
+    "achieved": true,
+    "escalated": false,
+    "package": "coding",
+    "reason": "",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "measure.json",
+      "measure_script.py",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "retention": {
+      "lines_before": 101,
+      "lines_kept": 89,
+      "rate": 0.881,
+      "chars_before": 8330,
+      "chars_after": 8336
+    },
+    "violations": []
+  }
+]
