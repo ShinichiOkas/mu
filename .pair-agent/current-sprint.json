@@ -1,8 +1,10 @@
 {
-  "sprint_id": "037-close-the-holes",
-  "status": "executing",
-  "goal": "035/036 の実走で見つかった4つの穴を塞ぐ。A=保守対象を tray に必ず写す（構造）／B=needs ゲートの失敗文に候補を添える（構造）／C・D=絶対パス・契約改変・基準の後付けを禁じる skill 3件（実観測のみ）。実証は 035 R1/R2 と 036 の3題を同じ物差しで再走",
+  "sprint_id": "037-038-close-the-holes-and-duty-text",
+  "status": "completed",
+  "goal": "035/036 で見つかった穴を塞ぎ（037）、責務文と物差しを噛み合わせる（038）",
   "created_at": "2026-08-14T12:30:00+09:00",
-  "agreement_path": ".pair-agent/agreements/037-close-the-holes.md",
-  "note": "034 は executing のまま（フェーズ D＝035 の追加計測まで完了）。033/034 合同の振り返りは未実施——師匠の選択で先送り中。037 の協議は 035/036 の実測に接地している"
+  "completed_at": "2026-08-14T00:00:00+09:00",
+  "agreement_path": ".pair-agent/agreements/038-duty-text-and-instrument.md",
+  "sprint_record": ".pair-agent/sprints/037-038-close-the-holes-and-duty-text.md",
+  "note": "振り返り実施済み——Skill 新規7件・昇格2件・CorrectionRecord 1件・ビジョン1件。次は不感帯（ヒステリシス）の設計＝師匠のビジョンが指す本丸。033（L6）は設計書のまま保留"
 }
