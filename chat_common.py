@@ -436,8 +436,12 @@ def log(event: tuple) -> None:
         print(f"{L4} [!] 入力を写せない: {event[1]} <- {', '.join(event[2])}")
     elif kind == "tray_denied":           # 030: 作業区画の外に触れようとした
         print(f"{L4} [!] tray 外を拒否: {event[1]} {event[2]}")
+    elif kind == "baseline_copied":       # 037 A: 更新対象の原本を書き手の手元に写した
+        print(f"{L4} [<] 原本を写した: {event[1]}（更新対象は入力でもある）")
     elif kind == "published":
         print(f"{L4} [>] 発行: {event[1]}")
+    elif kind == "published_unchanged":   # 037 A: 何もしていないのに done になりうる唯一の穴
+        print(f"{L4} [!] 未変更のまま発行: {event[1]}（原本と1バイトも違わない）")
     elif kind == "publish_refused":
         print(f"{L4} [!] 発行拒否: {event[1]} :: {short(event[2], 120)}")
     elif kind == "task_started":          # 031: 並列 dispatch の開始（逐次では出ない）

@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from .l3 import check_goal_lines, failure_goal_lines
 from .role_kb import role_section
@@ -215,6 +215,34 @@ def unmet_needs(task: dict, producers: dict) -> list:
         elif not Path(f).is_file():
             out.append(f)
     return out
+
+
+def needs_hint(missing: Sequence[str], producers: dict | None = None, root: str = ".") -> str:
+    """未充足の needs に、**実在する同名ファイルの候補**を添える（合意037 B）。
+
+    035 の実測: PjM は `l0.py`〜`l5.py` を needs に宣言してゲートに弾かれ（実体は `mu/l0.py`）、
+    再計画で宣言を**直さずに捨てた**。2周とも同じ形である。ゲートは「間違った宣言」を弾くが
+    「宣言しない」は弾かないので、**罰を避ける最も安い道が「宣言をやめる」**になっていた。
+
+    そこで直す道を安くする。コードが知っている事実（実在するパス）を渡すだけでよい
+    ——合意032 の接地修理と同じ「知識ではなく事実を前置する」型。
+    内部依存（先行タスクが産出するファイル）には候補を出さない——それは名前の誤りではなく
+    順序の問題であり、既存のパスを指させたらグラフが壊れる。
+    """
+    hints = []
+    for f in missing:
+        if producers and f in producers:
+            continue
+        name = Path(f).name
+        found = []
+        for p in sorted(Path(root).rglob(name)):
+            if p.is_file() and not {".mu-work", "__pycache__", ".git"} & set(p.parts):
+                found.append(str(p).replace("\\", "/").lstrip("./"))
+            if len(found) == 3:
+                break
+        if found:
+            hints.append(f"{f} → {', '.join(found)}")
+    return f"。同じ名前で実在するもの: {' / '.join(hints)}" if hints else ""
 
 
 def task_goal(task: dict, spec_path: str, purpose: str = "") -> str:

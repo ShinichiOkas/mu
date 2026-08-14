@@ -10,7 +10,7 @@ from pathlib import Path
 
 import tools
 from mu.workspace import (
-    copy_in, discard_stale_output, publish, task_tray, tray_tools,
+    copy_baseline, copy_in, digest, discard_stale_output, publish, task_tray, tray_tools,
 )
 
 
@@ -201,3 +201,43 @@ def test_publish_refuses_when_the_declared_output_was_not_produced(tmp_path, mon
     ok, reason = publish(tray, "result.csv", "implementer", "implementer")
     assert ok is False
     assert "産出していない" in reason
+
+
+# --- 037 A: 更新対象の原本を書き手の手元に写す ---------------------------------
+
+def test_copy_baseline_puts_the_existing_output_in_the_tray(tmp_path, monkeypatch):
+    # 035: needs から落ちると tray に原本が無く、書き手は再生成しかできない（47KB→5.5%）。
+    # 宣言出力が既に在るなら、それは入力でもある——needs の宣言に関わらずコードが写す。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "README.md").write_text("原本" * 100, encoding="utf-8")
+    tray = task_tray("work", "implementer", 0)
+    fingerprint = copy_baseline(tray, "README.md")
+    assert (Path(tray) / "README.md").read_text(encoding="utf-8") == "原本" * 100
+    assert fingerprint == digest(Path(tray) / "README.md")
+
+
+def test_copy_baseline_is_a_noop_when_the_output_does_not_exist_yet(tmp_path, monkeypatch):
+    # 「作る」仕事は従来どおり——原本が無いのだから写すものも無い。
+    monkeypatch.chdir(tmp_path)
+    tray = task_tray("work", "implementer", 0)
+    assert copy_baseline(tray, "new.md") is None
+    assert not (Path(tray) / "new.md").exists()
+
+
+def test_copy_baseline_refuses_absolute_paths(tmp_path, monkeypatch):
+    # 共有空間の名前構造を保てないものは写さない（copy_in と同じ契約）。
+    monkeypatch.chdir(tmp_path)
+    outside = tmp_path / "outside.md"
+    outside.write_text("x", encoding="utf-8")
+    tray = task_tray("work", "implementer", 0)
+    assert copy_baseline(tray, str(outside)) is None
+
+
+def test_digest_tells_changed_from_unchanged(tmp_path):
+    p = tmp_path / "a.txt"
+    p.write_text("v1", encoding="utf-8")
+    first = digest(p)
+    assert digest(p) == first          # 同じ中身なら同じ指紋
+    p.write_text("v2", encoding="utf-8")
+    assert digest(p) != first
+    assert digest(tmp_path / "missing.txt") is None

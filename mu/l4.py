@@ -37,12 +37,14 @@ from typing import Any, Callable, Sequence
 from .l1 import Tool
 from .l3 import Orchestrator, noop, run_check, structured, with_env  # 層間共用ヘルパ
 from .process import (
-    carry_done_tasks, clear_failure, invalidate, normalize_tasks, read_verdict, summarize,
-    task_contract, task_goal, unmet_needs, verdict_check, write_process, process_note,
+    carry_done_tasks, clear_failure, invalidate, needs_hint, normalize_tasks, read_verdict,
+    summarize, task_contract, task_goal, unmet_needs, verdict_check, write_process, process_note,
 )
 from .role_kb import role_perms, role_prompt, role_tools, staffing_lines, task_roles
 from .skill_kb import skill_text
-from .workspace import copy_in, discard_stale_output, publish, task_tray, tray_tools
+from .workspace import (
+    copy_baseline, copy_in, digest, discard_stale_output, publish, task_tray, tray_tools,
+)
 
 # --- スキーマ（ポジションの契約。コードの分岐が依存する） ----------------------
 
@@ -354,6 +356,7 @@ class Manager:
             t["last_failure"] = (
                 f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
                 "（先行タスクが産出していないか、外部ファイルの名前が違う）"
+                + needs_hint(missing, producers)      # 037 B: 直す道を捨てる道より安くする
             )
             log(("needs_unmet", t["file"], missing))
             return None, True
@@ -361,6 +364,13 @@ class Manager:
             return None, False
         tray = task_tray(workspace, t["role"], i)
         discard_stale_output(tray, t["file"])   # 前回試行の残骸を発行させない
+        # 更新対象の原本を写す（合意037 A）。宣言出力が既に在る＝このタスクは「更新」であり、
+        # 原本は入力でもある。needs に書かれたかは PjM の判断だが、これは構造の性質なので
+        # コードが持つ——035 で、原本が手元に無い書き手は再生成しかできなかった。
+        baseline = copy_baseline(tray, t["file"])
+        if baseline:
+            t["_baseline"] = baseline
+            log(("baseline_copied", t["file"], tray))
         missing_in = copy_in(tray, t["needs"])
         if missing_in:
             t["last_failure"] = (
@@ -416,6 +426,13 @@ class Manager:
             published, reason = publish(tray, t["file"], t["role"], owner)
             if published:
                 log(("published", t["file"], tray))
+                # 原本と1バイトも違わないなら、それを結果に残す（合意037 A の床）。
+                # 原本を写すと publish の「出力を産出していない」検査を通ってしまう＝
+                # **何もしていない**が done に化けうる。判定は上（QA/PjM）に委ね、
+                # コードは握り潰せない証跡だけを置く（034 の no-op と同じ思想）。
+                if t.get("_baseline") and digest(Path(tray) / t["file"]) == t["_baseline"]:
+                    t["unchanged"] = True
+                    log(("published_unchanged", t["file"], tray))
             else:
                 t["done"] = False
                 t["last_failure"] = f"発行できない（コードが確認した事実）: {reason}"
@@ -520,6 +537,7 @@ class Manager:
                     t["last_failure"] = (
                         f"needs 未充足（コードが確認した事実）: {', '.join(missing)} が無い"
                         "（先行タスクが産出していないか、外部ファイルの名前が違う）"
+                        + needs_hint(missing, producers)   # 037 B
                     )
                     slog(("needs_unmet", t["file"], missing))
                     failures.append((i, t))

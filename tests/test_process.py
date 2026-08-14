@@ -7,7 +7,7 @@
 言及ベースの推定は計画時 lint に降格した（依存グラフの真実の出所は needs の1つ）。
 """
 
-from mu.process import invalidate, task_goal, unmet_needs
+from mu.process import invalidate, needs_hint, task_goal, unmet_needs
 
 
 def _task(file, *, role="implementer", task="", criterion="", check=None, done=True,
@@ -256,3 +256,35 @@ def test_process_artifact_shows_needs(tmp_path):
     path = tmp_path / "PROCESS.md"
     write_process(str(path), "目的", [_task("b.md", needs=["a.md", "x.csv"])])
     assert "needs: a.md, x.csv" in path.read_text(encoding="utf-8")
+
+
+# --- 037 B: ゲートに弾かれたとき、直す道を捨てる道より安くする -------------------
+
+def test_needs_hint_points_at_the_real_file_with_the_same_name(tmp_path, monkeypatch):
+    # 035: PjM は `l0.py` を宣言して弾かれ（実体は `mu/l0.py`）、再計画で宣言を捨てた。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "mu").mkdir()
+    (tmp_path / "mu" / "l0.py").write_text("x", encoding="utf-8")
+    hint = needs_hint(["l0.py"])
+    assert "mu/l0.py" in hint
+
+
+def test_needs_hint_is_silent_when_nothing_matches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert needs_hint(["nowhere.py"]) == ""
+
+
+def test_needs_hint_skips_files_produced_by_earlier_tasks(tmp_path, monkeypatch):
+    # 内部依存の未充足は「名前の誤り」ではなく「順序」。既存のパスを指させたらグラフが壊れる。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "design.md").write_text("前回の残骸", encoding="utf-8")
+    assert needs_hint(["design.md"], {"design.md": False}) == ""
+
+
+def test_needs_hint_ignores_tray_copies(tmp_path, monkeypatch):
+    # tray（.mu-work）の写しを指させると、共有空間ではなく他人の作業区画を宣言してしまう。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".mu-work" / "implementer" / "task-1").mkdir(parents=True)
+    (tmp_path / ".mu-work" / "implementer" / "task-1" / "spec.md").write_text("x", encoding="utf-8")
+    assert needs_hint(["spec.md"]) == ""

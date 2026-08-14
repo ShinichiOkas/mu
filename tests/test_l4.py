@@ -900,3 +900,62 @@ def test_parallel_one_keeps_the_sequential_order(tmp_path, monkeypatch):
     assert out["outcome"] == "done"
     assert fake.max_active == 1
     assert [f for k, f in fake.events if k == "start"] == ["a.md", "b.md", "verdict.md"]
+
+
+# --- 037 A: 更新対象の原本は、needs の宣言に関わらず書き手の手元に写る ------------
+#
+# 035 の実測: 原本が tray に無いと保守は再生成に化ける（README 47,715字 → 2,638字）。
+# 036 の対照: 原本が tray にあった走は 9,169 → 9,649 バイトの無損失な編集で終わった。
+# 「更新は入力＝出力の形をしている」を PjM の判断ではなくコードの決定論として持つ。
+
+def test_workspace_copies_the_existing_output_into_the_tray(tmp_path, monkeypatch):
+    (tmp_path / "result.csv").write_text("原本の中身", encoding="utf-8")
+    events = []
+    mgr = make([_ws_proc()], [                      # needs には何も宣言していない
+        {"done": True, "tool_writes": [("result.csv", "原本の中身＋追記")]},
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch, log=events.append)
+    assert out["outcome"] == "done"
+    assert [e[1] for e in events if e[0] == "baseline_copied"] == ["result.csv"]
+    assert (tmp_path / "result.csv").read_text(encoding="utf-8") == "原本の中身＋追記"
+    assert out["tasks"][0].get("unchanged") is not True
+
+
+def test_workspace_records_publishing_an_unchanged_file(tmp_path, monkeypatch):
+    # 原本を写すと publish の「産出していない」検査を通ってしまう＝**何もしていない**が
+    # done に化けうる。コードは判定せず、握り潰せない証跡だけを残す（034 の no-op と同型）。
+    (tmp_path / "result.csv").write_text("原本の中身", encoding="utf-8")
+    events = []
+    mgr = make([_ws_proc()], [
+        {"done": True},                              # 書き手が一切触らない
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch, log=events.append)
+    assert out["tasks"][0]["unchanged"] is True
+    assert [e[1] for e in events if e[0] == "published_unchanged"] == ["result.csv"]
+    assert (tmp_path / "result.csv").read_text(encoding="utf-8") == "原本の中身"   # 壊さない
+
+
+def test_workspace_create_task_is_unaffected(tmp_path, monkeypatch):
+    # 「作る」仕事は従来どおり——原本が無いのだから写すものも無い。
+    events = []
+    mgr = make([_ws_proc()], [
+        {"done": True, "tool_writes": [("result.csv", "新規")]},
+        {"done": True, "tool_writes": [("verdict.md", VERDICT_YES)]},
+    ])
+    out = _ws_run(mgr, tmp_path, monkeypatch, log=events.append)
+    assert out["outcome"] == "done"
+    assert not [e for e in events if e[0] in ("baseline_copied", "published_unchanged")]
+    assert out["tasks"][0].get("unchanged") is not True
+
+
+def test_needs_gate_failure_carries_the_real_candidates(tmp_path, monkeypatch):
+    # 037 B: 弾かれた PjM が「宣言を捨てる」より「宣言を直す」を選べるだけの事実を渡す。
+    (tmp_path / "mu").mkdir()
+    (tmp_path / "mu" / "l0.py").write_text("x", encoding="utf-8")
+    decide = {"action": "escalate", "invalidate": [], "reason": "入力が無い"}
+    mgr = make([_ws_proc(needs=["l0.py"]), decide], [])
+    out = _ws_run(mgr, tmp_path, monkeypatch)
+    assert out["outcome"] == "escalate"
+    assert "mu/l0.py" in out["tasks"][0]["last_failure"]

@@ -30,6 +30,7 @@ tray はタスクの再実行で再利用されるが、**宣言された出力�
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tempfile
 from functools import wraps
@@ -80,6 +81,33 @@ def discard_stale_output(tray: str, file: str) -> None:
     """前回試行が tray に残した宣言済み出力を消す（残骸の発行を防ぐ。scratch は残す）。"""
     if not Path(file).is_absolute():
         _remove(Path(tray) / file)
+
+
+def digest(path) -> str | None:
+    """ファイルの中身の指紋（無ければ None）。「変わっていない」を機械で言うために使う。"""
+    p = Path(path)
+    if not p.is_file():
+        return None
+    return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+
+
+def copy_baseline(tray: str, file: str) -> str | None:
+    """**更新対象の原本**を tray に写す（合意037 A）。写せたらその指紋を返す。
+
+    宣言出力が共有空間に既に実在するなら、そのタスクは定義上**更新**であり、
+    原本はそのタスクの入力でもある。だから `needs` に書かれたかどうかに関わらず写す。
+
+    **Why（035 の実測）**: 保守すべき当の文書が needs から落ちると、tray には原本が無く、
+    ツールは tray に閉じているので書き手は**新規に書く以外できることが無い**。
+    47,715字の README が 2,638字（5.5%）になった。同じ層・同じモデルでも、原本が
+    tray にあった走（036 maintain）は 9,169→9,649 バイトの無損失な編集で終わっている。
+    **更新は「入力＝出力」の形をしている**——これは知識ではなく構造の性質なので、
+    判断（PjM が needs に書くか）ではなくコードの決定論として持つ。
+    """
+    if Path(file).is_absolute() or not Path(file).is_file():
+        return None
+    copy_in(tray, [file])
+    return digest(Path(tray) / file)
 
 
 def publish(tray: str, file: str, role: str, owner: str) -> tuple[bool, str]:
