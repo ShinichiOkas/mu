@@ -1444,3 +1444,75 @@ def test_no_action_is_logged_for_the_caller(tmp_path, monkeypatch):
     run(agent, tmp_path, monkeypatch, log=events.append)
     assert any(e[0] == "assess" for e in events)
     assert any(e[0] == "satisfied" for e in events)
+
+
+# --- 040: 依存宣言があるなら、動くかどうかは判断ではなく規則で決まる -------------
+#
+# 「一致しているか」を LLM に測らせた7走はすべて失敗した（040 過剰報告11件・042 盲点0件）。
+# 宣言＋ハッシュ比較なら、追加も削除も決定性で捕まり、**LLM を1回も呼ばずに**止まれる。
+
+from mu.deps import DEPS_FILE, STAMP_FILE, save_stamp, stamp, parse   # noqa: E402
+
+
+def _with_deps(tmp_path, text="README.md: mu/*.py\n\tREADME を更新する\n"):
+    (tmp_path / DEPS_FILE).write_text(text, encoding="utf-8")
+    (tmp_path / "mu").mkdir(exist_ok=True)
+    (tmp_path / "mu" / "l0.py").write_text("v1", encoding="utf-8")
+    (tmp_path / "README.md").write_text("doc", encoding="utf-8")
+    return parse(text)
+
+
+def test_deps_uptodate_stops_without_calling_the_model(tmp_path, monkeypatch):
+    # **主デリバラブル**: 陳腐化ゼロなら LLM は1回も回らない（判断を回さない）
+    rules = _with_deps(tmp_path)
+    save_stamp(stamp(rules, str(tmp_path)), str(tmp_path))
+    agent = make([])                                   # 応答を1つも用意しない＝呼べば落ちる
+    events = []
+    out = run(agent, tmp_path, monkeypatch, log=events.append)
+    assert out["no_action"] is True
+    assert out["achieved"] is True                     # 「何もしない」が正解＝達成（合意034 の契約）
+    assert out["tasks"] == []
+    assert agent._l0.calls == []                       # **LLM 呼び出しゼロ**（034 は assess で1回）
+    assert [e[0] for e in events if e[0] == "deps_uptodate"] == ["deps_uptodate"]
+
+
+def test_deps_stale_hands_the_facts_to_the_model(tmp_path, monkeypatch):
+    # 陳腐化していれば従来の経路へ。**何がなぜ陳腐化したかを目的に前置する**（発見させない）
+    rules = _with_deps(tmp_path)
+    save_stamp(stamp(rules, str(tmp_path)), str(tmp_path))
+    (tmp_path / "mu" / "l1.py").write_text("new", encoding="utf-8")   # 追加ドリフト
+    agent = make([SPEC, PROCESS3], ok3())
+    events = []
+    out = run(agent, tmp_path, monkeypatch, log=events.append)
+    assert out["achieved"] is True
+    stale_events = [e for e in events if e[0] == "deps_stale"]
+    assert stale_events and stale_events[0][1][0]["target"] == "README.md"
+    sent = agent._l0.calls[0]["messages"][-1]["content"]
+    assert "mu/l1.py が増えた" in sent                  # 事実がプロンプトに載っている
+
+
+def test_deps_stamp_is_updated_only_on_success(tmp_path, monkeypatch):
+    rules = _with_deps(tmp_path)
+    agent = make([SPEC, PROCESS3], ok3())
+    run(agent, tmp_path, monkeypatch)
+    assert (tmp_path / STAMP_FILE).is_file()           # 成功したので刻印が残る
+
+
+def test_deps_stamp_is_not_written_when_the_run_fails(tmp_path, monkeypatch):
+    # 失敗した走で刻印すると、直っていないものを「最新」と記録して次周に見逃す
+    _with_deps(tmp_path)
+    verdict_no = [{"done": True}, {"done": True},
+                  {"done": True, "writes": [("verdict.md", VERDICT_NO_IMPL)]}]
+    agent = make([SPEC, PROCESS3, {"action": "escalate", "invalidate": [], "reason": "駄目"}],
+                 verdict_no)
+    out = run(agent, tmp_path, monkeypatch)
+    assert out["achieved"] is False
+    assert not (tmp_path / STAMP_FILE).exists()
+
+
+def test_without_a_declaration_the_behavior_is_unchanged(tmp_path, monkeypatch):
+    # 宣言が無ければこの機構は働かない（既存の挙動を1ミリも変えない）
+    (tmp_path / "sales.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
+    out = run(agent, tmp_path, monkeypatch)
+    assert out["achieved"] is True

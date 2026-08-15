@@ -106,6 +106,24 @@ _DUTY_V4_EXTRA = (
     "検査器を作ったら、いまの README.md で一度走らせ、"
     "あなたが直すべきと考える件数と一致するかを確かめよ。"
 )
+# v5（合意040・師匠の設計）— **検査器を作らせるのをやめ、依存を宣言させる。**
+#
+# 「README は実装と一致しているか」は難しく、検査器を書かせると盲点が入った
+# （040 は実在ファイルを嘘と誤報して11件・042 は skill を1行も見ずに0件。7走とも失敗）。
+# 「README は何に依存するか」は易しく、しかも**人間が一目でレビューできる**。
+# Makefile 形式はほぼあらゆる LLM が熟知しており、**依存を決めて手順を決めない**
+# ——だから汎用性を削らずに確実性だけを足せる。
+#
+# 陳腐化の判定はコードが行う（`mu/deps.py`）。責務文はもう「測れ」と言わない。
+_DUTY_V5_HEAD = (
+    "この作業ディレクトリのリポジトリについて、README.md を実装と一致させ続けよ。"
+    "実装が正であり、README.md の側を実装に合わせる（実装ファイルは変更しない）。"
+    "依存宣言 DEPS.mk が無ければ、まずそれを書け。"
+    "Makefile 形式で、README.md がどのファイル群に依存するかを1行で宣言する"
+    "（例: `README.md: mu/*.py roles/*.md`）。"
+    "何が変わったら README.md を書き直すべきかを、その依存で表現せよ。"
+    "陳腐化の判定はこちらが行う——あなたは測らなくてよい。"
+)
 _DUTY_COMMON_TAIL = (
     "README.md は、実装を構成するファイル・役割・それらの数について漏れなく述べること。"
     "直す基準はこうである。"
@@ -119,8 +137,9 @@ _DUTY_COMMON_TAIL = (
 DUTIES = {
     "v3": _DUTY_COMMON_HEAD + _DUTY_COMMON_TAIL,                    # 責務だけ（不感帯まで）
     "v4": _DUTY_COMMON_HEAD + _DUTY_V4_EXTRA + _DUTY_COMMON_TAIL,   # ＋検査器の手順書
+    "v5": _DUTY_V5_HEAD + _DUTY_COMMON_TAIL,                        # 検査器をやめ、依存を宣言させる
 }
-STANDING_DUTY = DUTIES[os.environ.get("MU_DUTY", "v4").strip().lower()]
+STANDING_DUTY = DUTIES[os.environ.get("MU_DUTY", "v5").strip().lower()]
 # v3（2026-08-14・師匠）— **不感帯を数ではなく意味で切る**（合意039）。
 #
 #   「記述してあることが事実ならばあいまいさが残っていても書き換えない」
@@ -413,8 +432,18 @@ def main() -> None:
     # ——mu は毎周ちがう名前で作り直し（checker.py → verifier.py → measure_script.py）、
     # **走を跨ぐ記憶＝ヒステリシスの側が一度も試されていなかった**。032 の接地の交絡と同型の、
     # 計器の穴である。名前は責務文で固定する（mu が自由に名づけると持ち越せない）。
-    CARRY = ("README.md", "measure.json", "verify_readme.py")
+    CARRY = ("README.md", "measure.json", "verify_readme.py", "DEPS.mk", ".mu-stamp.json")
+    # 持ち越しはディスクにも残す（合意040）。**刻印は成功した走でしか書かれない**ので、
+    # 1回の起動で成功が出なければ決定性の停止（陳腐化ゼロ）は一度も試されない
+    # ——046 の実測: 4周のうち3周が時間切れ等で escalate し、刻印が生きた状態を測れなかった。
+    # 種があれば次の起動が前周の続きから走れる。
+    carry_dir = workdir / "carry"
     carried: dict = {}
+    if carry_dir.is_dir():
+        carried = {p.name: p.read_text(encoding="utf-8", errors="replace")
+                   for p in sorted(carry_dir.iterdir()) if p.is_file() and p.name in CARRY}
+        if carried:
+            print(f"[seed] 前回の起動から種を読んだ: {', '.join(sorted(carried))}")
     records = []
     for round_id in rounds:
         print(f"\n{'='*70}\n=== {round_id} ===\n{'='*70}")
@@ -448,6 +477,9 @@ def main() -> None:
         carried = {n: (clone / n).read_text(encoding="utf-8", errors="replace")
                    for n in CARRY if (clone / n).is_file()}
         carried_readme = carried["README.md"]
+        carry_dir.mkdir(parents=True, exist_ok=True)          # 次の起動の種にする
+        for name, text in carried.items():
+            (carry_dir / name).write_text(text, encoding="utf-8")
         rec = {
             "round": round_id, "drift": json.loads(drift), "elapsed": elapsed,
             "achieved": result.get("achieved"), "escalated": result.get("escalated"),

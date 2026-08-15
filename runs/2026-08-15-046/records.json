@@ -1,0 +1,104 @@
+[
+  {
+    "round": "R3",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 0,
+    "achieved": true,
+    "escalated": false,
+    "package": "",
+    "reason": "",
+    "readme_changed": false,
+    "impl_changed": [
+      "SPEC.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": null,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": false,
+        "truth": null,
+        "covered": false
+      }
+    ],
+    "retention": {
+      "lines_before": 211,
+      "lines_kept": 211,
+      "rate": 1.0,
+      "chars_before": 11766,
+      "chars_after": 11766
+    },
+    "violations": []
+  }
+]

@@ -436,6 +436,13 @@ def log(event: tuple) -> None:
         print(f"{L4} [!] 入力を写せない: {event[1]} <- {', '.join(event[2])}")
     elif kind == "tray_denied":           # 030: 作業区画の外に触れようとした
         print(f"{L4} [!] tray 外を拒否: {event[1]} {event[2]}")
+    elif kind == "deps_uptodate":         # 040: 依存宣言のすべてが最新——**判断を回さずに止まる**
+        print(f"{L5} [=] 依存は最新: {', '.join(event[1])}（LLM を回さない）")
+    elif kind == "deps_stale":            # 040: 陳腐化——なぜ動くのかが証跡として残る
+        for it in event[1]:
+            print(f"{L5} [!] 陳腐化: {it['target']} :: {', '.join(it['reasons'][:4])}")
+    elif kind == "deps_stamped":          # 040: 成功した走だけが刻印を更新する
+        print(f"{L5} [>] 刻印を更新: {', '.join(event[1])}")
     elif kind == "baseline_copied":       # 037 A: 更新対象の原本を書き手の手元に写した
         print(f"{L4} [<] 原本を写した: {event[1]}（更新対象は入力でもある）")
     elif kind == "published":

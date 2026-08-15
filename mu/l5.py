@@ -26,6 +26,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from . import deps
+from .deps import DEPS_FILE, STAMP_FILE
 from .l1 import Tool
 from .l3 import noop, structured
 from .l4 import Manager, TIME_UP, lifeline_system
@@ -386,7 +388,37 @@ class Director:
         # **入力の実物が1つも無ければ問わない**——充足済みと言える根拠は接地された実物だけで、
         # 白紙の作業ディレクトリに「もう満たされている」は原理的に有り得ない（作る仕事は
         # 作らないと終わらない）。材料が無い判断を回さないのは、床であり同時に節約でもある。
-        if inputs:
+        # 040: **依存宣言があるなら、動くかどうかは判断ではなく規則で決まる。**
+        # 「一致しているか」を LLM に測らせると盲点が入った（040 過剰報告11件／042 盲点0件・
+        # 7走とも失敗）。「何に依存するか」の宣言＋ハッシュ比較なら、追加も削除も決定性で捕まる。
+        # 宣言が無ければこの分岐は働かない（既存の挙動は1ミリも変わらない）。
+        workdir = str(Path(spec_path).parent)
+        rules = deps.load(workdir)
+        if rules is not None:
+            outdated = deps.stale(rules, workdir, deps.load_stamp(workdir))
+            if not outdated:
+                log(("deps_uptodate", [r["target"] for r in rules]))
+                # 034 の床（根拠を必ず残す）は、規則で止まるときも守る——no-op は静かな失敗を
+                # 生みうる唯一の終端であり、「何もしなかった」と「気づかなかった」の区別は
+                # 証跡でしか付かない。ここでの根拠は判断ではなく**コードが確認した事実**である。
+                marks = deps.load_stamp(workdir)
+                assessment = {
+                    "achieved": "yes", "reason": "依存宣言のすべてが最新である", "gap": "",
+                    "evidence": (
+                        f"{DEPS_FILE} の全ターゲット（{', '.join(r['target'] for r in rules)}）が最新である。"
+                        f"前提 {sum(len(m) for m in marks.values())} 件のハッシュを "
+                        f"{STAMP_FILE} の記録と突き合わせ、追加・削除・変更のいずれも無かった"
+                        f"（コードが確認した事実。LLM の判断は用いていない）。"
+                    ),
+                }
+                return self._stop_satisfied(purpose, assessment, spec_path, process_path,
+                                            roles, log, package)
+            log(("deps_stale", outdated))
+            # 事実（何がなぜ陳腐化したか）を目的に前置する——LLM に発見させない。
+            purpose = (f"{purpose}\n\n"
+                       f"[依存関係の解決（コードが確認した事実）] 次のものが陳腐化している:\n"
+                       f"{deps.describe(outdated)}")
+        elif inputs:
             assessment = self._assess(model, purpose, roles, log, system, inputs, skills)
             if _satisfied(assessment):
                 return self._stop_satisfied(purpose, assessment, spec_path, process_path,
@@ -441,6 +473,11 @@ class Director:
 
             decision = review(report)                                  # A: 判断は外へ（既定は自動）
             if decision.get("accept"):
+                # 040: **成功した走だけ**が刻印を更新する。失敗した走で更新すると、
+                # 直っていないものを「最新」と記録して次周に見逃す（静かな失敗を作る）。
+                if rules is not None:
+                    deps.save_stamp(deps.stamp(rules, workdir), workdir)
+                    log(("deps_stamped", [r["target"] for r in rules]))
                 return _done(True, False, assessment, spec, spec_path, tasks, process_path,
                              rounds, l4_rounds, package=package)
             feedback = str(decision.get("feedback") or "")
