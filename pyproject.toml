@@ -11,6 +11,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
+[tool.setuptools]
+packages = ["mu"]  # 配布物は mu パッケージのみ（runs/ roles/ 等は実走データであり配布しない）
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]  # temp/（L3 実走の使い捨て場）の生成物テストを収集しない
