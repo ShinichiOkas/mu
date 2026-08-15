@@ -161,3 +161,73 @@ def test_load_stamp_survives_a_broken_file(tmp_path):
 def test_describe_puts_the_reason_next_to_the_target():
     text = describe([{"target": "README.md", "reasons": ["a.py が変わった"]}])
     assert "README.md" in text and "a.py が変わった" in text
+
+
+# --- 040 v2: 書式の是正（師匠の指示「glob 必須にする」） -------------------------
+#
+# 047 の実測: gemma4 は 58 ファイルを1つずつ列挙し、**追加を構造的に見逃した**。
+# 列挙は「いま在るもの」しか捕まえない。畳む方向は安全側（前提が増える＝余計に走るだけ）。
+
+from mu.deps import fold_globs, normalize                      # noqa: E402
+
+
+def test_fold_turns_an_enumeration_into_a_glob():
+    prereqs = ["mu/l0.py", "mu/l1.py", "mu/l2.py"]
+    folded, notes = fold_globs(prereqs)
+    assert folded == ["mu/*.py"]
+    assert notes == ["列挙 3 件を mu/*.py に畳んだ"]
+
+
+def test_fold_handles_the_repository_root():
+    folded, _ = fold_globs(["tools.py", "chat_common.py"])
+    assert folded == ["*.py"]
+
+
+def test_fold_keeps_a_lone_file_literal():
+    # 1件だけの指定は意図的な選択とみなす（畳むと意図を壊す）
+    folded, notes = fold_globs(["pyproject.toml", "mu/l0.py", "mu/l1.py"])
+    assert set(folded) == {"pyproject.toml", "mu/*.py"} and len(notes) == 1
+
+
+def test_fold_leaves_existing_globs_alone():
+    folded, notes = fold_globs(["mu/*.py", "roles/*.md"])
+    assert folded == ["mu/*.py", "roles/*.md"] and notes == []
+
+
+def test_fold_groups_by_extension_not_just_directory():
+    folded, _ = fold_globs(["roles/coding/pdm.md", "roles/coding/qa.md",
+                            "roles/coding/manifest.json"])
+    assert "roles/coding/*.md" in folded and "roles/coding/manifest.json" in folded
+
+
+def test_normalize_drops_self_references():
+    # gemma4 は DEPS.mk 自身を前提に含めた——書き換えるたびに陳腐化する永久の罠
+    rules = [{"target": "README.md", "prereqs": ["DEPS.mk", ".mu-stamp.json", "README.md",
+                                                 "mu/l0.py", "mu/l1.py"], "recipe": []}]
+    out, notes = normalize(rules)
+    assert out[0]["prereqs"] == ["mu/*.py"]
+    assert any("自己参照を落とした" in n for n in notes)
+
+
+def test_normalize_reports_every_change_it_makes():
+    # 宣言は人間がレビューする前提のもの。**黙って書き換えたら読めなくなる**
+    rules = [{"target": "README.md", "prereqs": ["a.py", "b.py"], "recipe": []}]
+    _, notes = normalize(rules)
+    assert notes and all(n.startswith("README.md: ") for n in notes)
+
+
+def test_folding_makes_an_addition_detectable(tmp_path):
+    # **これが 047 の見逃しへの対処**。列挙のままなら新しいファイルは永久に見えない
+    (tmp_path / "mu").mkdir()
+    (tmp_path / "mu" / "l0.py").write_text("v1", encoding="utf-8")
+    (tmp_path / "mu" / "l1.py").write_text("v1", encoding="utf-8")
+    (tmp_path / "README.md").write_text("doc", encoding="utf-8")
+    listed = [{"target": "README.md", "prereqs": ["mu/l0.py", "mu/l1.py"], "recipe": []}]
+
+    marks_listed = stamp(listed, str(tmp_path))
+    folded, _ = normalize(listed)
+    marks_folded = stamp(folded, str(tmp_path))
+    (tmp_path / "mu" / "l2.py").write_text("new", encoding="utf-8")     # 追加ドリフト
+
+    assert stale(listed, str(tmp_path), marks_listed) == []            # 列挙は**見逃す**
+    assert stale(folded, str(tmp_path), marks_folded)                  # glob は捕まえる

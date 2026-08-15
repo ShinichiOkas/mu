@@ -395,6 +395,13 @@ class Director:
         workdir = str(Path(spec_path).parent)
         rules = deps.load(workdir)
         if rules is not None:
+            # 書式の是正はコードが行う（合意040 v2）——列挙を glob に畳み、自己参照を落とす。
+            # 047 の実測: gemma4 は58ファイルを列挙して追加を見逃し、DEPS.mk 自身を前提に
+            # 含めて永久に陳腐化する罠を作った。**畳んだことは必ず実況に出す**（宣言は
+            # 人間がレビューする前提のものなので、黙って書き換えたら読めなくなる）。
+            rules, notes = deps.normalize(rules)
+            for note in notes:
+                log(("deps_normalized", note))
             outdated = deps.stale(rules, workdir, deps.load_stamp(workdir))
             if not outdated:
                 log(("deps_uptodate", [r["target"] for r in rules]))

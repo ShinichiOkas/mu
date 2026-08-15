@@ -76,6 +76,69 @@ def parse(text: str) -> list[dict]:
     return rules
 
 
+def fold_globs(prereqs) -> tuple[list[str], list[str]]:
+    """**列挙を glob に畳む**（合意040 v2・師匠の指示「書式を glob 必須にする」）。
+
+    同じディレクトリ・同じ拡張子のリテラルが2つ以上あれば `dir/*.ext` に置き換える。
+    返り値は (畳んだ前提, 実況に出す注記)。
+
+    **Why**: 列挙は「いま在るもの」しか捕まえず、**追加に構造的に弱い**。
+    047 の実測——gemma4 は 58 ファイルを1つずつ列挙し、R1 のドリフト（skill の追加）を
+    見逃した。glob なら合致するものが増えた時点で陳腐化する。
+    畳む方向は**安全側**である（前提が増える＝余計に走るだけで、見逃しは増えない）。
+
+    畳んだことは**必ず注記に出す**——宣言は人間がレビューする前提のものなので、
+    コードが黙って書き換えたら読めなくなる。
+    """
+    groups: dict = {}
+    literals, patterns = [], []
+    for p in prereqs:
+        (patterns if any(ch in p for ch in "*?[") else literals).append(p)
+    for p in literals:
+        path = Path(p)
+        if not path.suffix:
+            continue
+        groups.setdefault((path.parent.as_posix(), path.suffix), []).append(p)
+    folded, notes, absorbed = list(patterns), [], set()
+    for (parent, suffix), members in sorted(groups.items()):
+        if len(members) < 2:
+            continue
+        pattern = f"*{suffix}" if parent in (".", "") else f"{parent}/*{suffix}"
+        folded.append(pattern)
+        absorbed.update(members)
+        notes.append(f"列挙 {len(members)} 件を {pattern} に畳んだ")
+    folded.extend(p for p in literals if p not in absorbed)
+    seen, uniq = set(), []
+    for p in folded:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq, notes
+
+
+def normalize(rules: list[dict]) -> tuple[list[dict], list[str]]:
+    """宣言を解決に使える形に整える。返り値は (規則, 注記)。
+
+    2つだけ行う。どちらも**書式の是正**であって、依存の内容には踏み込まない:
+
+    1. **列挙を glob に畳む**（追加への弱さを消す）
+    2. **自己参照を落とす**——ターゲット自身・`DEPS.mk`・刻印ファイルを前提から除く。
+       047 で gemma4 は `DEPS.mk` を自分の前提に含めた。宣言を書き換えるたびに
+       ハッシュが変わるので、**永久に陳腐化し続ける罠**になる
+    """
+    out, notes = [], []
+    for rule in rules:
+        drop = {rule["target"], DEPS_FILE, STAMP_FILE}
+        kept = [p for p in rule["prereqs"] if p not in drop]
+        if len(kept) != len(rule["prereqs"]):
+            notes.append(f"{rule['target']}: 自己参照を落とした"
+                         f"（{', '.join(sorted(set(rule['prereqs']) & drop))}）")
+        folded, fold_notes = fold_globs(kept)
+        notes.extend(f"{rule['target']}: {n}" for n in fold_notes)
+        out.append({**rule, "prereqs": folded})
+    return out, notes
+
+
 def expand(prereqs, root: str = ".") -> list[str]:
     """前提の glob を実ファイルに展開する（順序は安定・重複は除く）。
 
