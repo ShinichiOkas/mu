@@ -403,7 +403,7 @@ L3（大域 Plan）の段階で実機到達（題材は GUI 付き AI チャッ�
 - **L3 は実装・検証済み** — `mu/l3.py`（`Orchestrator`）。Plan／失敗分析／再計画／全体判定の生命線プロンプトを実タスクで調整。**北極星「GUI を持つアプリの自走完遂」到達**（2026-07-19）。既定モデルは gemma4:12b（qwen3.5:9b は参照として残し、構造限界とモデル限界を切り分ける）
 - **L4 / L5 は実装・検証済み** — `mu/l4.py`（`Manager`＝進行の層）・`mu/l5.py`（`Director`＝目的の層）＋ `roles/`（役割定義書＝ナレッジベース兼権限宣言）＋ `skills/`（やり方の単位。宛先を自分で名乗り、権限は持たない）＋ facility（`role_kb.py` / `skill_kb.py` / `process.py`）。充足可能性の申告・入力の実物への接地・役割注釈付きプロセス・部分再実行・独立 QA・役割別ツール権限。難課題6件で実走し**偽・完遂ゼロ**
 - **役割パッケージと自動選択は実装・検証済み** — 5パッケージ（coding は verified、research / rnd / secretary / book は draft）＋ `MU_ROLES_DIR=auto` で Director がカタログから1判断で自選（**選択精度 18/18**・適合なしの正直な申告 3/3 を含む。合意028）
-- **skill は実装・検証済み** — `mu/skill_kb.py` ＋ `skills/`（現在10件——`applies_to: implementer` が9件・`pjm` が1件）。移行時に**文言が1文字も変わっていないこと**を行の多重集合で実測し、回帰スモーク（bugfix achieved・保護入力ハッシュ一致）とプロジェクト側 skill の e2e で確認（合意029）
+- **skill は実装・検証済み** — `mu/skill_kb.py` ＋ `skills/`（現在11件——`applies_to: implementer` が10件・`pjm` が1件）。移行時に**文言が1文字も変わっていないこと**を行の多重集合で実測し、回帰スモーク（bugfix achieved・保護入力ハッシュ一致）とプロジェクト側 skill の e2e で確認（合意029）
 - **needs と作業空間は実装・検証済み（合意030）** — `task.needs`（入力の宣言・ゲート意味論）＋
   `mu/workspace.py`（tray・copy-in / publish-out・読み取りの閉じ込め・single-writer 発行ゲート）。
   無効化伝播は needs 辺に載せ替え（013 型の依存逆流は構造的に消滅）、言及推定は計画時 lint へ降格
