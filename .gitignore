@@ -2,4 +2,5 @@
 /.venv
 __pycache__/
 *.pyc
-/temp*.egg-info/
+/temp
+*.egg-info/
