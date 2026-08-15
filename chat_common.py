@@ -438,6 +438,11 @@ def log(event: tuple) -> None:
         print(f"{L4} [!] tray 外を拒否: {event[1]} {event[2]}")
     elif kind == "deps_uptodate":         # 040: 依存宣言のすべてが最新——**判断を回さずに止まる**
         print(f"{L5} [=] 依存は最新: {', '.join(event[1])}（LLM を回さない）")
+    elif kind == "deps_normalized":       # 040 v2: 書式の是正（列挙→glob・自己参照の除去）
+        print(f"{L5} [~] 宣言を是正: {event[1]}")
+    elif kind == "deps_uncovered":        # 040 v2: 宣言が触れていない箇所＝見逃しの候補
+        summary = " / ".join(f"{g['where']} {g['count']}件" for g in event[1])
+        print(f"{L5} [?] 宣言が触れていない: {summary}（見逃しうる。宣言の網羅を確認せよ）")
     elif kind == "deps_stale":            # 040: 陳腐化——なぜ動くのかが証跡として残る
         for it in event[1]:
             print(f"{L5} [!] 陳腐化: {it['target']} :: {', '.join(it['reasons'][:4])}")

@@ -216,6 +216,41 @@ def stale(rules: list[dict], root: str = ".", marks: dict | None = None) -> list
     return out
 
 
+def uncovered(rules: list[dict], root: str = ".", limit: int = 6) -> list[dict]:
+    """宣言が**どの前提にも合致しないファイル**を、置き場所ごとに数える（合意040 v2）。
+
+    **警告だけで、止めない。** 「宣言していないものは全部依存」にすると宣言の意義が消える
+    （ターゲット自身も生成物も巻き込む）。ここでやるのは、**見逃しを静かでなくする**ことだけ。
+
+    **Why**: 047 の実測——gemma4 の宣言は `skills/` に一度も触れておらず、
+    skill の追加を永久に見逃した。書式（glob）を是正しても、**宣言に無いディレクトリは
+    現れない**。穴の正体は書式ではなく網羅であり、網羅は機械的に測れる
+    （gemma4 の宣言が触れていないのは 112 件中 **54 件**だった）。
+
+    除くのは、ターゲット自身・この機構の持ち物（宣言と刻印）・隠しパス・`__pycache__` だけ。
+    それ以外の「見えていないもの」は、たとえ雑音でも**事実として出す**。
+    """
+    base = Path(root)
+    covered: set = set()
+    for rule in rules:
+        covered.update(expand(rule["prereqs"], root))
+    skip = {r["target"] for r in rules} | {DEPS_FILE, STAMP_FILE}
+    groups: dict = {}
+    for p in sorted(base.rglob("*")):
+        if not p.is_file():
+            continue
+        parts = p.relative_to(base).parts
+        if any(part.startswith(".") or part == "__pycache__" for part in parts):
+            continue
+        rel = "/".join(parts)
+        if rel in covered or rel in skip:
+            continue
+        where = parts[0] if len(parts) > 1 else "(直下)"
+        groups[where] = groups.get(where, 0) + 1
+    ranked = sorted(groups.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"where": w, "count": n} for w, n in ranked[:limit]]
+
+
 def load(root: str = ".") -> list[dict] | None:
     """作業ディレクトリの依存宣言を読む。**無ければ None**（＝この機構は働かない）。"""
     p = Path(root) / DEPS_FILE

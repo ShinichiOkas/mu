@@ -402,6 +402,11 @@ class Director:
             rules, notes = deps.normalize(rules)
             for note in notes:
                 log(("deps_normalized", note))
+            # 宣言が触れていない箇所を可視にする（警告のみ・止めない）。見逃しは静かな失敗で、
+            # 047 では gemma4 の宣言が skills/ に一度も触れず、追加を永久に見逃した。
+            gaps = deps.uncovered(rules, workdir)
+            if gaps:
+                log(("deps_uncovered", gaps))
             outdated = deps.stale(rules, workdir, deps.load_stamp(workdir))
             if not outdated:
                 log(("deps_uptodate", [r["target"] for r in rules]))

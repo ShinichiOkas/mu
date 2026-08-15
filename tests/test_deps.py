@@ -231,3 +231,61 @@ def test_folding_makes_an_addition_detectable(tmp_path):
 
     assert stale(listed, str(tmp_path), marks_listed) == []            # 列挙は**見逃す**
     assert stale(folded, str(tmp_path), marks_folded)                  # glob は捕まえる
+
+
+# --- 040 v2: 網羅の可視化（警告のみ・止めない） ---------------------------------
+#
+# 047: gemma4 の宣言は skills/ に一度も触れず、追加を永久に見逃した。書式を glob に
+# 是正しても**宣言に無いディレクトリは現れない**。穴は書式ではなく網羅であり、機械で測れる。
+
+from mu.deps import uncovered                                  # noqa: E402
+
+
+def _tree(tmp_path):
+    (tmp_path / "README.md").write_text("doc", encoding="utf-8")
+    (tmp_path / "mu").mkdir()
+    (tmp_path / "mu" / "l0.py").write_text("x", encoding="utf-8")
+    (tmp_path / "skills").mkdir()
+    for name in ("a.md", "b.md"):
+        (tmp_path / "skills" / name).write_text("s", encoding="utf-8")
+    return [{"target": "README.md", "prereqs": ["mu/*.py"], "recipe": []}]
+
+
+def test_uncovered_names_the_place_the_declaration_never_touches(tmp_path):
+    gaps = uncovered(_tree(tmp_path), str(tmp_path))
+    assert {"where": "skills", "count": 2} in gaps
+
+
+def test_uncovered_is_empty_when_everything_is_declared(tmp_path):
+    rules = _tree(tmp_path)
+    rules[0]["prereqs"] = ["mu/*.py", "skills/*.md"]
+    assert uncovered(rules, str(tmp_path)) == []
+
+
+def test_uncovered_excludes_the_target_and_the_mechanisms_own_files(tmp_path):
+    # ターゲットも宣言も刻印も「依存」ではない——数えると毎回警告が出て意味を失う
+    rules = _tree(tmp_path)
+    rules[0]["prereqs"] = ["mu/*.py", "skills/*.md"]
+    (tmp_path / DEPS_FILE).write_text("README.md: mu/*.py\n", encoding="utf-8")
+    (tmp_path / STAMP_FILE).write_text("{}", encoding="utf-8")
+    assert uncovered(rules, str(tmp_path)) == []
+
+
+def test_uncovered_skips_hidden_paths_and_pycache(tmp_path):
+    rules = _tree(tmp_path)
+    rules[0]["prereqs"] = ["mu/*.py", "skills/*.md"]
+    (tmp_path / ".mu-work" / "implementer").mkdir(parents=True)
+    (tmp_path / ".mu-work" / "implementer" / "scratch.txt").write_text("t", encoding="utf-8")
+    (tmp_path / "mu" / "__pycache__").mkdir()
+    (tmp_path / "mu" / "__pycache__" / "l0.pyc").write_text("c", encoding="utf-8")
+    assert uncovered(rules, str(tmp_path)) == []
+
+
+def test_uncovered_ranks_by_size_and_caps_the_list(tmp_path):
+    rules = _tree(tmp_path)
+    for d, n in (("docs", 3), ("tests", 5)):
+        (tmp_path / d).mkdir()
+        for i in range(n):
+            (tmp_path / d / f"f{i}.md").write_text("x", encoding="utf-8")
+    gaps = uncovered(rules, str(tmp_path), limit=2)
+    assert [g["where"] for g in gaps] == ["tests", "docs"]      # 多い順・上限で切る
