@@ -1,0 +1,102 @@
+[
+  {
+    "round": "R1",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": []
+    },
+    "elapsed": 0,
+    "achieved": true,
+    "escalated": false,
+    "package": "",
+    "reason": "",
+    "readme_changed": false,
+    "impl_changed": [
+      "SPEC.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 300,
+      "lines_kept": 300,
+      "rate": 1.0,
+      "chars_before": 22318,
+      "chars_after": 22318
+    },
+    "violations": []
+  }
+]
