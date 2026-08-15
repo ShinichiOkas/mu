@@ -1,0 +1,417 @@
+[
+  {
+    "round": "R0",
+    "drift": {
+      "added": [],
+      "removed": []
+    },
+    "elapsed": 613,
+    "achieved": false,
+    "escalated": true,
+    "package": "",
+    "reason": "QA verdict は 9 項目中 8 PASS・1 UNCERTAIN であり、成果物に確定した欠陥はない。UNCERTAIN の理由は「直す前の README.md との差分が取得できない（Git リポジトリ不存在）ため、直す前に事実として正しかった記述が落とされていないことを確認できない」という判定材料の不足による。verify_readme.py の再実行結果は false_statements=0, missing_descriptions=0 であり、README.md は全実装ファイルを網羅的に記載している。プロセス上の再実行や再計画でこの判定材料不足を解消することはできない—",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "design.md",
+      "measure.json",
+      "verdict.md",
+      "verify_readme.py"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm']",
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "11件 ['implementer', 'pjm']",
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 300,
+      "lines_kept": 299,
+      "rate": 0.997,
+      "chars_before": 22318,
+      "chars_after": 22608
+    },
+    "violations": []
+  },
+  {
+    "round": "R1",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": []
+    },
+    "elapsed": 56,
+    "achieved": false,
+    "escalated": true,
+    "package": "",
+    "reason": "PjM の予算切れ（replan）: architect タスクの needs がワークディレクトリ直のファイル名（__init__.py, l0.py 等）を指定しているが、実ファイルは mu/ サブディレクトリ配下に存在する。プロセス設計時にファイルパスを誤って記述しており、needs 解決が不可能。実装ファイルの正しいパス（mu/__init__.py, mu/l0.py, mu/l1.py, mu/l2.py, mu/l3.py, mu/l4.py, mu/l5.py, mu/process.py, mu/role_kb.py, mu/skill_kb.py, mu/workspace",
+    "readme_changed": false,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 301,
+      "lines_kept": 301,
+      "rate": 1.0,
+      "chars_before": 22608,
+      "chars_after": 22608
+    },
+    "violations": []
+  },
+  {
+    "round": "R2",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 584,
+    "achieved": false,
+    "escalated": true,
+    "package": "",
+    "reason": "unparseable PjM decision",
+    "readme_changed": true,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "python3.cmd",
+      "run_log.txt",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 301,
+      "lines_kept": 299,
+      "rate": 0.993,
+      "chars_before": 22608,
+      "chars_after": 22577
+    },
+    "violations": []
+  },
+  {
+    "round": "R3",
+    "drift": {
+      "added": [
+        "skills/verdict-cites-its-evidence.md"
+      ],
+      "removed": [
+        "probe_research.py"
+      ]
+    },
+    "elapsed": 373,
+    "achieved": false,
+    "escalated": true,
+    "package": "",
+    "reason": "QA は基準 #8 を fail としたが、その原因は SPEC と現実の不一致にある——成果物側では解決不能である。SPEC の定義（「実装が正」「実装ファイルは mu/ サブディレクトリ内に配置されている」）は、chat_common.py・l0_chat.py〜l5_chat.py の7ファイルが mu/ 内ではなく作業ディレクトリ直下に実在するという事実と食い違っている。SPEC 自身が「実装が正」と定義する以上、これらのファイルの配置も「正」としなければならず、SPEC 側がこの事実に合わせる必要がある。一方で SPEC の criteria #8 の検査コマンドは Get-Chil",
+    "readme_changed": false,
+    "impl_changed": [
+      "PROCESS.md",
+      "SPEC.md",
+      "design.md",
+      "verdict.md"
+    ],
+    "audit_before": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "audit_after": [
+      {
+        "claim": "skill の件数と宛先",
+        "actual": "12件 ['implementer', 'pjm', 'qa']",
+        "ok": false,
+        "truth": false,
+        "covered": true
+      },
+      {
+        "claim": "probe_research.py の実在",
+        "actual": false,
+        "ok": true,
+        "truth": null,
+        "covered": false
+      },
+      {
+        "claim": "probe_hard.py の実在",
+        "actual": true,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "役割パッケージ数",
+        "actual": 5,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      },
+      {
+        "claim": "層のファイル（l0〜l5）",
+        "actual": 6,
+        "ok": true,
+        "truth": true,
+        "covered": true
+      }
+    ],
+    "retention": {
+      "lines_before": 301,
+      "lines_kept": 301,
+      "rate": 1.0,
+      "chars_before": 22577,
+      "chars_after": 22577
+    },
+    "violations": []
+  }
+]
