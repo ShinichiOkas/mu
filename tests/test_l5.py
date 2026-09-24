@@ -1516,3 +1516,12 @@ def test_without_a_declaration_the_behavior_is_unchanged(tmp_path, monkeypatch):
     agent = make([NOT_SATISFIED, SPEC, PROCESS3], ok3())
     out = run(agent, tmp_path, monkeypatch)
     assert out["achieved"] is True
+
+
+def test_required_outputs_pass_through_to_the_manager(tmp_path, monkeypatch):
+    """048: 呼び出し側が宣言した必須の出力は、L5 を素通しして L4 の床に届く。"""
+    agent = make([SPEC, PROCESS3], ok3() + [{"done": True}])
+    result = run(agent, tmp_path, monkeypatch, outputs=["result.csv", "summary.md"])
+    assert "summary.md" in [t["file"] for t in result["tasks"]]
+    process_prompt = agent._l4._l0.calls[1]["messages"][-1]["content"]
+    assert "- summary.md" in process_prompt

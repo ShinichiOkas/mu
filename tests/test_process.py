@@ -288,3 +288,53 @@ def test_needs_hint_ignores_tray_copies(tmp_path, monkeypatch):
     (tmp_path / ".mu-work" / "implementer" / "task-1").mkdir(parents=True)
     (tmp_path / ".mu-work" / "implementer" / "task-1" / "spec.md").write_text("x", encoding="utf-8")
     assert needs_hint(["spec.md"]) == ""
+
+
+# --- 048: 必須の出力は呼び出し側の宣言。計画が落としたらコードが足す（床） -----------------
+
+def test_required_output_missing_from_the_plan_is_appended_before_qa():
+    # 2026-09-24 AgenticWorkspace T10: SPEC は 3 ファイルを列挙したが、計画は 1 ファイルしか
+    # 宣言せず、同じ計画を 5 回繰り返して予算切れ。何を出すかは宣言から決まる——PjM に委ねない。
+    events = []
+    tasks = normalize_tasks(
+        [{"role": "architect", "task": "設計", "file": "design.md", "criterion": "ある"},
+         {"role": "builder", "task": "方針を書く", "file": "方針/方針.md", "criterion": "ある"},
+         {"role": "qa", "task": "検証", "file": "verdict.md", "criterion": "ITEM"}],
+        {"qa": {}, "architect": {}, "builder": {}}, events.append,
+        outputs=["方針/方針.md", "方針/domain.mk", "方針/domain.tasks"],
+    )
+    files = [t["file"] for t in tasks]
+    assert files == ["design.md", "方針/方針.md", "方針/domain.mk", "方針/domain.tasks", "verdict.md"]
+    mk = tasks[2]
+    assert mk["role"] == "builder"                 # 同じディレクトリの成果物を書く担い手
+    assert mk["needs"] == ["design.md", "方針/方針.md"]   # 前の作業の出力を読める（tray では宣言が要る）
+    assert "048" in mk["task"] and mk["done"] is False
+    assert ("output_appended", "方針/domain.mk", "builder") in events
+    assert ("output_appended", "方針/方針.md", "builder") not in events    # 宣言済みは足さない
+    # QA は足された出力も見る（QA の床は必須出力の床のあとに効く）
+    assert tasks[-1]["needs"][:4] == ["design.md", "方針/方針.md", "方針/domain.mk", "方針/domain.tasks"]
+
+
+def test_without_required_outputs_the_plan_is_unchanged():
+    raw = [{"role": "implementer", "task": "作る", "file": "a.py", "criterion": "ある"}]
+    plain = normalize_tasks(raw, {"qa": {}, "implementer": {}}, lambda e: None)
+    same = normalize_tasks(raw, {"qa": {}, "implementer": {}}, lambda e: None, outputs=[])
+    assert plain == same and [t["file"] for t in plain] == ["a.py", "verdict.md"]
+
+
+def test_required_output_writer_is_the_role_with_the_nearest_output():
+    tasks = normalize_tasks(
+        [{"role": "writer", "task": "文書", "file": "docs/a.md", "criterion": "ある"},
+         {"role": "coder", "task": "実装", "file": "src/pkg/a.py", "criterion": "ある"}],
+        {"qa": {}, "writer": {}, "coder": {}}, lambda e: None,
+        outputs=["src/pkg/b.py", "docs/b.md", "top.txt"],
+    )
+    by_file = {t["file"]: t["role"] for t in tasks}
+    assert by_file["src/pkg/b.py"] == "coder" and by_file["docs/b.md"] == "writer"
+    assert by_file["top.txt"] == "writer"          # 同点（共通 0）なら計画の先の方
+
+
+def test_required_output_with_an_empty_plan_goes_to_implementer():
+    events = []
+    tasks = normalize_tasks([], {"qa": {}, "implementer": {}}, events.append, outputs=["out.txt"])
+    assert [(t["role"], t["file"]) for t in tasks] == [("implementer", "out.txt"), ("qa", "verdict.md")]

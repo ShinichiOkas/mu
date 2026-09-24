@@ -959,3 +959,30 @@ def test_needs_gate_failure_carries_the_real_candidates(tmp_path, monkeypatch):
     out = _ws_run(mgr, tmp_path, monkeypatch)
     assert out["outcome"] == "escalate"
     assert "mu/l0.py" in out["tasks"][0]["last_failure"]
+
+
+# --- 048: 必須の出力 -----------------------------------------------------------
+
+def test_required_outputs_are_shown_to_pjm_and_enforced(tmp_path, monkeypatch):
+    """見せる（プロンプトに載る）＋守らせる（計画が落とした分をコードが足す）。"""
+    proc = {"tasks": [{"role": "implementer", "task": "実装", "file": "result.csv", "criterion": "ある"},
+                      {"role": "qa", "task": "検証", "file": "verdict.md", "criterion": "ITEM"}]}
+    mgr = make([proc], [{"done": True}, {"done": True},
+                        {"done": True, "writes": [("verdict.md", VERDICT_YES)]}])
+    out = run(mgr, tmp_path, monkeypatch, outputs=["result.csv", "report.md"])
+    prompt = mgr._l0.calls[0]["messages"][-1]["content"]
+    assert "REQUIRED OUTPUTS" in prompt and "- report.md" in prompt
+    assert [t["file"] for t in out["tasks"]] == ["result.csv", "report.md", "verdict.md"]
+
+
+def test_replan_keeps_the_required_outputs(tmp_path, monkeypatch):
+    """作り直し（replan）の計画も同じ床を通る。"""
+    proc = {"tasks": [{"role": "implementer", "task": "実装", "file": "result.csv", "criterion": "ある"}]}
+    decide = {"action": "replan", "reason": "やり直す", "invalidate": []}
+    stop = {"action": "escalate", "reason": "打ち切り", "invalidate": []}
+    mgr = make([proc, decide, proc, stop],
+               [{"done": True, "writes": [("verdict.md", VERDICT_NO)]}] * 8)
+    out = run(mgr, tmp_path, monkeypatch, outputs=["report.md"])
+    assert "report.md" in [t["file"] for t in out["tasks"]]
+    replan_prompt = mgr._l0.calls[2]["messages"][-1]["content"]
+    assert "REQUIRED OUTPUTS" in replan_prompt

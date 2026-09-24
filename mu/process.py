@@ -112,8 +112,15 @@ def process_note(roles: dict) -> str:
     return role_section(roles.get("pjm"), "process-artifact") or _PROCESS_NOTE
 
 
-def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
+def normalize_tasks(raw: list, roles: dict, log: Callable,
+                    outputs: Sequence[str] | None = None) -> list:
     """PjM 応答をタスク列に正規化する。末尾に QA タスクが無ければコードが必ず足す。
+
+    048: 呼び出し側が**必須の出力**（`outputs`）を渡したら、それを出すタスクが計画に無いとき
+    コードが足す（QA の床と同じ形）。何を出すかは呼び出し側の宣言から決まることで、
+    PjM の判断に委ねる事柄ではない——委ねると SPEC に書かれた出力を計画が落とす
+    （2026-09-24 AgenticWorkspace T10: SPEC は 3 ファイルを列挙、計画は 1 ファイルしか宣言せず、
+    同じ計画を 5 回繰り返して予算切れ）。どう分けて作るか（タスクの割り方）は PjM のまま。
 
     030 で足した床と lint:
       - `needs`（入力の宣言）を正規化する（文字列化・空を捨てる・順序保存の重複排除）
@@ -145,6 +152,7 @@ def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
         if (t.get("model") or "").strip():
             task["model"] = str(t["model"])
         tasks.append(task)
+    _append_required_outputs(tasks, _clean_needs(outputs), roles, log)
     if not any(t["role"] == "qa" for t in tasks):
         qa = default_qa_task(roles)          # ミニマム＋定義書の宣言（存在自体は上書き不可）
         log(("qa_appended", qa["file"]))
@@ -160,6 +168,51 @@ def normalize_tasks(raw: list, roles: dict, log: Callable) -> list:
                 )
     _lint_tasks(tasks, log)
     return tasks
+
+
+def _append_required_outputs(tasks: list, required: list, roles: dict, log: Callable) -> None:
+    """床（048）: 必須の出力を宣言したタスクが無ければ、QA の手前にコードが足す。
+
+    書き手は、計画のうち**置き場所が最も近い出力**を持つ作業ロール（同じディレクトリの成果物は
+    同じ担い手が書く、が single-writer と整合する）。作業タスクが 1 つも無ければ implementer。
+    足したタスクの needs は、それより前の作業タスクの出力すべて（tray のもとでは宣言しないと読めない）。
+    """
+    declared = {t["file"] for t in tasks if t["role"] != "qa"}
+    missing = [f for f in required if f not in declared]
+    if not missing:
+        return
+    at = next((i for i, t in enumerate(tasks) if t["role"] == "qa"), len(tasks))
+    for f in missing:
+        workers = [t for t in tasks[:at] if t["role"] != "qa"]
+        role = _nearest_writer(f, workers) or (
+            "implementer" if not roles or "implementer" in roles else next(iter(roles)))
+        tasks.insert(at, {
+            "role": role,
+            "task": (f"呼び出し側が必須と宣言した出力 `{f}` を作る。SPEC の該当箇所に従うこと"
+                     "（計画にこの出力を作るタスクが無かったため、コードが足した。合意048）。"),
+            "file": f,
+            "criterion": f"`{f}` が存在し、SPEC がこの出力に求めることを満たしている",
+            "needs": [t["file"] for t in workers],
+            "done": False,
+        })
+        at += 1
+        log(("output_appended", f, role))
+
+
+def _nearest_writer(file: str, workers: list) -> str | None:
+    """置き場所（ディレクトリの共通の深さ）が最も近い出力の書き手。同点なら計画の先の方。"""
+    target = Path(file).parts[:-1]
+    best, depth = None, -1
+    for t in workers:
+        parts = Path(t["file"]).parts[:-1]
+        common = 0
+        for a, b in zip(parts, target):
+            if a != b:
+                break
+            common += 1
+        if common > depth:
+            best, depth = t["role"], common
+    return best
 
 
 def _clean_needs(raw) -> list:
