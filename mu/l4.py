@@ -208,6 +208,7 @@ class Manager:
         l2_max: int = 6,
         l2_l1_max: int = 10,
         outputs: Sequence[str] | None = None,
+        required_inputs: Sequence[str] | None = None,
     ) -> dict:
         """SPEC を完遂まで進める。返り値の `outcome` が上の層への申告:
 
@@ -230,8 +231,9 @@ class Manager:
         limits = {"max_rounds": l3_max, "l2_max": l2_max, "l2_l1_max": l2_l1_max}
 
         # 048: 必須の出力は呼び出し側の宣言。PjM に見せ、落とした分はコードが足す（床）
+        # 049: 必須の入力も呼び出し側の宣言。どのタスクも読めるよう needs にコードが足す（床）
         tasks = self._process(model, spec, roles, pool, log, system, skills,
-                              outputs=outputs)                          # P（体制＝プロセス）
+                              outputs=outputs, required_inputs=required_inputs)   # P（体制）
         rounds = 0
         for _ in range(max_rounds):
             rounds += 1
@@ -282,7 +284,8 @@ class Manager:
                     invalidate(tasks, decision.get("invalidate", []), failure=_failure_facts(failed_checks))
                     continue
                 if act == "replan":
-                    new = self._process(model, spec, roles, pool, log, system, outputs=outputs)
+                    new = self._process(model, spec, roles, pool, log, system, outputs=outputs,
+                                        required_inputs=required_inputs)
                     tasks = carry_done_tasks(tasks, new)
                     continue
             elif act in ("rerun", "replan"):     # 直せるはずだが予算が尽きた → 人手へ
@@ -571,6 +574,7 @@ class Manager:
         self, model: str, spec: dict, roles: dict, pool: list, log: Callable,
         system: str | None = None, skills: dict | None = None,
         outputs: Sequence[str] | None = None,
+        required_inputs: Sequence[str] | None = None,
     ) -> list:
         # 一覧は人選対象だけ（見せる範囲＝有効な範囲。合意025。人間向け表示と同じ関数）
         roles_s = staffing_lines(roles)
@@ -583,12 +587,17 @@ class Manager:
             # 見せる（スキーマは見せる、と同じ流儀）。守らせるのは下の床
             user += ("\n\nREQUIRED OUTPUTS (declared by the caller; each must be the 'file' "
                      "of some task — one file per task):\n" + "\n".join(f"- {f}" for f in outputs))
+        if required_inputs:
+            user += ("\n\nREQUIRED INPUTS (given by the caller; list the ones a task reads in its "
+                     "'needs' — the code also supplies them to every task):\n"
+                     + "\n".join(f"- {f}" for f in required_inputs))
         data = structured(
             self._l0, model,
             lifeline_system(roles, "pjm", "process", _PROCESS_SCHEMA, system, log, skills),
             user, _PROCESS_SCHEMA,
         )
-        return normalize_tasks(data.get("tasks", []), task_roles(roles), log, outputs=outputs)
+        return normalize_tasks(data.get("tasks", []), task_roles(roles), log, outputs=outputs,
+                               required_inputs=required_inputs)
 
     def _decide(
         self, model: str, spec: dict, tasks: list, failure: dict | None,

@@ -338,3 +338,42 @@ def test_required_output_with_an_empty_plan_goes_to_implementer():
     events = []
     tasks = normalize_tasks([], {"qa": {}, "implementer": {}}, events.append, outputs=["out.txt"])
     assert [(t["role"], t["file"]) for t in tasks] == [("implementer", "out.txt"), ("qa", "verdict.md")]
+
+
+
+# --- 049: 必須の入力は呼び出し側の宣言。どのタスクも読めるようコードが needs に足す（床） -------
+
+def test_required_inputs_are_supplied_to_every_task():
+    # 2026-09-25 AgenticWorkspace T10: カタログを渡したのに、どのタスクも needs に宣言せず
+    # （tray のもとでは宣言しない入力は読めない）、方針は「カタログが空」と申告した。
+    events = []
+    tasks = normalize_tasks(
+        [{"role": "architect", "task": "設計", "file": "design.md", "criterion": "ある",
+          "needs": ["要望.md"]},
+         {"role": "builder", "task": "書く", "file": "方針/方針.md", "criterion": "ある",
+          "needs": ["design.md"]}],
+        {"qa": {}, "architect": {}, "builder": {}}, events.append,
+        required_inputs=["要望.md", "カタログ/a.mk", "カタログ/a.tasks"],
+    )
+    by = {t["file"]: t["needs"] for t in tasks}
+    assert by["design.md"] == ["要望.md", "カタログ/a.mk", "カタログ/a.tasks"]   # 宣言は前、足した分は後ろ
+    assert by["方針/方針.md"] == ["design.md", "要望.md", "カタログ/a.mk", "カタログ/a.tasks"]
+    assert all(f in by["verdict.md"] for f in ("カタログ/a.mk", "カタログ/a.tasks"))  # QA も読める
+    assert ("inputs_supplied", "design.md", 2) in events
+
+
+def test_required_inputs_do_not_include_files_the_plan_produces():
+    """計画の中で産出されるファイルは入力ではない——needs に足すと産出を待つゲートになる。"""
+    tasks = normalize_tasks(
+        [{"role": "implementer", "task": "作る", "file": "out.md", "criterion": "ある"}],
+        {"qa": {}, "implementer": {}}, lambda e: None, required_inputs=["out.md", "in.md"],
+    )
+    assert tasks[0]["needs"] == ["in.md"]
+
+
+def test_without_required_inputs_needs_are_unchanged():
+    raw = [{"role": "implementer", "task": "作る", "file": "a.py", "criterion": "ある",
+            "needs": ["x.md"]}]
+    plain = normalize_tasks(raw, {"qa": {}, "implementer": {}}, lambda e: None)
+    same = normalize_tasks(raw, {"qa": {}, "implementer": {}}, lambda e: None, required_inputs=[])
+    assert plain == same and plain[0]["needs"] == ["x.md"]

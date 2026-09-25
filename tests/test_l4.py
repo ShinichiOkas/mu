@@ -986,3 +986,14 @@ def test_replan_keeps_the_required_outputs(tmp_path, monkeypatch):
     assert "report.md" in [t["file"] for t in out["tasks"]]
     replan_prompt = mgr._l0.calls[2]["messages"][-1]["content"]
     assert "REQUIRED OUTPUTS" in replan_prompt
+
+
+
+def test_required_inputs_are_shown_to_pjm_and_supplied(tmp_path, monkeypatch):
+    """049: 見せる（プロンプトに載る）＋守らせる（どのタスクの needs にも入る）。"""
+    (tmp_path / "in.md").write_text("入力", encoding="utf-8")
+    mgr = make([PROCESS2], ok2())
+    out = run(mgr, tmp_path, monkeypatch, required_inputs=["in.md"])
+    prompt = mgr._l0.calls[0]["messages"][-1]["content"]
+    assert "REQUIRED INPUTS" in prompt and "- in.md" in prompt
+    assert all("in.md" in t["needs"] for t in out["tasks"])

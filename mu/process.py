@@ -113,7 +113,8 @@ def process_note(roles: dict) -> str:
 
 
 def normalize_tasks(raw: list, roles: dict, log: Callable,
-                    outputs: Sequence[str] | None = None) -> list:
+                    outputs: Sequence[str] | None = None,
+                    required_inputs: Sequence[str] | None = None) -> list:
     """PjM 応答をタスク列に正規化する。末尾に QA タスクが無ければコードが必ず足す。
 
     048: 呼び出し側が**必須の出力**（`outputs`）を渡したら、それを出すタスクが計画に無いとき
@@ -121,6 +122,12 @@ def normalize_tasks(raw: list, roles: dict, log: Callable,
     PjM の判断に委ねる事柄ではない——委ねると SPEC に書かれた出力を計画が落とす
     （2026-09-24 AgenticWorkspace T10: SPEC は 3 ファイルを列挙、計画は 1 ファイルしか宣言せず、
     同じ計画を 5 回繰り返して予算切れ）。どう分けて作るか（タスクの割り方）は PjM のまま。
+
+    049: 呼び出し側が**必須の入力**（`required_inputs`・ファイルのパス）を渡したら、どのタスクも
+    それを読めるよう needs にコードが足す。tray のもとでは宣言しない入力は読めない——
+    PjM が宣言を落とすと、渡した入力が「無かった」ことになる
+    （2026-09-25 AgenticWorkspace T10: カタログを渡したのに、どのタスクも needs に宣言せず、
+    方針は「カタログが空」と申告して既製を選べなかった）。
 
     030 で足した床と lint:
       - `needs`（入力の宣言）を正規化する（文字列化・空を捨てる・順序保存の重複排除）
@@ -166,6 +173,7 @@ def normalize_tasks(raw: list, roles: dict, log: Callable,
                 t["criterion"] = (
                     (t["criterion"] + " / " if t["criterion"] else "") + _VERDICT_REQUIREMENT
                 )
+    _supply_required_inputs(tasks, _clean_needs(required_inputs), log)
     _lint_tasks(tasks, log)
     return tasks
 
@@ -197,6 +205,23 @@ def _append_required_outputs(tasks: list, required: list, roles: dict, log: Call
         })
         at += 1
         log(("output_appended", f, role))
+
+
+def _supply_required_inputs(tasks: list, required: list, log: Callable) -> None:
+    """床（049）: 必須の入力を、宣言に無いタスクの needs に後ろから足す（宣言は前に残す）。
+
+    計画の中で産出されるファイル（あるタスクの `file`）は足さない——それは入力ではなく中間物で、
+    needs に足すと産出タスクの完了を待つゲートになってしまう。
+    """
+    if not required:
+        return
+    produced = {t["file"] for t in tasks}
+    wanted = [f for f in required if f not in produced]
+    for t in tasks:
+        added = [f for f in wanted if f not in t["needs"]]
+        if added:
+            t["needs"] = t["needs"] + added
+            log(("inputs_supplied", t["file"], len(added)))
 
 
 def _nearest_writer(file: str, workers: list) -> str | None:

@@ -326,6 +326,33 @@ def _write_spec(spec_path: str, purpose: str, spec: dict, note: str = "") -> Non
     p.write_text(text, encoding="utf-8")
 
 
+
+def _with_required_checks(spec: dict, checks: Sequence[dict] | None, log: Callable) -> dict:
+    """床（049）: 呼び出し側が渡した決定論の検査を受入基準（criteria）に足す。
+
+    受入基準の `run` は L4 がコードで走らせ（`_run_criteria_checks`）、落ちれば完遂にならず
+    PjM の判断に乗る。落ちた検査の出力は再実行するタスクへ事実として渡る（合意014）。
+    同じ `run` がすでにあれば足さない（毎周呼んでも増えない）。
+
+    2026-09-25 AgenticWorkspace T10: `.mk` の検査器を**道具として**渡したが、3 回とも一度も使われず、
+    検査を通らない `.mk` が出た。**検めるかどうかは、宣言から決まる。**
+    """
+    if not checks:
+        return spec
+    have = {str(c.get("run", "")).strip() for c in spec.get("criteria", [])}
+    added = []
+    for c in checks:
+        run = str(c.get("run", "")).strip()
+        if not run or run in have:
+            continue
+        added.append({"text": str(c.get("text", "")) or run, "run": run,
+                      "expect": str(c.get("expect", "") or "")})
+        have.add(run)
+    if not added:
+        return spec
+    log(("checks_required", [a["text"] for a in added]))
+    return {**spec, "criteria": list(spec.get("criteria", [])) + added}
+
 class Director:
     """L5。目的を仕様に翻訳し、L4（進行の層）を回し、結果を見て次の一手を決める。"""
 
@@ -360,6 +387,8 @@ class Director:
         workspace: str | None = None,
         parallel: int = 1,
         outputs: Sequence[str] | None = None,
+        required_inputs: Sequence[str] | None = None,
+        required_checks: Sequence[dict] | None = None,
     ) -> dict:
         roles = roles or {}
         skills = skills or {}
@@ -451,6 +480,9 @@ class Director:
                 return _done(False, True, assessment, spec, spec_path, tasks,
                              process_path, rounds, l4_rounds, escalation_reason=TIME_UP,
                              package=package)
+            # 049: 呼び出し側の決定論の検査は受入基準に足す（仕様を作り直しても毎周足す）。
+            # 検査するかを LLM に委ねない——道具として渡すだけでは一度も使われなかった
+            spec = _with_required_checks(spec, required_checks, log)
             _write_spec(spec_path, purpose, spec, _spec_note(roles))
             log(("spec", spec, spec_path))
 
@@ -458,7 +490,7 @@ class Director:
                 model, spec, tools, roles=roles, skills=skills, models=models, purpose=purpose,
                 spec_path=spec_path, process_path=process_path, log=log, system=system,
                 guard=guard, deadline=deadline, protected=protected, workspace=workspace,
-                parallel=parallel, outputs=outputs,
+                parallel=parallel, outputs=outputs, required_inputs=required_inputs,
                 # ↑ 破れ検査・締切・保護一覧・作業空間・同時実行数・必須の出力（048）は
                 #   呼び出し側が注入し、素通しする
                 max_rounds=l4_max, l3_max=l3_max, l2_max=l2_max, l2_l1_max=l2_l1_max,

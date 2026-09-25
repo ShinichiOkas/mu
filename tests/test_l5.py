@@ -1525,3 +1525,46 @@ def test_required_outputs_pass_through_to_the_manager(tmp_path, monkeypatch):
     assert "summary.md" in [t["file"] for t in result["tasks"]]
     process_prompt = agent._l4._l0.calls[1]["messages"][-1]["content"]
     assert "- summary.md" in process_prompt
+
+
+
+def test_required_checks_become_acceptance_criteria_and_block_when_they_fail(tmp_path, monkeypatch):
+    """049: 呼び出し側の決定論の検査は受入基準に足され、落ちれば完遂にならない。
+
+    AgenticWorkspace T10: `.mk` の検査器を道具として渡したが 3 回とも使われなかった。
+    """
+    from mu.l1 import ToolResult
+    calls = []
+
+    def execute_command(command: str) -> ToolResult:
+        """実行する。"""
+        calls.append(command)
+        return ToolResult("exit=1\nMKCHECK: NG", ok=False)
+
+    decide = {"action": "escalate", "invalidate": [], "reason": "検査が落ちる"}
+    agent = make([SPEC, PROCESS3, decide], ok3())
+    monkeypatch.chdir(tmp_path)
+    check = {"text": "方針の .mk が検査を通る", "run": "mkcheck 方針", "expect": "MKCHECK: OK"}
+    result = agent.run("m", "purpose", [(execute_command, "execute_command(command)")],
+                       roles=ROLES, models=["m", "qwen-x"], max_rounds=1, required_checks=[check])
+    assert "mkcheck 方針" in calls                          # 検めるかを LLM に委ねない
+    assert result["achieved"] is False
+    assert any(c.get("run") == "mkcheck 方針" for c in result["spec"]["criteria"])
+    assert "mkcheck 方針" in (tmp_path / "SPEC.md").read_text(encoding="utf-8")
+
+
+def test_required_checks_are_not_duplicated_across_rounds():
+    from mu.l5 import _with_required_checks
+    check = {"text": "検査", "run": "mkcheck x", "expect": "OK"}
+    once = _with_required_checks(SPEC, [check], lambda e: None)
+    twice = _with_required_checks(once, [check], lambda e: None)
+    assert [c["run"] for c in twice["criteria"]].count("mkcheck x") == 1
+    assert _with_required_checks(SPEC, None, lambda e: None) is SPEC   # 既定は従来と同一
+
+
+def test_required_inputs_pass_through_to_the_manager(tmp_path, monkeypatch):
+    (tmp_path / "in.md").write_text("入力", encoding="utf-8")
+    stop = {"action": "escalate", "invalidate": [], "reason": "打ち切り"}
+    agent = make([SPEC, PROCESS3, stop, stop], ok3())
+    result = run(agent, tmp_path, monkeypatch, required_inputs=["in.md"], max_rounds=1)
+    assert all("in.md" in t["needs"] for t in result["tasks"])
